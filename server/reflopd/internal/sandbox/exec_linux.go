@@ -30,13 +30,14 @@ type ExecConfig struct {
 	Env   []string   `json:"env"`
 	Dir   string     `json:"dir"`
 	Rules []PathRule `json:"rules"`
-	// AllowProcSelf adds read access to /proc/<pid> of the worker.
-	AllowProcSelf    bool   `json:"allow_proc_self"`
-	RequireLandlock  bool   `json:"require_landlock"`
-	NoFile           uint64 `json:"nofile"`
-	NProc            uint64 `json:"nproc"` // 0 = leave unchanged
-	FSize            uint64 `json:"fsize"` // 0 = leave unchanged
-	ReportLandlockFD int    `json:"-"`
+	// AllowProcSelf adds read and write access to the worker's own
+	// /proc/<pid>: the CUDA driver names its threads through
+	// /proc/self/task/<tid>/comm and fails to initialize without it.
+	AllowProcSelf   bool   `json:"allow_proc_self"`
+	RequireLandlock bool   `json:"require_landlock"`
+	NoFile          uint64 `json:"nofile"`
+	NProc           uint64 `json:"nproc"` // 0 = leave unchanged
+	FSize           uint64 `json:"fsize"` // 0 = leave unchanged
 }
 
 // HelperReport is printed by the helper on stderr as one line prefixed
@@ -104,7 +105,7 @@ func RunHelper() {
 
 	rules := cfg.Rules
 	if cfg.AllowProcSelf {
-		rules = append(rules, PathRule{Path: fmt.Sprintf("/proc/%d", os.Getpid()), Access: AccessRead})
+		rules = append(rules, PathRule{Path: fmt.Sprintf("/proc/%d", os.Getpid()), Access: AccessRead | AccessWrite})
 	}
 	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 		fail(fmt.Errorf("no_new_privs: %w", err))

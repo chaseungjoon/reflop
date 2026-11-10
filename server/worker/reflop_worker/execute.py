@@ -94,8 +94,14 @@ class Executor:
                 want = {"bool": "b", "int": "i", "float": "f", "complex": "c"}[spec.scalar_kind]
                 if sw != want:
                     raise binding_error(f"input {i}: expected a {spec.scalar_kind} scalar")
-                v = getattr(b.scalar, sw)
-                scalars[i] = complex(v.real, v.imag) if sw == "c" else v
+                if sw == "b":
+                    scalars[i] = bool(b.scalar.b)
+                elif sw == "i":
+                    scalars[i] = int(b.scalar.i)
+                elif sw == "f":
+                    scalars[i] = float(b.scalar.f)
+                else:
+                    scalars[i] = complex(b.scalar.c.real, b.scalar.c.imag)
             elif spec.kind == K.KIND_DATASET_REF:
                 if which != "dataset":
                     raise binding_error(f"input {i}: expected a dataset binding")
@@ -144,10 +150,10 @@ class Executor:
         t0 = time.perf_counter()
         expiring: dict[int, list] = {}
         for r, last in prog.last_use.items():
-            if r.node >= 0 or True:
-                expiring.setdefault(last, []).append(r)
+            expiring.setdefault(last, []).append(r)
         dev = self.device
         protected = set(prog.outputs)
+        node = None
         if dev.type == "cuda":
             torch.cuda.reset_peak_memory_stats(dev)
         try:
@@ -198,8 +204,8 @@ class Executor:
         except Exception as e:  # noqa: BLE001 - every kernel error becomes a structured error
             if is_cuda_fatal(e):
                 raise FatalError(f"CUDA context lost: {e}") from None
-            idx = node.index if "node" in locals() else None
-            op_id = node.op.id if "node" in locals() else 0
+            idx = node.index if node is not None else None
+            op_id = node.op.id if node is not None else 0
             raise ReflopError(cpb.ERROR_EXECUTION, f"{str(e)[:500]}", E3, idx, op_id) from None
         res = cpb.ExecuteResult()
         K = cpb.OutputSpec

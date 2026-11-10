@@ -12,6 +12,9 @@ import (
 //go:embed all:worker/reflop_worker
 var workerFS embed.FS
 
+// Probes holds the isolation probe module in test builds, nil otherwise.
+var Probes []byte
+
 // Worker returns the reflop_worker package tree (rooted at reflop_worker/).
 func Worker() fs.FS {
 	sub, err := fs.Sub(workerFS, "worker")

@@ -43,6 +43,9 @@ func Self() (string, error) {
 // Delegated reports whether dir is writable by us with memory and pids
 // controllers available.
 func Delegated(dir string) error {
+	if err := unix.Access(dir, unix.W_OK); err != nil {
+		return fmt.Errorf("%s is not delegated to this user", dir)
+	}
 	for _, f := range []string{"cgroup.procs", "cgroup.subtree_control"} {
 		if err := unix.Access(filepath.Join(dir, f), unix.W_OK); err != nil {
 			return fmt.Errorf("%s is not delegated to this user", dir)

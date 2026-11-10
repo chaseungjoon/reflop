@@ -22,3 +22,5 @@ var archDenySyscalls = []int{
 	unix.SYS_FORK, unix.SYS_VFORK, unix.SYS_IOPL, unix.SYS_IOPERM, unix.SYS_CHOWN, unix.SYS_LCHOWN,
 	unix.SYS_USELIB, unix.SYS_KEXEC_FILE_LOAD, unix.SYS_MODIFY_LDT,
 }
+
+var daemonArchDeny = []int{unix.SYS_IOPL, unix.SYS_IOPERM, unix.SYS_USELIB, unix.SYS_KEXEC_FILE_LOAD}

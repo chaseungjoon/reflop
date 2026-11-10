@@ -33,6 +33,7 @@ type Spec struct {
 	Name        string // cgroup / log name (session hex)
 	Python      string // runtime interpreter
 	RuntimeDir  string
+	WorkerDir   string // directory holding the reflop_worker package
 	Scratch     string
 	GPUUUIDs    []string // exposed GPUs; empty = CPU only
 	DeviceNodes []string
@@ -93,6 +94,9 @@ func WorkerRules(runtimeDir, scratch string, devices []string, wsl bool) []sandb
 		{Path: "/proc/cpuinfo", Access: ro},
 		{Path: "/proc/meminfo", Access: ro},
 		{Path: "/proc/stat", Access: ro, Optional: true},
+		{Path: "/proc/devices", Access: ro, Optional: true},
+		{Path: "/proc/sys/vm/mmap_min_addr", Access: ro, Optional: true},
+		{Path: "/proc/sys/vm/max_map_count", Access: ro, Optional: true},
 		{Path: "/proc/sys/kernel/osrelease", Access: ro, Optional: true},
 		{Path: "/proc/sys/vm/overcommit_memory", Access: ro, Optional: true},
 		{Path: "/proc/sys/kernel/numa_balancing", Access: ro, Optional: true},
@@ -131,6 +135,10 @@ func Env(spec Spec) []string {
 		"PYTORCH_NVML_BASED_CUDA_CHECK=0",
 	}
 	env = append(env, "CUDA_VISIBLE_DEVICES="+strings.Join(spec.GPUUUIDs, ","))
+	env = append(env, "CUBLAS_WORKSPACE_CONFIG=:4096:8")
+	if spec.TestProbe != "" {
+		env = append(env, "REFLOP_TEST_PROBE="+spec.TestProbe)
+	}
 	if spec.WSL {
 		env = append(env, "LD_LIBRARY_PATH=/usr/lib/wsl/lib")
 	}
@@ -138,7 +146,11 @@ func Env(spec Spec) []string {
 }
 
 // Spawn starts a worker and waits for WorkerReady.
-func Spawn(ctx context.Context, spec Spec) (*Worker, error) {
+func Spawn(ctx context.Context, spec Spec) (*Worker, error) { return SpawnWithFilter(ctx, spec, nil) }
+
+// SpawnWithFilter is Spawn with a seccomp filter built for the worker's pid
+// (signals are restricted to the worker itself).
+func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) []byte) (*Worker, error) {
 	if spec.ReadyTimeout == 0 {
 		spec.ReadyTimeout = 3 * time.Minute
 	}
@@ -174,15 +186,16 @@ func Spawn(ctx context.Context, spec Spec) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	argv := []string{spec.Python, "-I", "-B", "-m", "reflop_worker"}
-	if spec.TestProbe != "" {
-		argv = append(argv, "--isolation-probe", spec.TestProbe)
-	}
+	// -I: isolated mode (no environment, user site or cwd on sys.path). The
+	// worker package path is fixed by reflopd, never by a Guest.
+	boot := fmt.Sprintf("import sys; sys.path.insert(0, %q); from reflop_worker.main import main; main()", spec.WorkerDir)
+	argv := []string{spec.Python, "-I", "-B", "-c", boot}
 	cfg := sandbox.ExecConfig{
-		Argv:            argv,
-		Env:             Env(spec),
-		Dir:             spec.Scratch,
-		Rules:           append(WorkerRules(spec.RuntimeDir, spec.Scratch, spec.DeviceNodes, spec.WSL), spec.ExtraRules...),
+		Argv: argv,
+		Env:  Env(spec),
+		Dir:  spec.Scratch,
+		Rules: append(append(WorkerRules(spec.RuntimeDir, spec.Scratch, spec.DeviceNodes, spec.WSL),
+			sandbox.PathRule{Path: spec.WorkerDir, Access: sandbox.AccessRead}), spec.ExtraRules...),
 		AllowProcSelf:   true,
 		RequireLandlock: spec.RequireLandlock,
 		NoFile:          8192,
@@ -235,6 +248,9 @@ func Spawn(ctx context.Context, spec Spec) (*Worker, error) {
 		return nil, fmt.Errorf("start worker: %w", err)
 	}
 	stderrW.Close()
+	if filter != nil && spec.Init != nil {
+		spec.Init.SeccompFilter = filter(cmd.Process.Pid)
+	}
 	b, _ := json.Marshal(cfg)
 	cfgW.Write(b)
 	cfgW.Close()
@@ -274,12 +290,12 @@ func Spawn(ctx context.Context, spec Spec) (*Worker, error) {
 		}
 	}()
 
-	if spec.TestProbe != "" {
-		return w, nil
-	}
 	if err := w.Send(&pb.WorkerEnvelope{Body: &pb.WorkerEnvelope_Init{Init: spec.Init}}); err != nil {
 		w.Kill("init failed")
 		return nil, w.failure(fmt.Errorf("send init: %w", err))
+	}
+	if spec.TestProbe != "" {
+		return w, nil // the probe runs after the sandbox is complete, then exits
 	}
 	type res struct {
 		env *pb.WorkerEnvelope
@@ -412,6 +428,14 @@ func (w *Worker) ExitReason() string {
 		return w.exitErr.Error()
 	}
 	return "exited"
+}
+
+// ExitCode is the process exit code after Done (-1 if killed by a signal).
+func (w *Worker) ExitCode() int {
+	if w.cmd.ProcessState == nil {
+		return -1
+	}
+	return w.cmd.ProcessState.ExitCode()
 }
 
 // PID returns the worker pid.

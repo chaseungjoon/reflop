@@ -159,8 +159,9 @@ func (l *Lock) Choose(inf gpu.Info, override string) (Choice, error) {
 	return Choice{Variant: "cpu", Reason: "no CUDA runtime matches this driver/GPU", Warn: warn}, nil
 }
 
-// ID names an installed runtime: variant plus a hash of its pinned bytes
-// and of the embedded worker, so any change installs side by side.
+// ID names an installed runtime: variant plus a hash of its pinned bytes.
+// The worker package is installed separately (EnsureWorker), so changing
+// reflopd's worker code never re-extracts the multi-gigabyte runtime.
 func (l *Lock) ID(variant, arch string) string {
 	h := sha256.New()
 	py := l.python(arch)
@@ -168,6 +169,12 @@ func (l *Lock) ID(variant, arch string) string {
 	for _, w := range l.Variants[variant].Wheels[arch] {
 		h.Write([]byte(w.SHA256))
 	}
+	return fmt.Sprintf("%s-%s-%s", variant, arch, hex.EncodeToString(h.Sum(nil))[:12])
+}
+
+// WorkerHash identifies the embedded worker package (and probes in test builds).
+func WorkerHash() string {
+	h := sha256.New()
 	_ = fs.WalkDir(server.Worker(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && !strings.Contains(p, "__pycache__") {
 			b, _ := fs.ReadFile(server.Worker(), p)
@@ -176,7 +183,39 @@ func (l *Lock) ID(variant, arch string) string {
 		}
 		return nil
 	})
-	return fmt.Sprintf("%s-%s-%s", variant, arch, hex.EncodeToString(h.Sum(nil))[:12])
+	h.Write(server.Probes)
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// EnsureWorker unpacks the embedded worker package into
+// <root>/workers/<hash>/ (read-only) and returns that directory.
+func EnsureWorker(root string) (string, error) {
+	dir := filepath.Join(root, "workers", WorkerHash())
+	if _, err := os.Stat(filepath.Join(dir, "READY")); err == nil {
+		return dir, nil
+	}
+	tmp := dir + ".tmp"
+	os.RemoveAll(tmp)
+	if err := os.MkdirAll(tmp, 0o700); err != nil {
+		return "", err
+	}
+	if err := copyWorker(tmp); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "READY"), []byte(WorkerHash()+"\n"), 0o444); err != nil {
+		return "", err
+	}
+	if err := makeReadOnly(tmp); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		if _, e := os.Stat(filepath.Join(dir, "READY")); e == nil {
+			Remove(tmp)
+			return dir, nil
+		}
+		return "", err
+	}
+	return dir, nil
 }
 
 func (l *Lock) python(arch string) Artifact {
@@ -275,10 +314,6 @@ func (l *Lock) Install(ctx context.Context, root, variant string, progress Progr
 		if err := unzipWheel(filepath.Join(dl, w.SHA256), site, filepath.Join(tmp, "python")); err != nil {
 			return Installed{}, fmt.Errorf("%s: %w", w.File, err)
 		}
-	}
-	progress("installing reflop_worker")
-	if err := copyWorker(site); err != nil {
-		return Installed{}, err
 	}
 	// Python must never write .pyc files into the runtime at run time.
 	if err := os.WriteFile(filepath.Join(site, "reflop_runtime.pth"), []byte("import sys; sys.dont_write_bytecode = True\n"), 0o644); err != nil {
@@ -550,6 +585,14 @@ func unzipWheel(file, site, prefix string) error {
 
 func copyWorker(site string) error {
 	w := server.Worker()
+	if len(server.Probes) > 0 {
+		if err := os.MkdirAll(filepath.Join(site, "reflop_worker"), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(site, "reflop_worker", "_probes.py"), server.Probes, 0o644); err != nil {
+			return err
+		}
+	}
 	return fs.WalkDir(w, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

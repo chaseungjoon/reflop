@@ -6,6 +6,8 @@
 package paths
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -39,7 +41,7 @@ func Resolve() (Layout, error) {
 			Config:  filepath.Join(h, "config"),
 			State:   filepath.Join(h, "state"),
 			Runtime: filepath.Join(h, "runtime"),
-			Run:     filepath.Join(h, "run"),
+			Run:     shortRun(filepath.Join(h, "run"), h),
 			Scratch: filepath.Join(h, "scratch"),
 		}, nil
 	}
@@ -72,9 +74,23 @@ func Resolve() (Layout, error) {
 		Config:  filepath.Join(cfg, "reflop"),
 		State:   filepath.Join(data, "reflop"),
 		Runtime: filepath.Join(data, "reflop", "runtime"),
-		Run:     run,
+		Run:     shortRun(run, home),
 		Scratch: filepath.Join(cache, "reflop", "scratch"),
 	}, nil
+}
+
+// Unix socket paths are limited to 107 bytes; long homes get their run
+// directory under XDG_RUNTIME_DIR (or /tmp) instead.
+func shortRun(run, key string) string {
+	if len(run)+len("/control.sock") < 100 {
+		return run
+	}
+	sum := sha256.Sum256([]byte(key))
+	base := os.Getenv("XDG_RUNTIME_DIR")
+	if base == "" || !filepath.IsAbs(base) {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "reflop-"+hex.EncodeToString(sum[:6]))
 }
 
 func xdg(env, def string) string {

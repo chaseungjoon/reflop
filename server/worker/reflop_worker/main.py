@@ -46,13 +46,7 @@ def warm_up(device) -> None:
 
 def main() -> None:
     warnings.filterwarnings("ignore", message="The given buffer is not writable")
-    if len(sys.argv) >= 3 and sys.argv[1] == "--isolation-probe":
-        try:
-            from . import _probes  # present only in test builds (§17.5)
-        except ImportError:
-            _log("isolation probes are not part of this build")
-            sys.exit(2)
-        sys.exit(_probes.run(sys.argv[2]))
+    probe = os.environ.get("REFLOP_TEST_PROBE") or None
 
     ctrl = socket.socket(fileno=FD_CONTROL)
     fdpass = socket.socket(fileno=FD_PASS)
@@ -99,6 +93,14 @@ def main() -> None:
             if init.require_seccomp:
                 fatal(f"seccomp could not be applied: {e}")
             rep.note = f"seccomp unavailable: {e}"
+    if probe is not None:
+        # Test builds only: run one probe under the full sandbox, then exit.
+        try:
+            from . import _probes  # absent from release builds (§17.5)
+        except ImportError:
+            _log("isolation probes are not part of this build")
+            os._exit(2)
+        os._exit(_probes.run(probe))
     ch.send(wpb.WorkerEnvelope(ready=session.ready(rep)))
 
     def send_client(env: cpb.Envelope) -> None:
@@ -132,7 +134,7 @@ def main() -> None:
             elif which == "dataset_close":
                 session.close_dataset(env.dataset_close.dataset_id)
             elif which in ("snapshot_write", "snapshot_read"):
-                m = getattr(env, which)
+                m = env.snapshot_write if which == "snapshot_write" else env.snapshot_read
                 tag, fds = recv_fds(1)
                 rid = m.request_id
                 try:

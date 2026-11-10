@@ -10,6 +10,13 @@ from google.protobuf.message import Message
 
 from ._pb import worker_pb2
 
+
+def _repeated(fd) -> bool:
+    """FieldDescriptor.label is gone in protobuf 7; is_repeated is newer."""
+    if hasattr(fd, "is_repeated"):
+        return bool(fd.is_repeated)
+    return fd.label == fd.LABEL_REPEATED
+
 _HDR = struct.Struct(">I")
 
 
@@ -26,7 +33,7 @@ def check_no_unknown(msg: Message) -> None:
     for fd, value in msg.ListFields():
         if fd.message_type is None:
             continue
-        if fd.label == fd.LABEL_REPEATED:
+        if _repeated(fd):
             if fd.message_type.GetOptions().map_entry:
                 continue
             for v in value:
@@ -39,12 +46,12 @@ def check_enums(msg: Message) -> None:
     """Reject enum values not declared in their enum (open proto3 enums)."""
     for fd, value in msg.ListFields():
         if fd.enum_type is not None:
-            vals = value if fd.label == fd.LABEL_REPEATED else [value]
+            vals = value if _repeated(fd) else [value]
             for v in vals:
                 if v not in fd.enum_type.values_by_number:
                     raise ProtocolError(f"unknown enum value {v} for {fd.full_name}")
         elif fd.message_type is not None:
-            if fd.label == fd.LABEL_REPEATED:
+            if _repeated(fd):
                 if fd.message_type.GetOptions().map_entry:
                     continue
                 for v in value:

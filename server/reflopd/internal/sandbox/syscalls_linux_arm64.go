@@ -12,3 +12,5 @@ const (
 var archAllowSyscalls = []int{}
 
 var archDenySyscalls = []int{unix.SYS_KEXEC_FILE_LOAD}
+
+var daemonArchDeny = []int{unix.SYS_KEXEC_FILE_LOAD}

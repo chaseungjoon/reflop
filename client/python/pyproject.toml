@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reflop"
+version = "0.1.0"
+description = "reFLOP client: use a remote GPU as a calculator, without giving anyone a shell"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "The reFLOP Authors" }]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "torch>=2.6",
+  "protobuf>=5.29,<8",
+  "cryptography>=42",
+  "safetensors>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/chaseungjoon/reflop"
+
+[project.scripts]
+reflop = "reflop.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["reflop"]
+
+[tool.hatch.build.targets.sdist]
+include = ["reflop", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]

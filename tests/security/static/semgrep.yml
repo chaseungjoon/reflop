@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# Optional semgrep mirror of check_worker.py (the AST checker is authoritative
+# and runs in CI without extra tools). Run: semgrep --config tests/security/static/semgrep.yml server/worker
+rules:
+  - id: reflop-no-code-loading
+    languages: [python]
+    severity: ERROR
+    message: "I1: the worker must never load or execute client-supplied code"
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+      - pattern: compile(...)
+      - pattern: __import__(...)
+      - pattern: torch.load(...)
+      - pattern: torch.jit.load(...)
+      - pattern: torch.export.load(...)
+      - pattern: torch.compile(...)
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+      - pattern: os.fork(...)
+  - id: reflop-no-banned-imports
+    languages: [python]
+    severity: ERROR
+    message: "I1: banned module in worker code"
+    pattern-either:
+      - pattern: import pickle
+      - pattern: import marshal
+      - pattern: import subprocess
+      - pattern: import importlib
+      - pattern: import multiprocessing
+      - pattern: import dill
+      - pattern: import cloudpickle
+      - pattern: import shelve
+  - id: reflop-no-dynamic-getattr
+    languages: [python]
+    severity: ERROR
+    message: "I2: dispatch must be by static table, never by a runtime name"
+    patterns:
+      - pattern: getattr($OBJ, $NAME, ...)
+      - pattern-not: getattr($OBJ, "...", ...)

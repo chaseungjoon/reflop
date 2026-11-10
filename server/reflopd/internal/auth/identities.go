@@ -68,9 +68,11 @@ type db struct {
 // methods are safe for concurrent use; another reflopd command (e.g.
 // `reflopd revoke`) changes the file and the daemon reloads on notice.
 type Store struct {
-	mu   sync.Mutex
-	path string
-	db   db
+	mu    sync.Mutex
+	path  string
+	db    db
+	mtime time.Time
+	size  int64
 }
 
 // Open loads (or initializes) the store.
@@ -83,6 +85,23 @@ func Open(dir string) (*Store, error) {
 func (s *Store) Reload() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.reloadLocked()
+}
+
+// refreshLocked reloads when another reflopd command changed the file
+// (invite, revoke, ssh key registration).
+func (s *Store) refreshLocked() {
+	st, err := os.Stat(s.path)
+	if err != nil || (st.ModTime().Equal(s.mtime) && st.Size() == s.size) {
+		return
+	}
+	_ = s.reloadLocked()
+}
+
+func (s *Store) reloadLocked() error {
+	if st, err := os.Stat(s.path); err == nil {
+		s.mtime, s.size = st.ModTime(), st.Size()
+	}
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		s.db = db{}
@@ -106,7 +125,13 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return config.WriteFileAtomic(s.path, append(b, '\n'), 0o600)
+	if err := config.WriteFileAtomic(s.path, append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	if st, err := os.Stat(s.path); err == nil {
+		s.mtime, s.size = st.ModTime(), st.Size()
+	}
+	return nil
 }
 
 func randHex(n int) string {
@@ -124,6 +149,7 @@ func (s *Store) CreateInvite(name string, ttl time.Duration) (*Invite, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	for _, id := range s.db.Identities {
 		if id.Name == name && id.Revoked {
 			return nil, fmt.Errorf("identity %q was revoked; choose another name", name)
@@ -162,6 +188,7 @@ func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	var inv *Invite
 	idHex := hex.EncodeToString(req.InviteId)
 	for _, x := range s.db.Invites {
@@ -205,6 +232,7 @@ func (s *Store) AddKey(name string, pub []byte, via, comment string) (*Identity,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	if owner := s.byKeyLocked(pub); owner != nil {
 		if owner.Name == name {
 			return owner, nil
@@ -254,6 +282,7 @@ func (s *Store) Authenticate(req *pb.Authenticate, nonce, serverFP []byte, wantI
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	id := s.byKeyLocked(req.PublicKey)
 	if id == nil || id.Revoked {
 		return nil, ErrAuth
@@ -272,6 +301,7 @@ func (s *Store) Authenticate(req *pb.Authenticate, nonce, serverFP []byte, wantI
 func (s *Store) Revoke(name string) (*Identity, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	id := s.byNameLocked(name)
 	if id == nil {
 		return nil, fmt.Errorf("no identity named %q", name)
@@ -291,6 +321,7 @@ func (s *Store) Revoke(name string) (*Identity, error) {
 func (s *Store) List() []Identity {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	out := make([]Identity, 0, len(s.db.Identities))
 	for _, id := range s.db.Identities {
 		out = append(out, *id)
@@ -303,6 +334,7 @@ func (s *Store) List() []Identity {
 func (s *Store) Get(name string) (Identity, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	if id := s.byNameLocked(name); id != nil {
 		return *id, true
 	}
@@ -313,6 +345,7 @@ func (s *Store) Get(name string) (Identity, bool) {
 func (s *Store) IsActive(idHex string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.refreshLocked()
 	for _, id := range s.db.Identities {
 		if id.ID == idHex {
 			return !id.Revoked
