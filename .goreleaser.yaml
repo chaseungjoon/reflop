@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# Releases are cut only by pushing a v* tag (see .github/workflows/release.yml).
+version: 2
+project_name: reflopd
+
+before:
+  hooks:
+    - go mod download
+    # The Python client wheel ships in the same release (install.sh, `reflop update`).
+    - sh -c 'sed -i "s/^__version__ = .*/__version__ = \"{{ .Version }}\"/" client/python/reflop/__init__.py'
+    - sh -c 'cd client/python && python3 -m pip wheel --no-deps -w ../../dist-wheel .'
+
+builds:
+  - id: reflopd
+    main: ./server/reflopd/cmd/reflopd
+    binary: reflopd
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Commit={{ .FullCommit }}
+      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, NOTICE, README.md, CHANGELOG.md]
+
+release:
+  github:
+    owner: chaseungjoon
+    name: reflop
+  prerelease: auto
+  extra_files:
+    - glob: ./dist-wheel/reflop-*.whl
+  footer: |
+    ## Install
+
+    ```sh
+    # Guest (macOS or Linux): the reflop client
+    curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+    # Owner (Linux, the machine with the GPU): reflopd
+    curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+    ```
+
+    Already installed? `reflop update` / `reflopd update`.
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+  extra_files:
+    - glob: ./dist-wheel/reflop-*.whl
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true

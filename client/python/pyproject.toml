@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reflop"
-version = "0.1.0"
+dynamic = ["version"]
 description = "reFLOP client: use a remote GPU as a calculator, without giving anyone a shell"
 readme = "README.md"
 license = "Apache-2.0"
@@ -23,6 +23,7 @@ dependencies = [
   "protobuf>=5.29,<8",
   "cryptography>=42",
   "safetensors>=0.4",
+  "numpy>=1.24",
 ]
 
 [project.urls]
@@ -30,6 +31,9 @@ Homepage = "https://github.com/chaseungjoon/reflop"
 
 [project.scripts]
 reflop = "reflop.cli.main:main"
+
+[tool.hatch.version]
+path = "reflop/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["reflop"]

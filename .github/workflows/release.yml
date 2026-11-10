@@ -1,0 +1,45 @@
+name: Release
+
+# Runs only when a v* tag is pushed. Nothing is released otherwise.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install hatchling
+      - run: go test ./...
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir verify && cd verify
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"
+          sha256sum --check checksums.txt
+          tar -xzf reflopd_${TAG#v}_linux_amd64.tar.gz
+          ./reflopd version | tee /dev/stderr | grep -q "${TAG#v}"
+          ls reflop-${TAG#v}-py3-none-any.whl

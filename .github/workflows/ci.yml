@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (vet, tests, sandbox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l server pkg clib | tee /dev/stderr)"
+      - name: go vet
+        run: go vet ./... && go vet -tags reflop_probes ./...
+      - name: go mod tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+      - name: tests (race; includes the behavioral seccomp test)
+        run: go test -race -shuffle=on ./...
+      - name: fuzz (short)
+        run: |
+          go test -run=^$ -fuzz=FuzzUnmarshalEnvelope -fuzztime=20s ./pkg/wire
+          go test -run=^$ -fuzz=FuzzSafetensors -fuzztime=20s ./server/reflopd/internal/store
+          go test -run=^$ -fuzz=FuzzManifest -fuzztime=20s ./server/reflopd/internal/store
+      - name: build (amd64, arm64)
+        run: |
+          for a in amd64 arm64; do CGO_ENABLED=0 GOARCH=$a go build -trimpath -o /tmp/reflopd-$a ./server/reflopd/cmd/reflopd; done
+          /tmp/reflopd-amd64 version
+      - name: libreflop
+        run: make clib
+
+  python:
+    name: Python (worker, client, security corpus, conformance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: environment (CPU PyTorch)
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple --index-strategy unsafe-best-match \
+            torch torchvision protobuf pytest hypothesis pyyaml cryptography safetensors ruff
+      - name: static analysis of server code (I1/I2)
+        run: python3 tests/security/static/check_worker.py
+      - name: codegen is up to date (I10)
+        run: .venv/bin/python codegen/gen.py --check
+      - name: lint
+        run: .venv/bin/python -m ruff check client/python server/worker tests codegen spikes
+      - name: tests
+        run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests
+      - name: wheel
+        run: cd client/python && ../../.venv/bin/python -m pip wheel --no-deps -w ../../dist . && ls ../../dist
+
+  macos-client:
+    name: Client on macOS (Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: environment
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python torch torchvision protobuf pytest pyyaml cryptography safetensors
+      - name: client tests against the in-process worker (CPU)
+        run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests/conformance tests/e2e/test_models.py tests/security/corpus/test_client_protection.py
+
+  install-script:
+    name: install.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n install.sh && sudo apt-get install -y shellcheck && shellcheck -s sh install.sh
+
+  release-config:
+    name: GoReleaser config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
