@@ -15,7 +15,7 @@
 
 ### Lend your GPU as a calculator.
 
-Guests send tensor math. Never code, never a shell.
+Guests send tensor math. Never code execution, never shell access.
 
 [Install](#install) · [Quick Start](#quick-start) · [How it works](#how-it-works) · [Security](#what-the-owner-is-protected-from) · [Docs](#more-information)
 
