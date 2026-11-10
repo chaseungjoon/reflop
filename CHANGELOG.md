@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-10)
 
 First implementation of PLAN.md milestones M0–M7.
 
