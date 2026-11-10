@@ -13,17 +13,21 @@
 [![Linux](https://img.shields.io/badge/server-Linux-FCC624?logo=linux&logoColor=black)](docs/OWNER_GUIDE.md)
 [![macOS](https://img.shields.io/badge/client-macOS%20%7C%20Linux-000000?logo=apple&logoColor=white)](docs/GUEST_GUIDE.md)
 
-**Lend your GPU as a calculator. They don't get shell access, they can only run floating point calculations.**
+### Lend your GPU as a calculator.
+
+Guests send tensor math. Never code, never a shell.
+
+[Install](#install) · [Quick Start](#quick-start) · [How it works](#how-it-works) · [Security](#what-the-owner-is-protected-from) · [Docs](#more-information)
 
 </div>
 
 ---
 
-One person in the team has a powerful GPU workstation. Everyone else trains on it from
-their laptop. 
-
-**reFLOP** sends raw tensor math to the GPU directly, and ***only tensor math*** is sent: your
-Python program keeps running on your machine.
+| | **Owner** | **Guest** |
+|---|---|---|
+| **Has** | the GPU workstation (Linux) | a laptop (macOS or Linux, no CUDA needed) |
+| **Runs** | `reflopd` | their own PyTorch code, unchanged except for the device |
+| **Gets** | a GPU that stays busy, and a machine that stays theirs | the GPU's FLOPs, and nothing else |
 
 ```python
 import torch, reflop
@@ -37,81 +41,66 @@ for x, y in loader:
     print(loss.item())         # only this number comes back
 ```
 
-Unmodified CUDA scripts work too:
+Already have a CUDA script? Don't touch it:
 
 ```sh
-# instead of
-python train.py
-
-# run
-reflop run python train.py    # .cuda() and device="cuda" go to the reflop server
+reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 ```
 
-The server **never runs full code**. It accepts operator graphs over a closed set of
-582 operators (571 PyTorch overloads and 11 reflop-native ones), validates them, and executes them in a sandboxed worker.
-
-A Guest cannot delete the Owner's files, fill the disk, start processes, open
-network connections, or read anyone else's data, because no request can express
-any of that.
-
-Only floating point calculations are sent to the server.
-
-## Table of Contents
-
-- [Install](#install)
-- [Quick Start](#quick-start)
-- [What a step does](#what-a-step-does)
-- [What the Owner is protected from](#what-the-owner-is-protected-from)
-- [Datasets](#datasets)
-- [Fast steady-state training](#fast-steady-state-training)
-- [More Information](#more-information)
-- [Development](#development)
-- [License](#license)
+> [!IMPORTANT]
+> **The server never runs Guest code.** It accepts graphs over a closed set of
+> 582 operators (571 PyTorch overloads, 11 reflop-native), validates them, and
+> runs them in a sandboxed worker. No request can say "delete a file", "open a
+> socket" or "start a process", so a Guest can't do any of those.
 
 ## Install
 
-> The Owner (the machine with the GPU, Linux) installs `reflopd`. Guests (macOS or
-> Linux laptops, no CUDA needed) install the `reflop` client.
+| Side | Platform | Needs |
+|---|---|---|
+| **Owner** installs `reflopd` | Linux x86_64 or aarch64, glibc ≥ 2.28 | nothing: no root, no Docker, no Python. NVIDIA driver ≥ 525 is optional (without a GPU, reflopd serves the CPU) |
+| **Guest** installs `reflop` | macOS (Apple Silicon or Intel) or Linux | Python ≥ 3.10, PyTorch ≥ 2.6 |
 
-### Requirements
+### Install script (recommended)
 
-- Server: Linux x86_64 or aarch64, glibc ≥ 2.28. An NVIDIA GPU with driver ≥ 525 is
-  optional (without one, reflopd serves the CPU). No root, no Docker, no Python.
-- Client: Python ≥ 3.10 with PyTorch ≥ 2.6. macOS (Apple Silicon or Intel) or Linux.
-
-### Install Script (Recommended)
-
-- Owner, on the GPU workstation:
+**Owner**, on the GPU workstation:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
 ```
 
-- Guest, on the laptop:
+**Guest**, on the laptop:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
 ```
 
 `reflopd` goes to `~/.local/bin`. The client goes into the active virtual
-environment if one is active, otherwise into its own environment managed by `uv`
+environment if there is one, otherwise into its own environment managed by `uv`
 (or a private venv). Both downloads are checked against the release's SHA-256 sums.
 
-- Update
+**Update:**
 
 ```sh
 reflopd update     # Owner
 reflop update      # Guest
 ```
 
-### Releases tab
+<details>
+<summary><b>From the Releases tab</b></summary>
+
+<br>
 
 Download `reflopd_<version>_linux_<arch>.tar.gz` or
 `reflop-<version>-py3-none-any.whl` from
 [Releases](https://github.com/chaseungjoon/reflop/releases), verify it against
 `checksums.txt`, and put `reflopd` on your `PATH` or `pip install` the wheel.
 
-### Build from source
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
+
+<br>
 
 Requires Go (see `go.mod`) and, for the client, Python 3.10+:
 
@@ -120,6 +109,8 @@ git clone https://github.com/chaseungjoon/reflop.git && cd reflop
 make build                                  # bin/reflopd, with the worker embedded
 pip install ./client/python                 # the reflop client
 ```
+
+</details>
 
 ## Quick Start
 
@@ -140,35 +131,27 @@ python train.py                             # with reflop.device(), or:
 reflop run python train.py                  # unmodified CUDA code
 ```
 
-## What a step does
+## How it works
 
-1. **Records** the step instead of running it.
+```mermaid
+flowchart LR
+    subgraph G["Guest laptop"]
+        A["your Python"] --> B["record ops"]
+    end
+    subgraph O["Owner workstation"]
+        C["validate"] --> D["sandboxed worker"] --> E[("GPU")]
+    end
+    B -- "graph once, then hash + inputs" --> C
+    D -- "the loss" --> A
+```
 
-   Every PyTorch operation on a `reflop` tensor is recorded on your machine.
-   Shapes and dtypes are computed locally, so shape-dependent code works without
-   round trips.
-
-2. **Sends a graph** when a value is needed.
-
-   `loss.item()`, `print(t)` or `.cpu()` turns the recorded operations into one
-   graph. The graph is sent once; later steps send only its hash and the new inputs.
-
-3. **Validates** it on the server.
-
-   Strict decoding, the operator whitelist, schema and argument checks, shape
-   inference on meta tensors, and a peak-memory estimate against the GPU's size,
-   all before any GPU memory is allocated. Index arguments are bounds-checked
-   before each kernel launches.
-
-4. **Runs** it in a sandboxed worker.
-
-   One worker process per session, with no network, no `exec`, no `fork`, and no
-   access to the Owner's files. Weights and optimizer state stay on the server
-   between steps.
-
-5. **Returns** only what you asked for.
-
-   Usually a few bytes: the loss.
+| Step | Where | What happens |
+|---|---|---|
+| **1. Record** | Guest | Every PyTorch operation on a `reflop` tensor is recorded instead of run. Shapes and dtypes are computed locally, so shape-dependent code needs no round trip. |
+| **2. Send** | Guest → Owner | `loss.item()`, `print(t)` or `.cpu()` turns the recording into one graph. The graph is sent once; later steps send only its hash and the new inputs. |
+| **3. Validate** | Owner | Strict decoding, the operator whitelist, schema and argument checks, shape inference on meta tensors, and a peak-memory estimate against the GPU's size, all before any GPU memory is allocated. Index arguments are bounds-checked before each kernel launches. |
+| **4. Run** | Owner | One worker process per session, with no network, no `exec`, no `fork`, and no access to the Owner's files. Weights and optimizer state stay on the server between steps. |
+| **5. Return** | Owner → Guest | Only what you asked for. Usually a few bytes: the loss. |
 
 ## What the Owner is protected from
 
@@ -183,9 +166,10 @@ reflop run python train.py                  # unmodified CUDA code
 | hog the GPU | `reflopd pause`, `kill`, `yield --auto`; optional quotas |
 | impersonate the server | the client pins the server key at pairing and refuses a different one |
 
-`reflopd doctor` shows which protections are active on your machine, and
-`reflopd selftest --security` checks them on a live worker. Details:
-[threat model](docs/THREAT_MODEL.md).
+> [!TIP]
+> `reflopd doctor` shows which protections are active on your machine, and
+> `reflopd selftest --security` checks them on a live worker. Details:
+> [threat model](docs/THREAT_MODEL.md).
 
 ## Datasets
 
@@ -215,11 +199,16 @@ for x, y in data:
     loss = step(x, y)                 # one request per step after two warm-up calls
 ```
 
-ResNet-18 on CIFAR-10 shapes (batch 128, RTX 5070, client on the same machine
-over TLS) runs at 74% of the throughput of plain PyTorch on the same GPU with
-`reflop.capture`, and 19% in eager mode. Steps whose Python numbers change every
-step (a non-capturable Adam's bias correction, a Python learning-rate schedule)
-are detected and refused; use `capturable=True` or tensor learning rates.
+ResNet-18, CIFAR-10 shapes, batch 128, RTX 5070, client on the same machine over TLS:
+
+| Mode | Throughput vs plain PyTorch on the same GPU |
+|---|---|
+| `reflop.capture` | **74%** |
+| eager | 19% |
+
+Steps whose Python numbers change every step (a non-capturable Adam's bias
+correction, a Python learning-rate schedule) are detected and refused; use
+`capturable=True` or tensor learning rates.
 
 ## More Information
 
@@ -236,25 +225,27 @@ are detected and refused; use `capturable=True` or tensor learning rates.
 | `reflop verify` | cross-check small graphs against your CPU |
 | `with reflop.placement("local"):` | run part of the program on the client |
 
-- [Owner guide](docs/OWNER_GUIDE.md): setup, exposure, Level 1, SSH mode, rails, quotas, troubleshooting
-- [Guest guide](docs/GUEST_GUIDE.md): API, capture, datasets, placement, what works and what does not
-- [C and C++ API](clib/README.md): `libreflop` for non-Python programs
-- [Threat model](docs/THREAT_MODEL.md) · [Design decisions](docs/DECISIONS.md) · [Spike report](docs/SPIKE_REPORT.md)
-- [Operator set](docs/OPSET.md) · [Design plan](PLAN.md)
+**Guides:** [Owner guide](docs/OWNER_GUIDE.md) (setup, exposure, Level 1, SSH mode, rails, quotas, troubleshooting)
+· [Guest guide](docs/GUEST_GUIDE.md) (API, capture, datasets, placement, what works and what doesn't)
+· [C and C++ API](clib/README.md) (`libreflop` for non-Python programs)
 
-**Limitations:** the server sees your data and models in plaintext; reFLOP
-protects the Owner's machine from Guests, not Guests' data from the Owner.
-Arbitrary CPU programs, custom CUDA or Triton kernels, and server-side image or
-text decoding are not supported. GPU results can differ bitwise from local runs
-(TF32, non-deterministic kernels). Killing a worker loses its session state.
-[All limitations](docs/THREAT_MODEL.md#known-limitations).
+**Design:** [Threat model](docs/THREAT_MODEL.md) · [Design decisions](docs/DECISIONS.md) · [Spike report](docs/SPIKE_REPORT.md) · [Operator set](docs/OPSET.md)
 
-## Relation to recom
+> [!WARNING]
+> **Limitations**
+> - The Owner can see Guests' data and models. reFLOP protects the Owner's machine from Guests, not the other way around.
+> - No arbitrary CPU programs, custom CUDA or Triton kernels, or server-side image and text decoding.
+> - GPU results can differ bitwise from local runs (TF32, non-deterministic kernels).
+> - Killing a worker loses its session state.
+>
+> [All limitations](docs/THREAT_MODEL.md#known-limitations)
 
-[recom](https://github.com/chaseungjoon/recom) runs your commands on your own
-remote machine over SSH: full access, by design. reFLOP is for lending a GPU to
-people you don't fully trust. It runs only whitelisted tensor operators and gives
-no shell. Use recom for your own server and reFLOP for a shared one.
+## reFLOP vs recom
+
+| | Use it for | Access |
+|---|---|---|
+| [recom](https://github.com/chaseungjoon/recom) | your own remote machine | full shell over SSH |
+| **reFLOP** | a GPU shared with people you don't fully trust | whitelisted tensor operators only |
 
 ## Development
 
