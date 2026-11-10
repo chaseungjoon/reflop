@@ -6,11 +6,10 @@ from __future__ import annotations
 import os
 
 import pytest
+import reflop
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import reflop
 
 DEVICE = "cuda" if torch.cuda.is_available() and os.environ.get("REFLOP_TEST_DEVICE", "cuda") == "cuda" else "cpu"
 X = torch.randn(32, 16, generator=torch.Generator().manual_seed(1))
