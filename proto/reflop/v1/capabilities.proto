@@ -39,6 +39,9 @@ message Limits {
   uint64 max_fetch_bytes = 8;
   uint32 max_list_length = 9;
   uint64 upload_chunk_bytes = 10;
+  uint32 max_handles_per_session = 11;
+  uint32 max_graphs_per_session = 12;
+  uint64 max_manifest_bytes = 13;
   // Active safety rails (informational for the client).
   uint64 disk_free_floor_bytes = 20;
   uint32 disk_free_floor_percent = 21;

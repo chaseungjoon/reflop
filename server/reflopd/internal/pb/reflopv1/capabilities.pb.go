@@ -191,6 +191,9 @@ type Limits struct {
 	MaxFetchBytes        uint64                 `protobuf:"varint,8,opt,name=max_fetch_bytes,json=maxFetchBytes,proto3" json:"max_fetch_bytes,omitempty"`
 	MaxListLength        uint32                 `protobuf:"varint,9,opt,name=max_list_length,json=maxListLength,proto3" json:"max_list_length,omitempty"`
 	UploadChunkBytes     uint64                 `protobuf:"varint,10,opt,name=upload_chunk_bytes,json=uploadChunkBytes,proto3" json:"upload_chunk_bytes,omitempty"`
+	MaxHandlesPerSession uint32                 `protobuf:"varint,11,opt,name=max_handles_per_session,json=maxHandlesPerSession,proto3" json:"max_handles_per_session,omitempty"`
+	MaxGraphsPerSession  uint32                 `protobuf:"varint,12,opt,name=max_graphs_per_session,json=maxGraphsPerSession,proto3" json:"max_graphs_per_session,omitempty"`
+	MaxManifestBytes     uint64                 `protobuf:"varint,13,opt,name=max_manifest_bytes,json=maxManifestBytes,proto3" json:"max_manifest_bytes,omitempty"`
 	// Active safety rails (informational for the client).
 	DiskFreeFloorBytes   uint64 `protobuf:"varint,20,opt,name=disk_free_floor_bytes,json=diskFreeFloorBytes,proto3" json:"disk_free_floor_bytes,omitempty"`
 	DiskFreeFloorPercent uint32 `protobuf:"varint,21,opt,name=disk_free_floor_percent,json=diskFreeFloorPercent,proto3" json:"disk_free_floor_percent,omitempty"`
@@ -302,6 +305,27 @@ func (x *Limits) GetMaxListLength() uint32 {
 func (x *Limits) GetUploadChunkBytes() uint64 {
 	if x != nil {
 		return x.UploadChunkBytes
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxHandlesPerSession() uint32 {
+	if x != nil {
+		return x.MaxHandlesPerSession
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxGraphsPerSession() uint32 {
+	if x != nil {
+		return x.MaxGraphsPerSession
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxManifestBytes() uint64 {
+	if x != nil {
+		return x.MaxManifestBytes
 	}
 	return 0
 }
@@ -564,7 +588,7 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\n" +
 	"tf32_cudnn\x18\x02 \x01(\bR\ttf32Cudnn\x12$\n" +
 	"\rdeterministic\x18\x03 \x01(\bR\rdeterministic\x12'\n" +
-	"\x0fcudnn_benchmark\x18\x04 \x01(\bR\x0ecudnnBenchmark\"\xf2\x06\n" +
+	"\x0fcudnn_benchmark\x18\x04 \x01(\bR\x0ecudnnBenchmark\"\x8c\b\n" +
 	"\x06Limits\x12&\n" +
 	"\x0fmax_frame_bytes\x18\x01 \x01(\x04R\rmaxFrameBytes\x12\x1b\n" +
 	"\tmax_nodes\x18\x02 \x01(\rR\bmaxNodes\x12(\n" +
@@ -576,7 +600,10 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\x0fmax_fetch_bytes\x18\b \x01(\x04R\rmaxFetchBytes\x12&\n" +
 	"\x0fmax_list_length\x18\t \x01(\rR\rmaxListLength\x12,\n" +
 	"\x12upload_chunk_bytes\x18\n" +
-	" \x01(\x04R\x10uploadChunkBytes\x121\n" +
+	" \x01(\x04R\x10uploadChunkBytes\x125\n" +
+	"\x17max_handles_per_session\x18\v \x01(\rR\x14maxHandlesPerSession\x123\n" +
+	"\x16max_graphs_per_session\x18\f \x01(\rR\x13maxGraphsPerSession\x12,\n" +
+	"\x12max_manifest_bytes\x18\r \x01(\x04R\x10maxManifestBytes\x121\n" +
 	"\x15disk_free_floor_bytes\x18\x14 \x01(\x04R\x12diskFreeFloorBytes\x125\n" +
 	"\x17disk_free_floor_percent\x18\x15 \x01(\rR\x14diskFreeFloorPercent\x12/\n" +
 	"\x14host_ram_floor_bytes\x18\x16 \x01(\x04R\x11hostRamFloorBytes\x129\n" +

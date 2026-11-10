@@ -276,6 +276,10 @@ message Event {
   int64 time_unix_ms = 3;
 }
 
+// Reseed replaces the session generator's seed (reflop.seed(n)).
+message Reseed { uint64 seed = 1; }
+message Reseeded {}
+
 message Ping { uint64 nonce = 1; }
 message Pong { uint64 nonce = 1; }
 
@@ -307,6 +311,7 @@ message Envelope {
     Ping ping = 28;
     ListSnapshots list_snapshots = 29;
     DeleteSnapshot delete_snapshot = 30;
+    Reseed reseed = 31;
 
     // server → client
     Error error = 100;
@@ -329,5 +334,6 @@ message Envelope {
     Event event = 117;
     Pong pong = 118;
     SnapshotList snapshot_list = 119;
+    Reseeded reseeded = 120;
   }
 }
