@@ -21,6 +21,7 @@ import (
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
 )
 
 // ControlRequest is one Owner command on the control socket.
@@ -244,8 +245,29 @@ func (s *Server) status(withStats bool) StatusView {
 	return v
 }
 
+// usageNow is the ledger plus what live sessions and connections have used
+// so far (held time and traffic are only booked when they end).
+func (s *Server) usageNow() usage.Report {
+	rep := s.usage.Snapshot()
+	for _, sess := range s.allSessions() {
+		rep.Get(sess.Identity.Name).SessionUs += uint64(time.Since(sess.created).Microseconds())
+	}
+	s.mu.Lock()
+	for c := range s.conns {
+		if name := c.account.Load(); name != nil {
+			t := rep.Get(*name)
+			t.BytesUp += c.bytesUp.Load()
+			t.BytesDown += c.bytesDown.Load()
+		}
+	}
+	s.mu.Unlock()
+	return rep
+}
+
 func (s *Server) control(ctx context.Context, req ControlRequest) (any, error) {
 	switch req.Cmd {
+	case "usage":
+		return s.usageNow(), nil
 	case "status":
 		return s.status(false), nil
 	case "top":

@@ -203,6 +203,7 @@ events are informational only: nothing in them makes a Guest's client do anythin
 ```sh
 reflopd status           # listen address, key, runtime, devices, sandbox, sessions
 reflopd top -w           # live: executes, TFLOP, host and GPU memory per session
+reflopd usage            # compute used per Guest (device time, FLOPs, traffic)
 reflopd audit --name alice --since 2h
 ```
 
@@ -210,6 +211,36 @@ The audit log records connections, pairing, graph registrations (node count and
 an operator histogram), executes (duration, FLOP estimate), transfers,
 rejections with their validation stage, rail hits and kills. It never records
 tensor contents. Logs are kept 30 days in `~/.local/share/reflop/audit/`.
+
+### Compute used per Guest
+
+```sh
+reflopd usage                # lifetime totals for every Guest
+reflopd usage alice          # one Guest, with a per-device breakdown
+reflopd usage --since 24h    # only the last day (from the audit log)
+reflopd usage --json
+```
+
+```
+compute used since 2026-11-10 21:54, live from reflopd
+IDENTITY  DEVICE TIME  SHARE  BUSY  EST. TFLOP  EXECUTES  SESSIONS  SESSION TIME  UP       DOWN       LAST ACTIVE
+alice     22m08s       85%    67%   3467.6      196579    12        33m02s        5.6 GiB  408.4 MiB  just now
+bob       1m50s        7%     59%   307.9       13481     7         3m06s         339 MiB  998.0 KiB  20m00s ago
+```
+
+- **DEVICE TIME** is the main measure: how long the device ran the Guest's
+  executes, measured by the worker (the reFLOP equivalent of GPU-hours). It is
+  measured rather than estimated and charges memory-bound work fairly.
+- **EST. TFLOP** is the server's static FLOP estimate; it undercounts work that
+  is limited by memory bandwidth rather than arithmetic.
+- **SESSION TIME** is how long the Guest's sessions held a worker and its device
+  memory; **BUSY** is device time divided by session time.
+- **UP/DOWN** is traffic between the Guest and the server.
+
+Totals are kept per identity name in `usage.json` in the state directory and
+survive restarts. The first `reflopd` that has it starts the ledger from what
+the audit log still holds. `--since` recomputes from the audit log, so it only
+reaches back as far as the log's retention.
 
 ## Files and directories
 

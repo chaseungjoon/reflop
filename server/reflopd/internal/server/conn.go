@@ -42,6 +42,7 @@ type clientConn struct {
 	bytesUp   atomic.Uint64
 	bytesDown atomic.Uint64
 	eventsRID atomic.Uint64
+	account   atomic.Pointer[string] // identity name, readable from other goroutines
 }
 
 func (s *Server) handleConn(rw io.ReadWriteCloser, transport, remote, sshID string) {
@@ -73,6 +74,7 @@ func (c *clientConn) close() {
 		if c.identity != nil {
 			c.srv.audit.Write(audit.Record{Identity: c.identity.Name, ID: c.identity.ID, Event: "disconnect",
 				Fields: map[string]any{"bytes_up": c.bytesUp.Load(), "bytes_down": c.bytesDown.Load()}})
+			c.srv.usage.Transfer(c.identity.Name, c.bytesUp.Load(), c.bytesDown.Load())
 		}
 	})
 }
@@ -169,6 +171,7 @@ func (c *clientConn) handshake() error {
 				return err
 			}
 			c.identity = id
+			c.account.Store(&id.Name)
 			caps := c.srv.capabilitiesFor(id)
 			c.srv.audit.Write(audit.Record{Identity: id.Name, ID: id.ID, Event: "connect",
 				Fields: map[string]any{"remote": c.remote, "transport": c.transport}})

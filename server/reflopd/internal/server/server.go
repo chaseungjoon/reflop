@@ -33,6 +33,7 @@ import (
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/store"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
 )
 
 // DeviceSlot is one device this server exposes.
@@ -65,6 +66,7 @@ type Server struct {
 	key       *auth.ServerKey
 	ids       *auth.Store
 	audit     *audit.Log
+	usage     *usage.Ledger
 	store     *store.Store
 	runtime   runtime.Installed
 	workerDir string
@@ -111,11 +113,15 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	ul, err := usage.Open(filepath.Join(l.State, "usage.json"), l.Audit())
+	if err != nil {
+		return nil, err
+	}
 	logger := opts.Log
 	if logger == nil {
 		logger = log.New(os.Stderr, "reflopd: ", log.LstdFlags)
 	}
-	s := &Server{layout: l, opts: opts, config: cfg, key: key, ids: ids, audit: al, logger: logger,
+	s := &Server{layout: l, opts: opts, config: cfg, key: key, ids: ids, audit: al, usage: ul, logger: logger,
 		sessions: map[string]*Session{}, conns: map[*clientConn]bool{}, events: newBroadcaster(),
 		throttles: map[string]*bucket{}, started: time.Now()}
 	s.store = store.New(l.Store(), int64(cfg.Limits.UploadChunkBytes), cfg.Limits.MaxTensorNumel,
@@ -619,6 +625,12 @@ func (s *Server) Serve(ctx context.Context) error {
 		return err
 	}
 	go s.monitor(ctx)
+	usageCtx, stopUsage := context.WithCancel(context.Background())
+	usageDone := make(chan struct{})
+	go func() {
+		s.usage.Run(usageCtx, 30*time.Second)
+		close(usageDone)
+	}()
 	go s.acceptControl(ctx, ctl)
 	go s.acceptBridge(ctx, bridge)
 	var wg sync.WaitGroup
@@ -645,6 +657,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 	wg.Wait()
+	stopUsage()
+	<-usageDone
 	s.audit.Close()
 	return nil
 }

@@ -63,6 +63,7 @@ whitelisted tensor operators in sandboxed workers. Guests never get a shell.
   reflopd up                       first-time setup and start (rootless)
   reflopd invite --name alice      create a one-time pairing code
   reflopd status | top | audit     see who is using the GPU
+  reflopd usage                    compute used per Guest (device time, FLOPs)
   reflopd pause | resume | kill    Owner controls
   reflopd doctor                   check the sandbox and the runtime`,
 		SilenceUsage:  true,
@@ -71,7 +72,7 @@ whitelisted tensor operators in sandboxed workers. Guests never get a shell.
 	root.AddCommand(
 		upCmd(), serveCmd(), stopCmd(), statusCmd(), installCmd(), uninstallCmd(),
 		inviteCmd(), usersCmd(), revokeCmd(), quotaCmd(), railsCmd(),
-		pauseCmd(), resumeCmd(), killCmd(), yieldCmd(), sayCmd(), topCmd(), auditCmd(),
+		pauseCmd(), resumeCmd(), killCmd(), yieldCmd(), sayCmd(), topCmd(), usageCmd(), auditCmd(),
 		doctorCmd(), selftestCmd(), runtimeCmd(), updateCmd(), versionCmd(),
 	)
 	return root

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 (2026-11-11)
+
+- `reflopd usage [NAME] [--since DUR] [--json]`: compute used per Guest.
+  The main measure is device time (how long the device ran the Guest's
+  executes, measured by the worker), with estimated FLOPs, executes, sessions,
+  session time and traffic. Lifetime totals persist in `usage.json` in the
+  state directory, starting from what the audit log holds; `--since` reads the
+  audit log.
+
 ## 0.1.2 (2026-11-10)
 
 - Client: operators that PyTorch builds out of others in C++ (such as the

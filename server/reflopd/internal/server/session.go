@@ -116,6 +116,7 @@ func (s *Server) openSession(c *clientConn, req *pb.OpenSession) (*Session, erro
 		<-w.Done()
 		sess.lost(w.ExitReason())
 	}()
+	s.usage.SessionOpen(sess.Identity.Name)
 	s.audit.Write(audit.Record{Identity: sess.Identity.Name, ID: sess.Identity.ID, Session: sess.hex(), Event: "session_open",
 		Fields: map[string]any{"device": slot.Name, "sandbox": w.Ready.GetSandbox(), "landlock_abi": w.Report.LandlockABI}})
 	return sess, nil
@@ -340,6 +341,7 @@ func (s *Session) deliver(env *pb.Envelope) {
 		s.srv.audit.Write(audit.Record{Identity: s.Identity.Name, ID: s.Identity.ID, Session: s.hex(), Event: "request_failed",
 			Fields: map[string]any{"kind": r.kind, "code": e.Code.String(), "stage": e.Stage.String(), "message": trunc(e.Message, 300)}})
 	} else if er := env.GetExecuteResult(); er != nil && env.End {
+		s.srv.usage.Execute(s.Identity.Name, s.Device.Name, er.DurationUs, er.Flops, er.PeakMemoryBytes)
 		s.srv.audit.Write(audit.Record{Identity: s.Identity.Name, ID: s.Identity.ID, Session: s.hex(), Event: "execute",
 			Fields: map[string]any{"us": er.DurationUs, "flops": er.Flops, "peak": er.PeakMemoryBytes}})
 	}
@@ -391,6 +393,7 @@ func (s *Session) lost(why string) {
 		}
 	}
 	os.RemoveAll(s.srv.layout.SessionScratch(s.hex()))
+	s.srv.usage.SessionEnd(s.Identity.Name, time.Since(s.created))
 	s.srv.audit.Write(audit.Record{Identity: s.Identity.Name, ID: s.Identity.ID, Session: s.hex(), Event: "session_end",
 		Fields: map[string]any{"reason": why, "executes": s.executes, "flops": s.flops}})
 }

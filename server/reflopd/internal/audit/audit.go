@@ -102,9 +102,26 @@ func (l *Log) prune() {
 
 // Query reads records, newest last, optionally for one identity name.
 func Query(dir, identity string, since time.Time, limit int) ([]Record, error) {
-	ents, err := os.ReadDir(dir)
+	var out []Record
+	err := Scan(dir, since, func(r Record) {
+		if identity == "" || r.Identity == identity {
+			out = append(out, r)
+		}
+	})
 	if err != nil {
 		return nil, err
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
+
+// Scan streams every record at or after since, oldest first.
+func Scan(dir string, since time.Time, fn func(Record)) error {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
 	}
 	var files []string
 	for _, e := range ents {
@@ -113,9 +130,8 @@ func Query(dir, identity string, since time.Time, limit int) ([]Record, error) {
 		}
 	}
 	sort.Strings(files)
-	var out []Record
-	for _, fn := range files {
-		f, err := os.Open(filepath.Join(dir, fn))
+	for _, fn2 := range files {
+		f, err := os.Open(filepath.Join(dir, fn2))
 		if err != nil {
 			continue
 		}
@@ -123,21 +139,12 @@ func Query(dir, identity string, since time.Time, limit int) ([]Record, error) {
 		sc.Buffer(make([]byte, 64<<10), 4<<20)
 		for sc.Scan() {
 			var r Record
-			if json.Unmarshal(sc.Bytes(), &r) != nil {
+			if json.Unmarshal(sc.Bytes(), &r) != nil || r.Time.Before(since) {
 				continue
 			}
-			if identity != "" && r.Identity != identity {
-				continue
-			}
-			if r.Time.Before(since) {
-				continue
-			}
-			out = append(out, r)
+			fn(r)
 		}
 		f.Close()
 	}
-	if limit > 0 && len(out) > limit {
-		out = out[len(out)-limit:]
-	}
-	return out, nil
+	return nil
 }
