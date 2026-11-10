@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// TensorPack upload and dataset management (PLAN.md §10).
+//
+// A TensorPack is a JSON manifest plus safetensors shards. The server stores
+// shards content-addressed under a server-chosen path (invariant I7) and
+// validates every shard strictly before issuing a dataset handle.
+
+syntax = "proto3";
+
+package reflop.v1;
+
+import "reflop/v1/graph.proto";
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+// PackBegin starts (or resumes) an upload. The server answers with
+// PackStatus listing the chunks it still needs.
+message PackBegin {
+  string name = 1;       // [a-z0-9_-]{1,64}, metadata only
+  bytes manifest = 2;    // manifest.json bytes (≤ 1 MiB)
+}
+
+message ShardStatus {
+  uint32 shard = 1;
+  repeated uint32 missing_chunks = 2;
+}
+
+message PackStatus {
+  bytes pack_id = 1;          // SHA-256 of the manifest bytes
+  uint64 chunk_bytes = 2;     // chunk size the server expects (4 MiB)
+  repeated ShardStatus shards = 3;  // shards with missing chunks only
+}
+
+message PackChunk {
+  bytes pack_id = 1;
+  uint32 shard = 2;
+  uint32 chunk = 3;
+  bytes data = 4;
+  bytes sha256 = 5;  // SHA-256 of data
+}
+
+message PackCommit {
+  bytes pack_id = 1;
+}
+
+message DatasetTensorInfo {
+  string name = 1;
+  TensorMeta meta = 2;
+}
+
+message DatasetInfo {
+  bytes dataset_id = 1;
+  string name = 2;
+  uint64 num_samples = 3;
+  uint64 bytes = 4;
+  repeated DatasetTensorInfo tensors = 5;
+  int64 created_unix = 6;
+}
+
+message ListDatasets {}
+
+message DatasetList {
+  repeated DatasetInfo datasets = 1;
+}
+
+message DeleteDataset {
+  bytes dataset_id = 1;
+}
+
+message DatasetDeleted {}

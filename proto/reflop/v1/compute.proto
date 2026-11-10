@@ -1,0 +1,333 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// reflop.v1 protocol messages (PLAN.md §6.2, ADR-005).
+//
+// Transport: every message travels as a frame
+//   uint32 big-endian length || protobuf Envelope
+// over TLS 1.3 (daemon mode) or over an SSH forced-command pipe (stdio).
+// Requests carry a client-chosen request_id. Responses echo it. Streams
+// (uploads, fetches, events) send several frames with the same request_id;
+// the last frame of a response stream sets `end`.
+//
+// There is no message by which the server asks the client to act (§6.2).
+
+syntax = "proto3";
+
+package reflop.v1;
+
+import "reflop/v1/graph.proto";
+import "reflop/v1/auth.proto";
+import "reflop/v1/capabilities.proto";
+import "reflop/v1/data.proto";
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+// ---------------------------------------------------------------- errors
+
+enum ErrorCode {
+  ERROR_INVALID = 0;
+  ERROR_INTERNAL = 1;
+  ERROR_PROTOCOL = 2;            // malformed frame, unknown field, bad sequence
+  ERROR_UNAUTHENTICATED = 3;
+  ERROR_PERMISSION_DENIED = 4;
+  ERROR_UNSUPPORTED_VERSION = 5;
+  ERROR_INVALID_GRAPH = 6;       // V2/V3 failure
+  ERROR_SHAPE_MISMATCH = 7;      // V4 failure
+  ERROR_RESOURCE_LIMIT = 8;      // V5 or protocol sanity limit
+  ERROR_SAFETY_RAIL = 9;         // disk / host RAM floor
+  ERROR_QUOTA = 10;              // optional Owner quota
+  ERROR_UNKNOWN_GRAPH = 11;
+  ERROR_UNKNOWN_HANDLE = 12;
+  ERROR_HANDLE_EXISTS = 13;
+  ERROR_BINDING = 14;            // E1 failure
+  ERROR_INDEX_OUT_OF_BOUNDS = 15;  // E2 IDX failure
+  ERROR_RUNTIME_CHECK = 16;      // E2 other (zero divisor, RESTRICTED predicates)
+  ERROR_OUT_OF_MEMORY = 17;      // recoverable device or host OOM
+  ERROR_SESSION_LOST = 18;       // worker died or was killed
+  ERROR_PAUSED = 19;             // Owner paused execution (informational)
+  ERROR_UNKNOWN_SESSION = 20;
+  ERROR_DATASET = 21;            // TensorPack validation failure
+  ERROR_UNKNOWN_DATASET = 22;
+  ERROR_INVITE = 23;             // invalid, expired or reused invite
+  ERROR_EXECUTION = 24;          // kernel raised an error (not a bounds issue)
+  ERROR_CANCELLED = 25;
+  ERROR_TIMEOUT = 26;            // Owner watchdog
+  ERROR_BUSY = 27;               // e.g. max concurrent sessions quota
+}
+
+enum ValidationStage {
+  STAGE_NONE = 0;
+  STAGE_V0_TRANSPORT = 1;
+  STAGE_V1_DECODE = 2;
+  STAGE_V2_STRUCTURE = 3;
+  STAGE_V3_SCHEMA = 4;
+  STAGE_V4_META = 5;
+  STAGE_V5_SAFETY = 6;
+  STAGE_E1_BINDINGS = 7;
+  STAGE_E2_RUNTIME = 8;
+  STAGE_E3_EXECUTE = 9;
+}
+
+message Error {
+  ErrorCode code = 1;
+  ValidationStage stage = 2;
+  string message = 3;       // plain text; clients strip control sequences
+  bool has_node = 4;
+  uint32 node_index = 5;    // valid when has_node
+  uint32 op_id = 6;         // valid when has_node
+}
+
+// ---------------------------------------------------------------- hello
+
+message Hello {
+  repeated uint32 protocol_versions = 1;
+  repeated uint32 opset_versions = 2;
+  string client_kind = 3;      // "python", "c"; informational
+  string client_version = 4;   // informational
+}
+
+message HelloResponse {
+  uint32 protocol_version = 1;   // chosen
+  bytes server_nonce = 2;        // 32 bytes, for Authenticate / Pair
+  bytes server_key_fingerprint = 3;  // SHA-256 of the server SPKI
+}
+
+// ---------------------------------------------------------------- sessions
+
+message OpenSession {
+  Device device = 1;
+  bool has_seed = 2;
+  uint64 seed = 3;
+  Numerics numerics = 4;        // requested; the server applies an allowlist
+  bytes resume_session_id = 5;  // 16 bytes; resume a disconnected session
+}
+
+message SessionOpened {
+  bytes session_id = 1;  // 16 bytes
+  bool resumed = 2;
+  Numerics numerics = 3;  // effective
+  uint64 seed = 4;        // effective seed
+}
+
+message CloseSession {}
+message SessionClosed {}
+
+// ---------------------------------------------------------------- compute
+
+message RegisterGraph {
+  Graph graph = 1;
+}
+
+message GraphRegistered {
+  bytes graph_hash = 1;           // server-computed SHA-256
+  uint64 peak_memory_bytes = 2;
+  uint64 flops = 3;
+  repeated TensorMeta output_meta = 4;
+  bool cached = 5;
+}
+
+message InlineScalar {
+  oneof value {
+    bool b = 1;
+    int64 i = 2;
+    double f = 3;
+    ComplexValue c = 4;
+  }
+}
+
+message DatasetBinding {
+  bytes dataset_id = 1;
+  string tensor = 2;  // manifest tensor name, [a-z0-9_]{1,64}
+}
+
+message Binding {
+  oneof value {
+    bytes handle = 1;            // 16-byte handle
+    SmallTensor inline = 2;      // ≤ max_inline_tensor_bytes
+    InlineScalar scalar = 3;
+    DatasetBinding dataset = 4;
+  }
+}
+
+message OutputSpec {
+  enum Kind {
+    KIND_INVALID = 0;
+    KIND_STORE = 1;    // store as a new handle
+    KIND_REBIND = 2;   // replace the value of an existing handle (same meta)
+    KIND_RETURN = 3;   // send the value back to the client
+    KIND_DISCARD = 4;
+  }
+  Kind kind = 1;
+  bytes handle = 2;    // STORE / REBIND
+}
+
+message Execute {
+  bytes graph_hash = 1;
+  repeated Binding bindings = 2;   // one per graph input (GENERATOR inputs: empty Binding)
+  repeated OutputSpec outputs = 3; // one per graph output
+}
+
+message TensorData {
+  TensorMeta meta = 1;
+  bytes data = 2;
+}
+
+message ExecuteResult {
+  repeated TensorData returned = 1;  // in output order, RETURN outputs only
+  uint64 duration_us = 2;
+  uint64 flops = 3;
+  uint64 peak_memory_bytes = 4;
+}
+
+// ---------------------------------------------------------------- tensors
+
+// UploadTensor streams one tensor into a new handle. Frames share a
+// request_id; the first carries meta, the last sets `final`.
+message UploadTensor {
+  bytes handle = 1;
+  TensorMeta meta = 2;     // first frame only
+  uint64 offset = 3;       // byte offset of this chunk
+  bytes data = 4;
+  bool final = 5;
+  bytes sha256 = 6;        // final frame: SHA-256 of the whole tensor
+}
+
+message Uploaded {
+  bytes handle = 1;
+}
+
+message Fetch {
+  repeated bytes handles = 1;
+}
+
+// FetchChunk frames answer a Fetch; the last one has `end` in the envelope.
+message FetchChunk {
+  uint32 index = 1;        // position in Fetch.handles
+  TensorMeta meta = 2;     // first chunk of each tensor
+  uint64 offset = 3;
+  bytes data = 4;
+  bool last_of_tensor = 5;
+}
+
+message Free {
+  repeated bytes handles = 1;
+}
+
+message Freed {}
+
+message HandleMeta {
+  bytes handle = 1;
+}
+
+// ---------------------------------------------------------------- snapshots
+
+message Snapshot {
+  string name = 1;           // [a-z0-9_-]{1,64}; server-side file name is server-chosen
+  repeated bytes handles = 2;
+  repeated string keys = 3;  // tensor names inside the snapshot, same length as handles
+}
+
+message SnapshotSaved {
+  string name = 1;
+  uint64 bytes = 2;
+}
+
+message Restore {
+  string name = 1;
+  repeated string keys = 2;
+  repeated bytes handles = 3;  // new handles to create, same length as keys
+}
+
+message Restored {}
+
+message ListSnapshots {}
+
+message SnapshotInfo {
+  string name = 1;
+  uint64 bytes = 2;
+  int64 created_unix = 3;
+}
+
+message SnapshotList {
+  repeated SnapshotInfo snapshots = 1;
+}
+
+message DeleteSnapshot {
+  string name = 1;
+}
+
+// ---------------------------------------------------------------- events
+
+message SubscribeEvents {}
+
+message Event {
+  enum Kind {
+    KIND_INVALID = 0;
+    KIND_OWNER_MESSAGE = 1;
+    KIND_PAUSED = 2;
+    KIND_RESUMED = 3;
+    KIND_SESSION_KILLED = 4;
+    KIND_YIELDING = 5;      // auto-yield: Owner is using the GPU
+    KIND_SHUTDOWN = 6;
+    KIND_PROGRESS = 7;
+  }
+  Kind kind = 1;
+  string text = 2;          // informational; clients sanitize before printing
+  int64 time_unix_ms = 3;
+}
+
+message Ping { uint64 nonce = 1; }
+message Pong { uint64 nonce = 1; }
+
+// ---------------------------------------------------------------- envelope
+
+message Envelope {
+  uint64 request_id = 1;
+  bool end = 2;   // last frame of a response stream
+  oneof body {
+    // client → server
+    Hello hello = 10;
+    Authenticate authenticate = 11;
+    Pair pair = 12;
+    OpenSession open_session = 13;
+    CloseSession close_session = 14;
+    RegisterGraph register_graph = 15;
+    Execute execute = 16;
+    UploadTensor upload_tensor = 17;
+    Fetch fetch = 18;
+    Free free = 19;
+    PackBegin pack_begin = 20;
+    PackChunk pack_chunk = 21;
+    PackCommit pack_commit = 22;
+    ListDatasets list_datasets = 23;
+    DeleteDataset delete_dataset = 24;
+    Snapshot snapshot = 25;
+    Restore restore = 26;
+    SubscribeEvents subscribe_events = 27;
+    Ping ping = 28;
+    ListSnapshots list_snapshots = 29;
+    DeleteSnapshot delete_snapshot = 30;
+
+    // server → client
+    Error error = 100;
+    HelloResponse hello_response = 101;
+    AuthResult auth_result = 102;
+    PairResult pair_result = 103;
+    SessionOpened session_opened = 104;
+    SessionClosed session_closed = 105;
+    GraphRegistered graph_registered = 106;
+    ExecuteResult execute_result = 107;
+    Uploaded uploaded = 108;
+    FetchChunk fetch_chunk = 109;
+    Freed freed = 110;
+    PackStatus pack_status = 111;
+    DatasetInfo dataset_info = 112;
+    DatasetList dataset_list = 113;
+    DatasetDeleted dataset_deleted = 114;
+    SnapshotSaved snapshot_saved = 115;
+    Restored restored = 116;
+    Event event = 117;
+    Pong pong = 118;
+    SnapshotList snapshot_list = 119;
+  }
+}

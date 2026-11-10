@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// reflopd ↔ reflop-worker messages over the inherited Unix socketpair.
+// This channel is internal: clients never see it. reflopd forwards client
+// requests (already strictly decoded and size-checked at stage V0/V1) inside
+// WorkerEnvelope.client, with request ids rewritten to session-internal ids.
+//
+// File descriptors for datasets and snapshots travel on a second,
+// SOCK_SEQPACKET socketpair (fd 4 in the worker); see ADR-004.
+
+syntax = "proto3";
+
+package reflop.v1;
+
+import "reflop/v1/graph.proto";
+import "reflop/v1/capabilities.proto";
+import "reflop/v1/compute.proto";
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+message WorkerInit {
+  bytes session_id = 1;
+  Device device = 2;
+  uint64 seed = 3;
+  Numerics numerics = 4;
+  Limits limits = 5;
+  repeated uint32 enabled_op_ids = 6;
+  // Host RAM budget for this worker (safety rail), 0 = none.
+  uint64 host_memory_budget_bytes = 7;
+  // Device memory quota for this identity, 0 = none.
+  uint64 device_memory_quota_bytes = 8;
+  // seccomp-BPF program (struct sock_filter[], native endian) built by
+  // reflopd. Empty means seccomp is unavailable; WorkerReady reports it.
+  bytes seccomp_filter = 9;
+  bool require_seccomp = 10;
+  uint64 execute_flops_quota = 11;
+}
+
+message SandboxReport {
+  bool no_new_privs = 1;
+  bool seccomp = 2;
+  int32 landlock_abi = 3;  // 0 = not applied (applied before exec by reflopd)
+  bool landlock = 4;
+  bool net_namespace = 5;
+  string note = 6;
+}
+
+message WorkerReady {
+  SandboxReport sandbox = 1;
+  repeated DeviceInfo devices = 2;
+  repeated uint32 enabled_op_ids = 3;
+  repeated string capabilities = 4;
+  RuntimeInfo runtime_info = 5;
+  Numerics numerics = 6;
+}
+
+// Shard layout already validated by reflopd; the worker re-validates the
+// safetensors header of every fd it receives (defense in depth).
+message DatasetShard {
+  uint32 index = 1;
+  uint64 num_samples = 2;
+}
+
+message DatasetTensor {
+  string name = 1;
+  TensorMeta meta = 2;  // whole-dataset shape
+}
+
+message DatasetOpen {
+  bytes dataset_id = 1;
+  repeated DatasetTensor tensors = 2;
+  repeated DatasetShard shards = 3;  // in order; fds follow on the fd channel
+}
+
+message DatasetClose {
+  bytes dataset_id = 1;
+}
+
+// SnapshotWrite/SnapshotRead: one fd follows on the fd channel.
+message SnapshotWrite {
+  uint64 request_id = 1;
+  repeated bytes handles = 2;
+  repeated string keys = 3;
+}
+
+message SnapshotRead {
+  uint64 request_id = 1;
+  repeated string keys = 2;
+  repeated bytes handles = 3;
+}
+
+message StatsRequest {}
+
+message WorkerStats {
+  uint64 device_memory_allocated = 1;
+  uint64 device_memory_reserved = 2;
+  uint64 host_rss_bytes = 3;
+  uint32 handles = 4;
+  uint32 graphs = 5;
+  uint64 executes = 6;
+}
+
+message WorkerEnvelope {
+  oneof body {
+    // reflopd → worker
+    WorkerInit init = 1;
+    Envelope client = 2;
+    DatasetOpen dataset_open = 3;
+    DatasetClose dataset_close = 4;
+    SnapshotWrite snapshot_write = 5;
+    SnapshotRead snapshot_read = 6;
+    StatsRequest stats_request = 7;
+    // worker → reflopd
+    WorkerReady ready = 20;
+    WorkerStats stats = 21;
+    Error fatal = 22;  // worker is about to exit
+  }
+}

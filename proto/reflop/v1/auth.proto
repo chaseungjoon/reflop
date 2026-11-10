@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Identity, pairing and authentication (PLAN.md §15, ADR-006).
+//
+// Server authentication: the client pins the SHA-256 fingerprint of the
+// server's SubjectPublicKeyInfo, learned from the invite code. In daemon mode
+// it is checked against the TLS certificate before any request is sent; in
+// both modes it is checked again against HelloResponse.server_key_fingerprint.
+//
+// Client authentication: Ed25519 challenge-response over the established
+// channel. The signed message binds the server nonce and the server key
+// fingerprint, so a signature cannot be replayed or relayed to another server.
+
+syntax = "proto3";
+
+package reflop.v1;
+
+import "reflop/v1/capabilities.proto";
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+// Authenticate proves possession of a registered Ed25519 key.
+//   signature = Ed25519.Sign(key, "reflop-auth-v1\x00" || server_nonce || server_key_fingerprint || public_key)
+message Authenticate {
+  bytes public_key = 1;  // 32 bytes
+  bytes signature = 2;   // 64 bytes
+}
+
+message AuthResult {
+  string identity_name = 1;
+  bytes identity_id = 2;  // 16 bytes
+  ServerCapabilities capabilities = 3;
+}
+
+// Pair registers a new public key using a one-time invite secret.
+//   mac       = HMAC-SHA256(invite_secret, "reflop-pair-v1\x00" || server_nonce || server_key_fingerprint || invite_id || public_key)
+//   signature = Ed25519.Sign(key, "reflop-pair-v1\x00" || server_nonce || server_key_fingerprint || invite_id || public_key)
+message Pair {
+  bytes invite_id = 1;   // 16 bytes
+  bytes public_key = 2;  // 32 bytes
+  bytes mac = 3;         // 32 bytes
+  bytes signature = 4;   // 64 bytes
+}
+
+message PairResult {
+  string identity_name = 1;
+  bytes identity_id = 2;
+}
+
+enum TransportKind {
+  TRANSPORT_INVALID = 0;
+  TRANSPORT_TLS = 1;
+  TRANSPORT_SSH = 2;
+}
+
+// InviteCode is what `reflopd invite` prints, as
+//   "reflop1-" + base32(no padding, lowercase)(InviteCode bytes).
+message InviteCode {
+  uint32 version = 1;                // 1
+  TransportKind transport = 2;
+  repeated string addresses = 3;     // TLS: "host:port"; SSH: "user@host[:port]"
+  bytes server_key_fingerprint = 4;  // 32 bytes
+  bytes invite_id = 5;               // 16 bytes (TLS only)
+  bytes secret = 6;                  // 32 bytes (TLS only)
+  int64 expires_unix = 7;
+  string identity_name = 8;
+  string reflopd_path = 9;           // SSH only: informational
+}

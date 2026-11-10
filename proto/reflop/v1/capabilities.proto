@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Capability negotiation (PLAN.md §14). The client never learns or depends on
+// the server's CUDA, driver or PyTorch versions; it needs only the enabled
+// operators, dtypes, devices and limits.
+
+syntax = "proto3";
+
+package reflop.v1;
+
+import "reflop/v1/graph.proto";
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+message DeviceInfo {
+  Device device = 1;
+  string name = 2;                       // e.g. "NVIDIA GeForce RTX 5070"
+  uint64 total_memory_bytes = 3;
+  uint32 compute_capability_major = 4;   // CUDA only
+  uint32 compute_capability_minor = 5;
+  repeated DType dtypes = 6;             // dtypes usable on this device
+}
+
+message Numerics {
+  bool tf32_matmul = 1;
+  bool tf32_cudnn = 2;
+  bool deterministic = 3;
+  bool cudnn_benchmark = 4;
+}
+
+message Limits {
+  uint64 max_frame_bytes = 1;
+  uint32 max_nodes = 2;
+  uint32 max_graph_inputs = 3;
+  uint32 max_dims = 4;
+  uint64 max_tensor_numel = 5;
+  uint64 max_inline_tensor_bytes = 6;
+  uint64 max_constant_bytes = 7;
+  uint64 max_fetch_bytes = 8;
+  uint32 max_list_length = 9;
+  uint64 upload_chunk_bytes = 10;
+  // Active safety rails (informational for the client).
+  uint64 disk_free_floor_bytes = 20;
+  uint32 disk_free_floor_percent = 21;
+  uint64 host_ram_floor_bytes = 22;
+  // Quotas for this identity (0 = unset).
+  uint64 quota_device_memory_bytes = 30;
+  uint32 quota_max_sessions = 31;
+  uint64 quota_execute_wall_ms = 32;
+  uint64 quota_execute_flops = 33;
+  uint64 quota_storage_bytes = 34;
+  uint64 quota_upload_bytes_per_sec = 35;
+}
+
+message RuntimeInfo {
+  string torch_version = 1;
+  string cuda_version = 2;
+  string driver_version = 3;
+  string reflopd_version = 4;
+  string runtime_variant = 5;
+}
+
+message ServerCapabilities {
+  repeated uint32 protocol_versions = 1;
+  repeated uint32 opset_versions = 2;
+  repeated uint32 enabled_op_ids = 3;
+  repeated string capabilities = 4;
+  repeated DeviceInfo devices = 5;
+  Numerics numerics = 6;
+  Limits limits = 7;
+  RuntimeInfo runtime_info = 8;  // informational only; never used in client logic
+}

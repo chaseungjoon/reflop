@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package sandbox
+
+import "golang.org/x/sys/unix"
+
+// hotSyscalls come first in the linear filter to keep the common path short.
+var hotSyscalls = []int{
+	unix.SYS_IOCTL, unix.SYS_FUTEX, unix.SYS_READ, unix.SYS_WRITE, unix.SYS_RECVMSG,
+	unix.SYS_SENDMSG, unix.SYS_MMAP, unix.SYS_MUNMAP, unix.SYS_MPROTECT, unix.SYS_MADVISE,
+	unix.SYS_SCHED_YIELD, unix.SYS_PPOLL, unix.SYS_EPOLL_PWAIT, unix.SYS_CLOCK_GETTIME,
+	unix.SYS_GETTID, unix.SYS_GETPID, unix.SYS_RECVFROM, unix.SYS_SENDTO,
+}
+
+// allowSyscalls is the rest of the allowlist (both architectures).
+var allowSyscalls = append([]int{
+	// files (paths are confined by Landlock)
+	unix.SYS_OPENAT, unix.SYS_OPENAT2, unix.SYS_CLOSE, unix.SYS_CLOSE_RANGE, unix.SYS_FSTAT,
+	unix.SYS_NEWFSTATAT, unix.SYS_STATX, unix.SYS_FSTATFS, unix.SYS_STATFS, unix.SYS_LSEEK,
+	unix.SYS_PREAD64, unix.SYS_PWRITE64, unix.SYS_READV, unix.SYS_WRITEV, unix.SYS_PREADV,
+	unix.SYS_PWRITEV, unix.SYS_PREADV2, unix.SYS_PWRITEV2, unix.SYS_FACCESSAT, unix.SYS_FACCESSAT2,
+	unix.SYS_FCNTL, unix.SYS_FLOCK, unix.SYS_FSYNC, unix.SYS_FDATASYNC, unix.SYS_FTRUNCATE,
+	unix.SYS_TRUNCATE, unix.SYS_FALLOCATE, unix.SYS_FADVISE64, unix.SYS_GETDENTS64,
+	unix.SYS_GETCWD, unix.SYS_CHDIR, unix.SYS_FCHDIR, unix.SYS_RENAMEAT, unix.SYS_RENAMEAT2,
+	unix.SYS_MKDIRAT, unix.SYS_UNLINKAT, unix.SYS_LINKAT, unix.SYS_SYMLINKAT, unix.SYS_READLINKAT,
+	unix.SYS_FCHMOD, unix.SYS_FCHMODAT, unix.SYS_UTIMENSAT, unix.SYS_UMASK, unix.SYS_DUP,
+	unix.SYS_DUP3, unix.SYS_PIPE2, unix.SYS_MEMFD_CREATE, unix.SYS_SYNC_FILE_RANGE,
+	unix.SYS_COPY_FILE_RANGE, unix.SYS_SENDFILE, unix.SYS_SPLICE, unix.SYS_TEE,
+	// memory
+	unix.SYS_BRK, unix.SYS_MREMAP, unix.SYS_MSYNC, unix.SYS_MINCORE, unix.SYS_MLOCK,
+	unix.SYS_MUNLOCK, unix.SYS_MLOCK2, unix.SYS_MLOCKALL, unix.SYS_MUNLOCKALL, unix.SYS_MBIND,
+	unix.SYS_GET_MEMPOLICY, unix.SYS_SET_MEMPOLICY, unix.SYS_MEMBARRIER, unix.SYS_PKEY_ALLOC,
+	unix.SYS_PKEY_FREE, unix.SYS_PKEY_MPROTECT,
+	// signals (targets restricted separately)
+	unix.SYS_RT_SIGACTION, unix.SYS_RT_SIGPROCMASK, unix.SYS_RT_SIGRETURN, unix.SYS_RT_SIGPENDING,
+	unix.SYS_RT_SIGTIMEDWAIT, unix.SYS_RT_SIGSUSPEND, unix.SYS_SIGALTSTACK, unix.SYS_SIGNALFD4,
+	// waiting, time
+	unix.SYS_PSELECT6, unix.SYS_EPOLL_CREATE1, unix.SYS_EPOLL_CTL, unix.SYS_EPOLL_PWAIT2,
+	unix.SYS_EVENTFD2, unix.SYS_NANOSLEEP, unix.SYS_CLOCK_NANOSLEEP, unix.SYS_CLOCK_GETRES,
+	unix.SYS_GETTIMEOFDAY, unix.SYS_TIMER_CREATE, unix.SYS_TIMER_SETTIME, unix.SYS_TIMER_GETTIME,
+	unix.SYS_TIMER_GETOVERRUN, unix.SYS_TIMER_DELETE, unix.SYS_TIMERFD_CREATE,
+	unix.SYS_TIMERFD_SETTIME, unix.SYS_TIMERFD_GETTIME, unix.SYS_FUTEX_WAITV,
+	// threads and process info
+	unix.SYS_SET_ROBUST_LIST, unix.SYS_GET_ROBUST_LIST, unix.SYS_SET_TID_ADDRESS, unix.SYS_RSEQ,
+	unix.SYS_EXIT, unix.SYS_EXIT_GROUP, unix.SYS_WAIT4, unix.SYS_WAITID, unix.SYS_GETPPID,
+	unix.SYS_GETUID, unix.SYS_GETEUID, unix.SYS_GETGID, unix.SYS_GETEGID, unix.SYS_GETGROUPS,
+	unix.SYS_GETRESUID, unix.SYS_GETRESGID, unix.SYS_GETPGID, unix.SYS_GETSID, unix.SYS_GETRLIMIT,
+	unix.SYS_PRLIMIT64, unix.SYS_GETRUSAGE, unix.SYS_SYSINFO, unix.SYS_UNAME, unix.SYS_PRCTL,
+	unix.SYS_CAPGET, unix.SYS_GETCPU, unix.SYS_GETRANDOM, unix.SYS_SCHED_GETAFFINITY,
+	unix.SYS_SCHED_SETAFFINITY, unix.SYS_SCHED_GETPARAM, unix.SYS_SCHED_GETSCHEDULER,
+	unix.SYS_SCHED_GET_PRIORITY_MAX, unix.SYS_SCHED_GET_PRIORITY_MIN, unix.SYS_SCHED_GETATTR,
+	unix.SYS_GETPRIORITY, unix.SYS_TIMES, unix.SYS_SECCOMP,
+	// inherited sockets only (new sockets are denied above)
+	unix.SYS_RECVMMSG, unix.SYS_SENDMMSG, unix.SYS_SHUTDOWN, unix.SYS_GETSOCKNAME,
+	unix.SYS_GETPEERNAME, unix.SYS_GETSOCKOPT, unix.SYS_SETSOCKOPT,
+}, archAllowSyscalls...)
+
+// denyEPERM are denied explicitly (they are not in the allowlist either; the
+// explicit entries document intent and keep tests honest).
+var denyEPERM = append([]int{
+	unix.SYS_EXECVE, unix.SYS_EXECVEAT, unix.SYS_PTRACE, unix.SYS_PROCESS_VM_READV,
+	unix.SYS_PROCESS_VM_WRITEV, unix.SYS_MOUNT, unix.SYS_UMOUNT2, unix.SYS_PIVOT_ROOT,
+	unix.SYS_CHROOT, unix.SYS_UNSHARE, unix.SYS_SETNS, unix.SYS_BPF, unix.SYS_PERF_EVENT_OPEN,
+	unix.SYS_KEYCTL, unix.SYS_ADD_KEY, unix.SYS_REQUEST_KEY, unix.SYS_USERFAULTFD,
+	unix.SYS_CONNECT, unix.SYS_BIND, unix.SYS_LISTEN, unix.SYS_ACCEPT, unix.SYS_ACCEPT4,
+	unix.SYS_TKILL, unix.SYS_PIDFD_OPEN, unix.SYS_PIDFD_SEND_SIGNAL, unix.SYS_PIDFD_GETFD,
+	unix.SYS_KCMP, unix.SYS_IO_URING_SETUP, unix.SYS_IO_URING_ENTER, unix.SYS_IO_URING_REGISTER,
+	unix.SYS_OPEN_BY_HANDLE_AT, unix.SYS_NAME_TO_HANDLE_AT, unix.SYS_FANOTIFY_INIT,
+	unix.SYS_INIT_MODULE, unix.SYS_FINIT_MODULE, unix.SYS_DELETE_MODULE, unix.SYS_KEXEC_LOAD,
+	unix.SYS_REBOOT, unix.SYS_SWAPON, unix.SYS_SWAPOFF, unix.SYS_ACCT, unix.SYS_SETTIMEOFDAY,
+	unix.SYS_CLOCK_SETTIME, unix.SYS_CLOCK_ADJTIME, unix.SYS_ADJTIMEX, unix.SYS_PERSONALITY,
+	unix.SYS_SETUID, unix.SYS_SETGID, unix.SYS_SETREUID, unix.SYS_SETREGID, unix.SYS_SETRESUID,
+	unix.SYS_SETRESGID, unix.SYS_SETGROUPS, unix.SYS_SETFSUID, unix.SYS_SETFSGID, unix.SYS_CAPSET,
+	unix.SYS_FCHOWN, unix.SYS_FCHOWNAT, unix.SYS_MOVE_PAGES, unix.SYS_MIGRATE_PAGES,
+	unix.SYS_FSOPEN, unix.SYS_FSMOUNT, unix.SYS_FSCONFIG, unix.SYS_MOVE_MOUNT, unix.SYS_OPEN_TREE,
+	unix.SYS_FSPICK, unix.SYS_MOUNT_SETATTR, unix.SYS_QUOTACTL, unix.SYS_SCHED_SETSCHEDULER,
+	unix.SYS_SCHED_SETATTR, unix.SYS_SCHED_SETPARAM, unix.SYS_SETPRIORITY, unix.SYS_SETPGID,
+	unix.SYS_SETSID, unix.SYS_VHANGUP, unix.SYS_SHMGET, unix.SYS_SHMAT, unix.SYS_MSGGET,
+	unix.SYS_SEMGET, unix.SYS_MQ_OPEN, unix.SYS_LANDLOCK_CREATE_RULESET,
+}, archDenySyscalls...)

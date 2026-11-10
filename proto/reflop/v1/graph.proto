@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// FlopIR: the wire graph format (PLAN.md §7).
+//
+// A Graph is a loop-free DAG with static shapes over the closed operator set
+// defined in opset/v1/opset.yaml. Every node argument is positional and
+// explicit: the client fills in schema defaults, so two clients that mean the
+// same computation produce the same canonical bytes (ADR-011).
+//
+// Decoders on both sides reject unknown fields (invariant I11).
+
+syntax = "proto3";
+
+package reflop.v1;
+
+option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+
+// DType values are permanent. 0 is invalid so that a missing field fails closed.
+enum DType {
+  DTYPE_INVALID = 0;
+  DTYPE_BOOL = 1;
+  DTYPE_UINT8 = 2;
+  DTYPE_INT8 = 3;
+  DTYPE_INT16 = 4;
+  DTYPE_INT32 = 5;
+  DTYPE_INT64 = 6;
+  DTYPE_FLOAT16 = 7;
+  DTYPE_BFLOAT16 = 8;
+  DTYPE_FLOAT32 = 9;
+  DTYPE_FLOAT64 = 10;
+  DTYPE_COMPLEX64 = 11;   // capability "complex"
+  DTYPE_COMPLEX128 = 12;  // capability "complex"
+  DTYPE_FLOAT8_E4M3FN = 13;  // capability "fp8"
+  DTYPE_FLOAT8_E5M2 = 14;    // capability "fp8"
+}
+
+enum DeviceKind {
+  DEVICE_INVALID = 0;
+  DEVICE_CUDA = 1;
+  DEVICE_CPU = 2;
+}
+
+// Device names one server device. For CUDA, index is the ordinal among the
+// devices this server exposes (not the host's physical ordinal).
+message Device {
+  DeviceKind kind = 1;
+  uint32 index = 2;
+}
+
+enum MemoryFormat {
+  MEMORY_FORMAT_INVALID = 0;
+  MEMORY_FORMAT_CONTIGUOUS = 1;
+  MEMORY_FORMAT_PRESERVE = 2;
+  MEMORY_FORMAT_CHANNELS_LAST = 3;
+  MEMORY_FORMAT_CHANNELS_LAST_3D = 4;
+}
+
+// Layout exists only so that schema arguments of type Layout can be stated
+// explicitly; only STRIDED is accepted.
+enum Layout {
+  LAYOUT_INVALID = 0;
+  LAYOUT_STRIDED = 1;
+}
+
+message TensorMeta {
+  DType dtype = 1;
+  repeated int64 shape = 2;
+}
+
+message GraphInput {
+  enum Kind {
+    KIND_INVALID = 0;
+    KIND_TENSOR = 1;       // bound per execute to a handle or inline tensor
+    KIND_SCALAR = 2;       // bound per execute to a scalar value
+    KIND_DATASET_REF = 3;  // bound per execute to a dataset tensor
+    KIND_GENERATOR = 4;    // the session generator; never bound by the client
+  }
+  Kind kind = 1;
+  // TENSOR: dtype and static shape. SCALAR: dtype of the scalar
+  // (BOOL, INT64 or FLOAT64; COMPLEX128 with capability "complex").
+  // DATASET_REF: dtype and shape of the whole dataset tensor.
+  TensorMeta meta = 2;
+}
+
+message Int64List { repeated int64 values = 1; }
+message DoubleList { repeated double values = 1; }
+message BoolList { repeated bool values = 1; }
+
+// SmallTensor is an inline constant tensor (≤ 64 KiB of data).
+message SmallTensor {
+  TensorMeta meta = 1;
+  bytes data = 2;  // little-endian, C-contiguous
+}
+
+message NodeOutput {
+  uint32 node = 1;    // must be strictly less than the referencing node's index
+  uint32 output = 2;  // index into the node's flattened outputs
+}
+
+// ValueRef names a value that a node consumes.
+message ValueRef {
+  oneof ref {
+    uint32 graph_input = 1;
+    NodeOutput node_output = 2;
+  }
+}
+
+message TensorList {
+  // An item without a ref is None (for Tensor?[] arguments).
+  repeated ValueRef items = 1;
+}
+
+message ComplexValue {
+  double real = 1;
+  double imag = 2;
+}
+
+// Arg is one schema argument, positional, in schema order (keyword-only
+// arguments included). Which variants are legal depends on the schema type
+// recorded in opset.yaml; the validator checks it (stage V3).
+message Arg {
+  oneof value {
+    bool none = 1;              // explicit None for optional arguments
+    ValueRef tensor = 2;        // Tensor, Tensor?, or a SCALAR graph input for Scalar/int/float
+    TensorList tensors = 3;     // Tensor[] and Tensor?[]
+    int64 i = 4;                // int, SymInt
+    double f = 5;               // float
+    bool b = 6;                 // bool
+    Int64List ints = 7;         // int[], SymInt[]
+    DoubleList floats = 8;      // float[]
+    BoolList bools = 9;         // bool[]
+    DType dtype = 10;           // ScalarType
+    MemoryFormat memory_format = 11;
+    Layout layout = 12;
+    Device device = 13;
+    uint32 enum_code = 14;      // string-valued schema args (flag ENUM)
+    SmallTensor small_tensor = 15;  // inline constant tensor
+    ComplexValue complex = 16;  // complex Scalar (capability "complex")
+  }
+}
+
+message Node {
+  uint32 op_id = 1;  // opset entry; each entry is one fully qualified overload
+  repeated Arg args = 2;
+}
+
+message Graph {
+  uint32 opset_version = 1;
+  Device device = 2;
+  repeated GraphInput inputs = 3;
+  repeated Node nodes = 4;
+  repeated ValueRef outputs = 5;
+  // Declared metadata for every output, checked against meta inference (V4).
+  repeated TensorMeta output_meta = 6;
+}
