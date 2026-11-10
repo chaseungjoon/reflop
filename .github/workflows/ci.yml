@@ -62,7 +62,7 @@ jobs:
       - name: tests
         run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests
       - name: wheel
-        run: cd client/python && ../../.venv/bin/python -m pip wheel --no-deps -w ../../dist . && ls ../../dist
+        run: uv build --wheel client/python -o dist && ls dist
 
   macos-client:
     name: Client on macOS (Apple Silicon)
