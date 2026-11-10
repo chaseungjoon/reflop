@@ -103,6 +103,8 @@ install_file() { # src dir name allow_sudo
 
 path_hint() { # dir
 	case ":${PATH}:" in *":$1:"*) return ;; esac
+	# The tildes below are printed for the user to read, not expanded.
+	# shellcheck disable=SC2088
 	case "${SHELL:-}" in
 		*/zsh) rc='~/.zshrc' ;;
 		*/bash) if [ "$os" = darwin ]; then rc='~/.bash_profile'; else rc='~/.bashrc'; fi ;;

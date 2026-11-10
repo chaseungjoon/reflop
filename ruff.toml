@@ -4,4 +4,4 @@ extend-exclude = ["**/_pb/**", "**/ops_generated.py", "**/_opset_generated.py", 
 
 [lint]
 select = ["E", "F", "W", "B", "UP", "I"]
-ignore = ["E501", "B008", "UP007", "B905", "E741", "UP038"]
+ignore = ["E501", "B008", "UP007", "B905", "E741"]
