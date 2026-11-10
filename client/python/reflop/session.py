@@ -107,6 +107,7 @@ class Session:
         self.async_error: BaseException | None = None
         self.inflight: list = []
         self.depth = 0
+        self.epoch = 0  # increments at every flush (invalidates cached view replays)
         self.lock = threading.RLock()
         self._prefix = secrets.token_bytes(8)
         self._ctr = 0
@@ -270,6 +271,7 @@ class Session:
             if outputs:
                 self._execute(outputs, specs, owners, ret_pos, results)
             self.trace = Trace()
+            self.epoch += 1
             if plan is not None:
                 plan["freed"] = set(self.pending_free)
                 plan.setdefault("specs", specs)

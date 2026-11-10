@@ -6,10 +6,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "client/python"), str(ROOT / "server/worker")]
+import reflop  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
-
-import reflop  # noqa: E402
 
 seen = {}
 

@@ -250,16 +250,19 @@ def value_of(t: RemoteTensor) -> Value:
                                   st.meta)[0])
     if not t._rf_chain:
         return st.value
+    # Cached replays are only valid within one trace: node values from an
+    # earlier (flushed) trace no longer exist.
+    tag = (st.version, sess.epoch)
     key = t._rf_chain
     hit = st.view_cache.get(key)
-    if hit is not None and hit[0] == st.version:
+    if hit is not None and hit[0] == tag:
         return hit[1]
     v = st.value
     cur_meta = st.meta
     for i, (func, rest, k) in enumerate(t._rf_chain):
         prefix = t._rf_chain[: i + 1]
         cached = st.view_cache.get(prefix)
-        if cached is not None and cached[0] == st.version:
+        if cached is not None and cached[0] == tag:
             v, cur_meta = cached[1], cached[2]
             continue
         a, kw = _rebind(func, [cur_meta, *rest])
@@ -268,7 +271,7 @@ def value_of(t: RemoteTensor) -> Value:
         outs = sess.record_values(str(func), func, [v, *rest], metas, self_is_value=True)
         v = outs[k if k is not None else 0]
         cur_meta = metas[k if k is not None else 0]
-        st.view_cache[prefix] = (st.version, v, cur_meta)
+        st.view_cache[prefix] = (tag, v, cur_meta)
     return v
 
 
@@ -489,6 +492,8 @@ def _dispatch(sess, func, args, kwargs):
     special = _SPECIALS.get(name)
     if special is not None:
         return special(sess, func, args, kwargs)
+    if torch.Tag.inplace_view in func.tags:
+        return _inplace_view(sess, func, args, kwargs)
     if func.is_view:
         return _view(sess, func, args, kwargs)
     schema = func._schema
@@ -512,6 +517,30 @@ def _view(sess, func, args, kwargs):
     flat, spec = tree_flatten(out_meta)
     outs = [RemoteTensor(m, st, src._rf_chain + ((func, rest, i),)) for i, m in enumerate(flat)]
     return tree_unflatten(outs, spec)
+
+
+def _inplace_view(sess, func, args, kwargs):
+    """transpose_, squeeze_, unsqueeze_, t_, as_strided_, ...: change this
+    tensor's metadata in place (PyTorch's C++ RNN code does this to outputs).
+
+    The functional view joins the tensor's view chain, and the wrapper's own
+    sizes/strides are updated by running the op with dispatch disabled (the
+    approach of torch.utils._python_dispatch.return_and_correct_aliasing).
+    """
+    vals = normalize(func, args, kwargs)
+    t = vals[0]
+    found = functional_of(func)
+    ffunc = found[0] if found else None
+    if ffunc is None or not isinstance(t, RemoteTensor):
+        raise UnsupportedOperatorError(f"{func}: unsupported in-place view operator")
+    rest = tuple(_freeze(v) for v in vals[1:])
+    fa, fk = _rebind(ffunc, [t._rf_meta, *vals[1:]])
+    new_meta = run_meta(ffunc, fa, fk)
+    t._rf_chain = t._rf_chain + ((ffunc, rest, None),)
+    t._rf_meta = new_meta
+    with torch._C._DisableTorchDispatch():
+        func(*args, **kwargs)
+    return t
 
 
 def _freeze(v):

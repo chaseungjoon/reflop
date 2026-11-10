@@ -16,9 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "spikes"))
 def test_model_trains_like_local(name):
     if name == "resnet18":
         pytest.importorskip("torchvision")
-    import s4_op_census as census
-
     import reflop
+    import s4_op_census as census
 
     r = census.run(name, "cpu")
     reflop.close()

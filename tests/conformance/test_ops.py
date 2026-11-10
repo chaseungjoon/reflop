@@ -184,3 +184,32 @@ def test_item_and_bool_sync(dev):
     assert bool((a > 0).any())
     assert a.tolist() == [1.5, -2.0]
     assert torch.equal(a, a)
+
+
+def test_inplace_view_ops(dev):
+    a = torch.arange(6.0).reshape(2, 3)
+    r = a.to(dev)
+    for t in (a, r):
+        t.transpose_(0, 1)
+        t.unsqueeze_(0)
+        t.squeeze_(0)
+    _close(r, a, 0)
+    _close(r * 2, a * 2, 0)
+
+
+def test_view_reused_across_flush(dev):
+    a = torch.arange(12.0).reshape(3, 4)
+    r = a.to(dev)
+    v = r.t()[1:]
+    _close(v, a.t()[1:], 0)  # flush
+    _close(v + 1, a.t()[1:] + 1, 0)  # replays the view in a new trace
+
+
+def test_rnn_batch_first(dev):
+    import copy
+
+    torch.manual_seed(0)
+    m = torch.nn.LSTM(4, 6, batch_first=True, num_layers=2)
+    r = copy.deepcopy(m).to(dev)
+    x = g(3, 5, 4)
+    _close(r(x.to(dev))[0], m(x)[0], 1e-4 if DEVICE == "cuda" else 1e-5)
