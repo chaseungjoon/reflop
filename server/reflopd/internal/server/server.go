@@ -435,6 +435,7 @@ func (s *Server) capabilitiesFor(id *auth.Identity) *pb.ServerCapabilities {
 			}
 		}
 	}
+	c.Capabilities = append(c.Capabilities, "usage")
 	if len(s.slots) > 0 {
 		c.EnabledOpIds = s.filterOps(s.slots[0])
 		c.RuntimeInfo = s.slots[0].Runtime

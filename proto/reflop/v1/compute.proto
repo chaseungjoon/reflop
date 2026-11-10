@@ -281,6 +281,31 @@ message Event {
 message Reseed { uint64 seed = 1; }
 message Reseeded {}
 
+// GetUsage asks for the calling identity's own cumulative compute usage
+// (servers that list the "usage" capability). Answered with UsageReport.
+message GetUsage {}
+
+message DeviceUsage {
+  string device = 1;
+  uint64 device_us = 2;
+}
+
+message UsageReport {
+  string identity_name = 1;
+  int64 since_unix = 2;          // when the server started keeping these totals
+  uint64 executes = 3;
+  uint64 device_us = 4;          // device time running executes, measured by workers
+  double flops = 5;              // the server's static FLOP estimate
+  uint64 peak_memory_bytes = 6;  // largest single-execute peak
+  uint64 sessions = 7;
+  uint64 session_us = 8;         // time sessions held a worker, including open ones
+  uint64 bytes_up = 9;
+  uint64 bytes_down = 10;
+  int64 first_unix = 11;
+  int64 last_unix = 12;
+  repeated DeviceUsage by_device = 13;
+}
+
 message Ping { uint64 nonce = 1; }
 message Pong { uint64 nonce = 1; }
 
@@ -313,6 +338,7 @@ message Envelope {
     ListSnapshots list_snapshots = 29;
     DeleteSnapshot delete_snapshot = 30;
     Reseed reseed = 31;
+    GetUsage get_usage = 32;
 
     // server → client
     Error error = 100;
@@ -336,5 +362,6 @@ message Envelope {
     Pong pong = 118;
     SnapshotList snapshot_list = 119;
     Reseeded reseeded = 120;
+    UsageReport usage_report = 121;
   }
 }

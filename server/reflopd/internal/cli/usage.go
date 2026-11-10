@@ -175,6 +175,8 @@ func printUsage(out io.Writer, rep usage.Report, detail bool, now time.Time) err
 func fmtUs(us uint64) string {
 	d := time.Duration(us) * time.Microsecond
 	switch {
+	case d > 0 && d < time.Second:
+		return fmt.Sprintf("%.0fms", float64(d.Microseconds())/1e3)
 	case d < time.Minute:
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	case d < time.Hour:

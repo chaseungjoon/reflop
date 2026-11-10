@@ -93,6 +93,27 @@ keeps the session for a while (`[session] ttl`, 30 minutes by default) so the
 client can reconnect. A kept session whose client is gone gives up its GPU
 memory as soon as a new session needs it.
 
+## Your usage
+
+`reflop usage` shows the compute you have used on a server: device time (how
+long the server's devices ran your executes, per device), estimated FLOPs,
+executes, sessions and session time, peak memory of your largest execute and
+traffic. `reflop status` prints a one-line summary.
+
+```
+$ reflop usage
+compute used by 'alice' on lab since 2026-11-10 21:54
+device time:  31m01s (cuda:0 30m58s, cpu 3.1s)
+session time: 12h24m (devices busy 4% of it)
+executes:     265447, 7.0 ms average
+est. FLOPs:   5050.9 TFLOP (2.7 TFLOP/s while running)
+...
+```
+
+`reflop usage --json` and `reflop.usage()` return the same numbers as data.
+You see only your own totals (counted per identity name, so all keys paired
+under one name add up). This needs reflopd 0.1.4 or newer.
+
 ## Errors
 
 | Exception | Meaning |
@@ -283,6 +304,7 @@ convolutions by default, and some GPU kernels are not deterministic).
 | `reflop pair <code> [--name lab]` | register with a server |
 | `reflop servers [default\|remove <name>]` | list and manage paired servers |
 | `reflop status` | devices, enabled operators, limits, your quotas, datasets |
+| `reflop usage [--json]` | compute you have used on the server |
 | `reflop init` | measure round-trip time and local speed, write `.reflop.toml` |
 | `reflop data build\|push\|ls\|rm` | datasets |
 | `reflop run <command>` | run a command here with `cuda` mapped to reflop |

@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -246,16 +247,26 @@ func (s *Server) status(withStats bool) StatusView {
 }
 
 // usageNow is the ledger plus what live sessions and connections have used
-// so far (held time and traffic are only booked when they end).
-func (s *Server) usageNow() usage.Report {
+// so far (held time and traffic are only booked when they end). A non-empty
+// name restricts it to that identity.
+func (s *Server) usageNow(name string) usage.Report {
 	rep := s.usage.Snapshot()
+	if name != "" {
+		t := rep.Identities[name]
+		rep.Identities = map[string]*usage.Totals{}
+		if t != nil {
+			rep.Identities[name] = t
+		}
+	}
 	for _, sess := range s.allSessions() {
-		rep.Get(sess.Identity.Name).SessionUs += uint64(time.Since(sess.created).Microseconds())
+		if name == "" || sess.Identity.Name == name {
+			rep.Get(sess.Identity.Name).SessionUs += uint64(time.Since(sess.created).Microseconds())
+		}
 	}
 	s.mu.Lock()
 	for c := range s.conns {
-		if name := c.account.Load(); name != nil {
-			t := rep.Get(*name)
+		if n := c.account.Load(); n != nil && (name == "" || *n == name) {
+			t := rep.Get(*n)
 			t.BytesUp += c.bytesUp.Load()
 			t.BytesDown += c.bytesDown.Load()
 		}
@@ -264,10 +275,31 @@ func (s *Server) usageNow() usage.Report {
 	return rep
 }
 
+// guestUsage is what a Guest may see: its own totals only.
+func (s *Server) guestUsage(name string) *pb.UsageReport {
+	rep := s.usageNow(name)
+	t := rep.Get(name)
+	u := &pb.UsageReport{IdentityName: name, SinceUnix: rep.Since.Unix(), Executes: t.Executes, DeviceUs: t.DeviceUs,
+		Flops: t.FLOPs, PeakMemoryBytes: t.PeakMemory, Sessions: t.Sessions, SessionUs: t.SessionUs,
+		BytesUp: t.BytesUp, BytesDown: t.BytesDown}
+	if !t.First.IsZero() {
+		u.FirstUnix, u.LastUnix = t.First.Unix(), t.Last.Unix()
+	}
+	devs := make([]string, 0, len(t.ByDevice))
+	for d := range t.ByDevice {
+		devs = append(devs, d)
+	}
+	sort.Strings(devs)
+	for _, d := range devs {
+		u.ByDevice = append(u.ByDevice, &pb.DeviceUsage{Device: d, DeviceUs: t.ByDevice[d]})
+	}
+	return u
+}
+
 func (s *Server) control(ctx context.Context, req ControlRequest) (any, error) {
 	switch req.Cmd {
 	case "usage":
-		return s.usageNow(), nil
+		return s.usageNow(""), nil
 	case "status":
 		return s.status(false), nil
 	case "top":

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.4 (2026-11-11)
+
+- Guests can see their own compute: `reflop usage [--json]`, `reflop.usage()`
+  and a usage line in `reflop status` (device time per device, estimated
+  FLOPs, executes, sessions, traffic, including the current session). They see
+  only their own identity's totals. New protocol messages `GetUsage` and
+  `UsageReport` behind the `usage` capability; against an older server the
+  client says it needs reflopd 0.1.4.
+- `reflopd stop` and `reflopd up` with `REFLOP_HOME` set no longer act on the
+  `reflopd` user service, which serves the default home.
+- `reflopd usage` shows sub-second device time in milliseconds.
+
 ## 0.1.3 (2026-11-11)
 
 - `reflopd usage [NAME] [--since DUR] [--json]`: compute used per Guest.

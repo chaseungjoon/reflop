@@ -242,6 +242,9 @@ survive restarts. The first `reflopd` that has it starts the ledger from what
 the audit log still holds. `--since` recomputes from the audit log, so it only
 reaches back as far as the log's retention.
 
+Guests see their own lifetime totals with `reflop usage` (and a summary in
+`reflop status`); they never see other Guests or their share.
+
 ## Files and directories
 
 | Path (Level 0) | Contents |

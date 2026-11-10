@@ -18,6 +18,7 @@ the server, which runs whitelisted tensor operators and nothing else.
 
   reflop pair <invite-code>         register with a server (once)
   reflop status                     server, devices, limits, quotas
+  reflop usage                      compute you have used on the server
   reflop data push ./pack --name d  upload a dataset once
   reflop run python train.py        run locally with reflop enabled
 """
@@ -113,11 +114,91 @@ def cmd_status(a) -> int:
 
         ds = c.call(cpb.Envelope(list_datasets=dpb.ListDatasets()), timeout=30).dataset_list.datasets
         _p(f"datasets: {len(ds)}")
+        if "usage" in caps.capabilities:
+            from ..api import _usage_on
+
+            u = _usage_on(c)
+            _p(f"usage:    {_dur(u['device_seconds'])} device time, {_flops(u['flops'])} est., "
+               f"{u['executes']} executes (reflop usage)")
         ri = caps.runtime_info
         _p(f"runtime:  torch {sanitize(ri.torch_version, 40)}, CUDA {sanitize(ri.cuda_version, 20) or 'none'} "
            f"(informational), reflopd {sanitize(ri.reflopd_version, 40)}")
     finally:
         c.close()
+    return 0
+
+
+def _dur(sec: float) -> str:
+    if 0 < sec < 1:
+        return f"{sec * 1000:.0f}ms" if sec >= 0.001 else f"{sec * 1e6:.0f}µs"
+    if sec < 60:
+        return f"{sec:.1f}s"
+    m = int(sec // 60)
+    if m < 60:
+        return f"{m}m{int(sec) % 60:02d}s"
+    h = m // 60
+    if h < 48:
+        return f"{h}h{m % 60:02d}m"
+    return f"{h // 24}d{h % 24:02d}h"
+
+
+def _size(n: int) -> str:
+    v, units = float(n), ["B", "KiB", "MiB", "GiB", "TiB"]
+    i = 0
+    while v >= 1024 and i < len(units) - 1:
+        v /= 1024
+        i += 1
+    return f"{n} B" if i == 0 else f"{v:.1f} {units[i]}"
+
+
+def _flops(n: float) -> str:
+    for unit, v in (("PFLOP", 1e15), ("TFLOP", 1e12), ("GFLOP", 1e9), ("MFLOP", 1e6)):
+        if n >= v:
+            return f"{n / v:.1f} {unit}"
+    return f"{n:.0f} FLOP"
+
+
+def _usage_lines(u: dict, now: float | None = None) -> list[str]:
+    now = time.time() if now is None else now
+    dev = u["device_seconds"]
+    devs = ", ".join(f"{d} {_dur(s)}" for d, s in u["by_device"].items())
+    out = [f"device time:  {_dur(dev)}" + (f" ({devs})" if devs else "")]
+    busy = f" (devices busy {100 * dev / u['session_seconds']:.0f}% of it)" if u["session_seconds"] else ""
+    out.append(f"session time: {_dur(u['session_seconds'])}{busy}")
+    avg = f", {1000 * dev / u['executes']:.1f} ms average" if u["executes"] else ""
+    out.append(f"executes:     {u['executes']}{avg}")
+    rate = f" ({_flops(u['flops'] / dev)}/s while running)" if dev else ""
+    out.append(f"est. FLOPs:   {_flops(u['flops'])}{rate}")
+    if u["peak_memory_bytes"]:
+        out.append(f"peak memory:  {_size(u['peak_memory_bytes'])} (largest execute)")
+    out.append(f"transfer:     {_size(u['bytes_up'])} up, {_size(u['bytes_down'])} down")
+    last = ""
+    if u["last"] is not None:
+        ago = now - u["last"].timestamp()
+        last = ", last active " + ("just now" if ago < 60 else _dur(ago) + " ago")
+    out.append(f"sessions:     {u['sessions']}{last}")
+    return out
+
+
+def cmd_usage(a) -> int:
+    from ..api import _usage_on
+    from ..client import admin
+
+    c = admin(a.server)
+    try:
+        u = _usage_on(c)
+        name = c.entry.name
+    finally:
+        c.close()
+    if a.json:
+        import json
+
+        _p(json.dumps({k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in u.items()}, indent=2))
+        return 0
+    since = u["since"].astimezone().strftime("%Y-%m-%d %H:%M") if u["since"] else "?"
+    _p(f"compute used by {u['identity']!r} on {name} since {since}")
+    for line in _usage_lines(u):
+        _p(line)
     return 0
 
 
@@ -255,6 +336,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="also store the private key as ~/.config/reflop/id_ed25519 (needed by libreflop on macOS)")
     p.set_defaults(fn=cmd_key)
     sub.add_parser("status", help="show the server's devices, limits and quotas").set_defaults(fn=cmd_status)
+    p = sub.add_parser("usage", help="compute you have used on the server (device time, FLOPs, traffic)")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    p.set_defaults(fn=cmd_usage)
     sub.add_parser("init", help="measure the link, write .reflop.toml").set_defaults(fn=cmd_init)
     p = sub.add_parser("data", help="TensorPacks: build, push, ls, rm")
     ds = p.add_subparsers(dest="action", required=True)

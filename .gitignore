@@ -13,6 +13,7 @@ dist/
 # docs
 PLAN.md
 LIVE_TEST.md
+RETEST.md
 
 # Go
 /bin/

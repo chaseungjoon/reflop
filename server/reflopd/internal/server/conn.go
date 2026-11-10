@@ -222,6 +222,8 @@ func (c *clientConn) route(env *pb.Envelope) error {
 	switch b := env.Body.(type) {
 	case *pb.Envelope_Ping:
 		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_Pong{Pong: &pb.Pong{Nonce: b.Ping.Nonce}}})
+	case *pb.Envelope_GetUsage:
+		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_UsageReport{UsageReport: c.srv.guestUsage(c.identity.Name)}})
 	case *pb.Envelope_SubscribeEvents:
 		c.eventsRID.Store(rid)
 		c.srv.events.subscribe(c)

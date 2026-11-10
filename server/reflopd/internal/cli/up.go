@@ -193,6 +193,12 @@ func systemdUser() bool {
 	return exec.Command("systemctl", "--user", "show-environment").Run() == nil
 }
 
+// userService reports whether the reflopd user unit manages this daemon. The
+// unit always serves the default home, so a REFLOP_HOME daemon never touches it.
+func userService() bool {
+	return os.Getenv("REFLOP_HOME") == "" && systemdUser()
+}
+
 // runStdio is SSH pipe mode (PLAN.md §15.4).
 func runStdio(l paths.Layout, identity string) error {
 	if len(identity) != 32 {
@@ -266,7 +272,7 @@ Everything lives under your user (~/.local/share/reflop, ~/.config/reflop).`,
 			if ids, err := auth.Open(l.Identities()); err == nil && len(ids.List()) == 0 {
 				first = true
 			}
-			useService := !foreground && !noService && systemdUser()
+			useService := !foreground && !noService && userService()
 			if useService {
 				if err := installUserService(l, listen, weak); err != nil {
 					return err
@@ -413,7 +419,7 @@ func stopCmd() *cobra.Command {
 		Short: "Stop the daemon (all sessions end)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if systemdUser() && exec.Command("systemctl", "--user", "is-active", "--quiet", unitName).Run() == nil {
+			if userService() && exec.Command("systemctl", "--user", "is-active", "--quiet", unitName).Run() == nil {
 				if out, err := exec.Command("systemctl", "--user", "stop", unitName).CombinedOutput(); err != nil {
 					return fmt.Errorf("systemctl: %v: %s", err, out)
 				}

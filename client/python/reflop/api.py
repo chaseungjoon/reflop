@@ -133,3 +133,52 @@ def _dedupe(tensors: dict) -> dict:
 def stats() -> dict:
     """Per-session counters (flushes, registrations, executes, bytes)."""
     return {i: dict(s.stats) for i, s in _session._sessions.items()}
+
+
+def _usage_dict(rep) -> dict:
+    from datetime import datetime, timezone
+
+    from .errors import sanitize
+
+    def when(t):
+        return datetime.fromtimestamp(t, timezone.utc) if t else None
+
+    return {
+        "identity": sanitize(rep.identity_name, 64),
+        "since": when(rep.since_unix),
+        "device_seconds": rep.device_us / 1e6,
+        "by_device": {sanitize(d.device, 80): d.device_us / 1e6 for d in rep.by_device},
+        "executes": rep.executes,
+        "flops": rep.flops,
+        "peak_memory_bytes": rep.peak_memory_bytes,
+        "sessions": rep.sessions,
+        "session_seconds": rep.session_us / 1e6,
+        "bytes_up": rep.bytes_up,
+        "bytes_down": rep.bytes_down,
+        "first": when(rep.first_unix),
+        "last": when(rep.last_unix),
+    }
+
+
+def _usage_on(conn) -> dict:
+    from ._pb import compute_pb2 as cpb
+    from .errors import ReflopError, sanitize
+
+    if "usage" not in conn.caps.capabilities:
+        ver = sanitize(conn.caps.runtime_info.reflopd_version, 40) or "unknown"
+        raise ReflopError(f"this server (reflopd {ver}) does not report usage; it needs reflopd 0.1.4 or newer")
+    return _usage_dict(conn.call(cpb.Envelope(get_usage=cpb.GetUsage()), timeout=30).usage_report)
+
+
+def usage(server: str | None = None) -> dict:
+    """Compute you (your identity) have used on a server, cumulative.
+
+    ``device_seconds`` is the main measure: time the server's devices spent
+    running your executes. ``flops`` is the server's estimate."""
+    from .client import admin
+
+    c = admin(server)
+    try:
+        return _usage_on(c)
+    finally:
+        c.close()
