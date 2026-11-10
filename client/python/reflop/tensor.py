@@ -80,10 +80,10 @@ class RemoteTensor(torch.Tensor):
     def __new__(cls, meta: torch.Tensor, storage: Storage, chain: tuple = (), requires_grad: bool = False):
         from .device import torch_device
 
-        # Every reflop tensor reports reflop:0: PyTorch's Python backends
+        # To C++ every reflop tensor is reflop:0: PyTorch's Python backends
         # expose a single device to autograd. The tensor's server session
         # (GPU, or the server CPU from reflop.device(1, kind="cpu")) is
-        # tracked in its Storage instead.
+        # tracked in its Storage, and the Python `device` property reports it.
         r = torch.Tensor._make_wrapper_subclass(
             cls, meta.shape, strides=meta.stride(), storage_offset=meta.storage_offset(), dtype=meta.dtype,
             device=torch_device(0), requires_grad=requires_grad)
@@ -153,6 +153,66 @@ class RemoteTensor(torch.Tensor):
     def reflop_handle(self) -> bytes | None:
         """Server handle of the base tensor, after the last flush."""
         return self._rf_storage.handle
+
+    # The C++ tensor reports reflop:0 for every session (see __new__), but
+    # Python code sees the session's own index, so `device=x.device` and
+    # `y.to(x.device)` reach the session that x lives in.
+    @property
+    def device(self) -> torch.device:
+        return torch.device("reflop", self._rf_storage.session.device_index)
+
+    # `param.data = t` swaps the C++ tensor only; the server-side state lives
+    # in Python attributes, so carry those over too (nn.Module.to relies on it).
+    @property
+    def data(self):
+        return torch.Tensor.data.__get__(self)
+
+    @data.setter
+    def data(self, value) -> None:
+        torch.Tensor.data.__set__(self, value)
+        if isinstance(value, RemoteTensor):
+            self._rf_storage, self._rf_meta, self._rf_chain = value._rf_storage, value._rf_meta, value._rf_chain
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        # cpu_tensor.to(remote): C++ would read the reference's device as
+        # reflop:0; use its session instead.
+        if func is torch.Tensor.to and args and not isinstance(args[0], RemoteTensor):
+            kwargs = kwargs or {}
+            other = args[1] if len(args) > 1 else kwargs.get("tensor")
+            if isinstance(other, RemoteTensor):
+                rest, kw, copy = _split_copy(args[1:], kwargs)
+                nb = bool(rest[1] if len(rest) > 1 else kw.get("non_blocking", False))
+                return args[0].to(device=other.device, dtype=other.dtype, non_blocking=nb, copy=copy,
+                                  memory_format=kw.get("memory_format", torch.preserve_format))
+        return torch._C._disabled_torch_function_impl(func, types, args, kwargs or {})
+
+    def to(self, *args, **kwargs):
+        other = args[0] if args and isinstance(args[0], torch.Tensor) else kwargs.get("tensor")
+        pargs, pkw, copy = _split_copy(args, kwargs)
+        device, dtype, non_blocking, mf = torch._C._nn._parse_to(*pargs, **pkw)
+        if isinstance(other, RemoteTensor):
+            device = other.device
+        if device is None or device.type != "reflop":
+            return super().to(*args, **kwargs)
+        target = _session_for(device)
+        if target is not self._rf_storage.session:
+            return _move_session(self, target, dtype or self.dtype)
+        # Same session: every session is reflop:0 to C++, so drop the device.
+        return super().to(device=torch.device("reflop", 0), dtype=dtype, non_blocking=non_blocking,
+                          copy=copy, memory_format=mf or torch.preserve_format)
+
+
+def _split_copy(args, kwargs):
+    """Remove `copy` from Tensor.to arguments (torch's _parse_to rejects it)."""
+    kwargs = dict(kwargs)
+    copy = bool(kwargs.pop("copy", False))
+    # to(device, dtype, non_blocking, copy) / to(dtype, non_blocking, copy) / to(tensor, non_blocking, copy)
+    i = 2 if args and isinstance(args[0], (torch.dtype, torch.Tensor)) else 3
+    if len(args) > i:
+        copy = bool(args[i])
+        args = args[:i] + args[i + 1:]
+    return tuple(args), kwargs, copy
 
 
 def is_remote(x) -> bool:
@@ -745,6 +805,33 @@ def _local_scalar(sess, func, args, kwargs):
     return sess.fetch_scalar(value_of(t))
 
 
+def _move_raw(x, target, dtype):
+    cpu = x._rf_storage.session.fetch(value_of(x), x._rf_meta)
+    return target.upload_tensor(cpu.to(dtype=dtype))
+
+
+class _MoveSession(torch.autograd.Function):
+    """Copy between server sessions through the client; gradients go back."""
+
+    @staticmethod
+    def forward(ctx, x, target, dtype):
+        ctx.src, ctx.src_dtype = x._rf_storage.session, x.dtype
+        return _move_raw(x, target, dtype)
+
+    @staticmethod
+    def backward(ctx, g):
+        if isinstance(g, RemoteTensor) and g._rf_storage.session is not ctx.src:
+            g = _move_raw(g, ctx.src, ctx.src_dtype)
+        return g, None, None
+
+
+def _move_session(x, target, dtype):
+    if x.requires_grad and torch.is_grad_enabled() and dtype.is_floating_point:
+        return _MoveSession.apply(x, target, dtype)
+    with torch.no_grad():
+        return _move_raw(x, target, dtype)
+
+
 def _to_copy(sess, func, args, kwargs):
     vals = normalize(func, args, kwargs)
     src, dtype, layout, device, pin, non_blocking, mf = vals
@@ -756,11 +843,14 @@ def _to_copy(sess, func, args, kwargs):
                       memory_format=mf or torch.preserve_format)
     if not isinstance(src, RemoteTensor):
         t = src.to(dtype=dtype or src.dtype)
-        return _session_for(device).upload_tensor(t)
-    if device is not None and _target_index(device) != src._rf_storage.session.device_index:
-        # reflop:i -> reflop:j: different server sessions, move through the client.
-        cpu = sess.fetch(value_of(src), src._rf_meta)
-        return _session_for(device).upload_tensor(cpu.to(dtype=dtype or cpu.dtype))
+        return _session_for(device).upload_tensor(t, source=src)
+    # reflop:0 here is what C++ reports for every session (autograd's
+    # ToCopyBackward passes it), so it means "stay"; RemoteTensor.to handles
+    # explicit moves between sessions.
+    if device is not None and _target_index(device) != 0:
+        target = _session_for(device)
+        if target is not src._rf_storage.session:
+            return _move_raw(src, target, dtype or src.dtype)
     return _functional(sess, func, args, kwargs)
 
 
@@ -775,7 +865,7 @@ def _copy_(sess, func, args, kwargs):
     if not isinstance(src, RemoteTensor):
         if (st.value is None and not dst._rf_chain and tuple(src.shape) == tuple(dst.shape)
                 and src.dtype == dst.dtype and src.dim() > 0):
-            st.set(sess.upload_value(src))
+            st.set(sess.upload_value(src, source=src))
             st.handle = st.value.handle
             return dst
         write(dst, sess.cpu_value(src), _to_meta(src))
@@ -1021,6 +1111,15 @@ def _factory_kernel(op):
     return kernel
 
 
+def _copy_from(src, dst, non_blocking=False):
+    # Reached when C++ copies with Python dispatch excluded (torch.tensor(...,
+    # device=reflop) builds on CPU and copies into an empty remote tensor).
+    target = dst if isinstance(dst, RemoteTensor) else src
+    sess = target._rf_storage.session
+    _copy_(sess, aten.copy_.default, (dst, src), {})
+    return dst
+
+
 _lib = None
 
 
@@ -1033,6 +1132,7 @@ def register_backend_kernels() -> None:
     _lib = torch.library.Library("aten", "IMPL")
     _lib.impl("empty.memory_format", _empty_memory_format, "PrivateUse1")
     _lib.impl("empty_strided", _empty_strided, "PrivateUse1")
+    _lib.impl("_copy_from", _copy_from, "PrivateUse1")
     for qual in FACTORIES:
         base, ov = qual.split(".")
         pkt = getattr(aten, base, None)

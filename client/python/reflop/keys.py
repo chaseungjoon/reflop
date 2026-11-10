@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """The client's Ed25519 identity key (PLAN.md §12: key storage).
 
-macOS: the private key lives in the login Keychain. Elsewhere (or when the
+macOS: the private key lives in the login Keychain (one entry per
+REFLOP_CLIENT_HOME). Elsewhere (or when the
 Keychain is unavailable): ~/.config/reflop/id_ed25519, mode 0600, OpenSSH
 format, which SSH pipe mode can use directly.
 """
@@ -33,8 +34,16 @@ def _keychain_ok() -> bool:
             and os.environ.get("REFLOP_NO_KEYCHAIN") != "1")
 
 
+def _account() -> str:
+    """Keychain account: one key per client home, so Guests simulated with
+    REFLOP_CLIENT_HOME get separate identities."""
+    user = os.environ.get("USER", "reflop")
+    home = os.environ.get("REFLOP_CLIENT_HOME")
+    return f"{user}:{Path(home).expanduser().resolve()}" if home else user
+
+
 def _keychain_get() -> bytes | None:
-    r = subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", os.environ.get("USER", "reflop"), "-w"],
+    r = subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", _account(), "-w"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         return None
@@ -42,7 +51,7 @@ def _keychain_get() -> bytes | None:
 
 
 def _keychain_put(seed: bytes) -> bool:
-    r = subprocess.run(["security", "add-generic-password", "-U", "-s", SERVICE, "-a", os.environ.get("USER", "reflop"),
+    r = subprocess.run(["security", "add-generic-password", "-U", "-s", SERVICE, "-a", _account(),
                         "-w", base64.b64encode(seed).decode()], capture_output=True, text=True)
     return r.returncode == 0
 

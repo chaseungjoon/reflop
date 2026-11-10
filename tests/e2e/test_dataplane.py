@@ -83,8 +83,9 @@ def test_push_resume_and_train(tmp_path):
     after = reflop.stats()[0]
     per_step = (after["bytes_up"] - before["bytes_up"]) / steps
     assert last < first, (first, last)
-    # Index-level batching: ~1 KiB of indices per step (batch 128 × int64), not images.
-    assert per_step < 16 * 1024, per_step
+    # Index-level batching: the indices once per step (batch 128 × int64), not
+    # once per dataset tensor and not images.
+    assert per_step < 128 * 8 + 64, per_step
     c = admin(None)
     lst = c.call(cpb.Envelope(list_datasets=dpb.ListDatasets()), timeout=30).dataset_list.datasets
     did = [d.dataset_id for d in lst if d.name == name][0]

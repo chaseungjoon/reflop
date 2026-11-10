@@ -56,6 +56,10 @@ make -C clib check          # run both examples against your default server
 cc -Iclib/include prog.c -Lclib/build -lreflop -Wl,-rpath,clib/build
 ```
 
+The same `cc` line works on Linux and macOS: on macOS the library's install
+name is `@rpath/libreflop.so`, so the `-rpath` you pass decides where it is
+found (`@loader_path` for "next to the program").
+
 Building needs Go (cgo) and a C compiler. The library has no runtime
 dependencies beyond libc.
 

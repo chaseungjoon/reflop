@@ -50,11 +50,18 @@ class RemoteDataset:
     def batch(self, indices) -> dict[str, torch.Tensor]:
         """Gather rows on the server. `indices` is a CPU (or reflop) int tensor."""
         from ..natives import op
+        from ..tensor import RemoteTensor, Storage
 
         if not isinstance(indices, torch.Tensor):
             indices = torch.as_tensor(indices, dtype=torch.int64)
         if indices.dtype not in (torch.int32, torch.int64):
             indices = indices.to(torch.int64)
+        if not isinstance(indices, RemoteTensor) and indices.dim() > 0:
+            # One shared input for every gather: the indices cross the wire once.
+            v = self.sess.cpu_value(indices)
+            st = Storage(self.sess, v.meta, None)
+            st.value = v
+            indices = RemoteTensor(v.meta, st)
         g = op("dataset_gather")
         return {k: g(t, indices) for k, t in self._tensors.items()}
 

@@ -6,6 +6,7 @@ One Session ↔ one server session (one worker) ↔ one reflop device index.
 
 from __future__ import annotations
 
+import atexit
 import os
 import secrets
 import threading
@@ -68,6 +69,31 @@ def synchronize() -> None:
         s.synchronize()
 
 
+_atexit_done = False
+
+
+def _register_atexit() -> None:
+    global _atexit_done
+    if not _atexit_done:
+        _atexit_done = True
+        atexit.register(_close_at_exit)
+
+
+def _close_at_exit() -> None:
+    """End the server sessions when the process exits. A dead process can never
+    resume them, and a detached session keeps its worker (and GPU memory) for the
+    Owner's session TTL. Unflushed work is dropped: nothing can read it anymore."""
+    with _glock:
+        sessions = list(_sessions.values())
+        _sessions.clear()
+        _default.clear()
+    for s in sessions:
+        try:
+            s.conn.close()
+        except Exception:  # noqa: BLE001 - best effort at exit
+            pass
+
+
 def _tensor_from_data(td: cpb.TensorData | None, meta: gpb.TensorMeta, data: bytes) -> torch.Tensor:
     from .trace import PB_TO_DTYPE
 
@@ -104,6 +130,7 @@ class Session:
         self.dirty: weakref.WeakSet = weakref.WeakSet()
         self.registered: set[bytes] = set()
         self.pending_free: list[bytes] = []
+        self.upload_log: list | None = None  # set by reflop.capture while it records a step
         self.async_error: BaseException | None = None
         self.inflight: list = []
         self.depth = 0
@@ -116,6 +143,7 @@ class Session:
         with _glock:
             _sessions[device_index] = self
             _default.append(self)
+            _register_atexit()
 
     # -------------------------------------------------------------- op recording
 
@@ -161,15 +189,20 @@ class Session:
     def dataset_value(self, dataset_id: bytes, name: str, meta: torch.Tensor) -> Value:
         return Value(DATASET, meta, payload=(dataset_id, name))
 
-    def upload_value(self, t: torch.Tensor) -> Value:
+    def upload_value(self, t: torch.Tensor, source: torch.Tensor | None = None) -> Value:
+        """Upload a CPU tensor. `source` is the tensor the program moved (before
+        any dtype cast); reflop.capture uses it to rebind per-step uploads."""
         h = self.new_handle()
         self._upload(h, t)
+        if self.upload_log is not None and source is not None:
+            self.upload_log.append((h, source, (source._version, tuple(source.shape), source.stride(),
+                                                source.dtype), t.dtype))
         return Value(HANDLE, t.to("meta") if t.dim() else torch.empty((), dtype=t.dtype, device="meta"), handle=h)
 
-    def upload_tensor(self, t: torch.Tensor):
+    def upload_tensor(self, t: torch.Tensor, source: torch.Tensor | None = None):
         from .tensor import RemoteTensor, Storage
 
-        v = self.upload_value(t.detach())
+        v = self.upload_value(t.detach(), source)
         st = Storage(self, v.meta, v)
         return RemoteTensor(v.meta, st)
 

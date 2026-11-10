@@ -7,6 +7,7 @@ values you ask for. Your machine needs no CUDA: a MacBook works.
 - [Install and pair](#install-and-pair)
 - [The device](#the-device)
 - [When work is sent](#when-work-is-sent)
+- [Sessions](#sessions)
 - [Errors](#errors)
 - [Datasets](#datasets)
 - [reflop.capture](#reflopcapture)
@@ -35,7 +36,10 @@ prints the line to add the library to your project (`uv add …` or `pip install
 Pairing creates an Ed25519 key for this machine (macOS: stored in the login
 Keychain; Linux: `~/.config/reflop/id_ed25519`, mode 0600) and pins the
 server's key. If the server ever presents a different key, the client stops
-before sending anything.
+before sending anything. With `REFLOP_CLIENT_HOME` set, the client keeps its
+config there and uses a separate key (a separate Keychain entry on macOS), so
+one machine can act as several Guests. The C API reads a key file; on macOS run
+`reflop key --write-file` once.
 
 ## The device
 
@@ -73,8 +77,21 @@ where you wait for a value, the same way CUDA errors surface.
 Identical steps produce identical graphs, so after the first step or two only
 the graph's hash and the step's inputs are sent. Learning rates, step counts and
 other Python floats are sent as inputs, not baked into the graph, so they do not
-force a new graph each step. `reflop.stats()` shows flushes, graph registrations,
-executes and bytes sent and received.
+force a new graph each step. A step that never reads a value (no `.item()`)
+merges with the next one into a larger graph until something forces a flush;
+call `reflop.step_boundary()` at the end of each step to keep one graph per step.
+`reflop.stats()` shows flushes, graph registrations, executes and tensor bytes
+sent and received (tensor payloads only, not protocol framing).
+
+## Sessions
+
+The first `reflop.device()` call opens a session: a worker process on the
+server that holds your tensors. `reflop.close()` ends it and frees its GPU
+memory; the client also closes its sessions when your Python process exits.
+If the connection drops instead (network loss, a killed process), the server
+keeps the session for a while (`[session] ttl`, 30 minutes by default) so the
+client can reconnect. A kept session whose client is gone gives up its GPU
+memory as soon as a new session needs it.
 
 ## Errors
 
@@ -124,7 +141,8 @@ for batch in ds.loader(batch_size=128, shuffle=True, seed=0, epochs=10):
     loss = F.cross_entropy(model(x), batch["labels"])
 ```
 
-Each step sends only the batch indices (8 bytes per sample). `ds.batch(indices)`
+Each step sends only the batch indices (8 bytes per sample, once per batch
+whatever the number of tensors in the dataset). `ds.batch(indices)`
 gathers specific rows. Augmentation written as tensor operations (slicing for
 crops, `flip`, arithmetic) runs on the server too.
 
@@ -164,6 +182,9 @@ your Python function is not run. Rules (checked, not assumed):
   `reflop.CaptureError` explains it instead of silently freezing the value.
 - The returned tensors are the same objects every call, with new contents (like
   CUDA graphs). Clone them if you need to keep a value.
+- CPU tensor arguments may be moved inside the step (`x.to(dev)`, as above) or
+  before the call (`step(x.to(dev), y.to(dev))`). Inside the step, each replay
+  uploads the new argument.
 
 `torch.compile` does not work with reflop tensors (TorchDynamo cannot trace this
 kind of tensor subclass). `reflop.capture` gives the same benefit.
@@ -209,9 +230,12 @@ a = torch.randn(4096, 4096).to(cpu)
 b = (a @ a).to(gpu)                    # moving between sessions goes through your machine
 ```
 
-Both report `device='reflop:0'` (PyTorch's autograd sees one device). Each
-tensor remembers its session; an operation mixing tensors from two sessions
-raises an error asking you to move one.
+`t.device` is the session's device (`reflop:0`, `reflop:1`), so
+`torch.zeros(..., device=t.device)`, `torch.arange(n, device=idx.device)`,
+`t.to(other.device)`, `t.to(other)` and `model.to(cpu)` follow the session.
+(PyTorch's autograd internally sees a single device.) Moves between sessions are differentiable. An
+operation mixing tensors from two sessions raises an error asking you to move
+one.
 
 ## Saving checkpoints
 
@@ -247,7 +271,6 @@ Does not work:
 - sparse, nested or quantized tensors
 - multi-GPU training, `torch.distributed`
 - explicit `torch.Generator` objects on reflop tensors (use `reflop.seed(n)`)
-- assigning `tensor.data = other` on a reflop tensor
 
 GPU results can differ from your CPU's in the last bits (TF32 is on for
 convolutions by default, and some GPU kernels are not deterministic).

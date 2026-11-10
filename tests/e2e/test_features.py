@@ -72,6 +72,31 @@ def test_capture_with_capturable_adamw(dev):
     assert abs(loss.item() - rl.item()) < max(tol(), 1e-5)
 
 
+def test_capture_uploads_cpu_batches_inside_the_step(dev):
+    m, r = mk().to(dev), mk()
+    o = torch.optim.SGD(m.parameters(), 0.1, momentum=0.9)
+    ro = torch.optim.SGD(r.parameters(), 0.1, momentum=0.9)
+
+    def step(x, y):
+        o.zero_grad(set_to_none=True)
+        loss = F.cross_entropy(m(x.to(dev)), y.to(dev))
+        loss.backward()
+        o.step()
+        return loss
+
+    s = reflop.capture(step)
+    g = torch.Generator().manual_seed(3)
+    for _ in range(6):
+        x, y = torch.randn(32, 16, generator=g), torch.randint(0, 4, (32,), generator=g)
+        loss = s(x, y)
+        rl = F.cross_entropy(r(x), y)
+        ro.zero_grad()
+        rl.backward()
+        ro.step()
+        assert abs(loss.item() - rl.item()) < tol()
+    assert s.replays >= 3
+
+
 def test_capture_refuses_drifting_scalars(dev):
     m = mk().to(dev)
     o = torch.optim.Adam(m.parameters(), 1e-2)

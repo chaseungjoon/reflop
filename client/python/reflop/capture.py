@@ -40,6 +40,20 @@ def _arg_tensors(args):
     return [a for a in args if isinstance(a, torch.Tensor)]
 
 
+def _state(t):
+    return (t._version, tuple(t.shape), t.stride(), t.dtype)
+
+
+def _same_cpu_tensor(t, state, ts, cpu_args, before):
+    """Index of the CPU argument that `t` was, unchanged, when the step
+    uploaded it (`state`, against the arguments' states at the call)."""
+    for i in cpu_args:
+        a = ts[i]
+        if (a is t or a.data_ptr() == t.data_ptr()) and before[i] == state:
+            return i
+    return None
+
+
 def _sig(args):
     return tuple((tuple(a.shape), a.dtype, type(a).__name__) if isinstance(a, torch.Tensor) else ("py", repr(a))
                  for a in args)
@@ -56,10 +70,20 @@ class Captured:
         self.replays = 0
         functools.update_wrapper(self, fn)
 
-    def _session(self):
-        return self.sess or _session.current()
+    def _candidates(self, args) -> list:
+        """Sessions the step may use: the arguments' session if they pin one,
+        else every open session (the step's own work decides)."""
+        from .tensor import RemoteTensor
 
-    def _arg_handles(self, sess, args) -> list:
+        if self.sess is not None:
+            return [self.sess]
+        ss = {id(a._rf_storage.session): a._rf_storage.session
+              for a in _arg_tensors(args) if isinstance(a, RemoteTensor)}
+        if len(ss) == 1:
+            return list(ss.values())
+        return list(_session._sessions.values()) or [_session.current()]
+
+    def _arg_handles(self, args) -> list:
         from .tensor import RemoteTensor, value_of
 
         hs = []
@@ -67,24 +91,43 @@ class Captured:
             if isinstance(a, RemoteTensor):
                 v = value_of(a)
                 if v.kind != HANDLE:
-                    sess.flush()
+                    a._rf_storage.session.flush()
                     v = value_of(a)
                 hs.append(("handle", v.handle))
             else:
                 hs.append(("cpu", None))
         return hs
 
-    def _record(self, sess, args):
-        sess.flush()
-        arg_h = self._arg_handles(sess, args)
-        out = self.fn(*args)
+    def _record(self, args):
+        cands = self._candidates(args)
+        for c in cands:
+            c.flush()
+        arg_h = self._arg_handles(args)
+        ts = _arg_tensors(args)
+        cpu_args = [i for i, (k, _) in enumerate(arg_h) if k == "cpu"]
+        before = {i: _state(ts[i]) for i in cpu_args}
+        logs = {}
+        for c in cands:
+            c.upload_log = []
+        try:
+            out = self.fn(*args)
+        finally:
+            for c in cands:
+                logs[id(c)], c.upload_log = c.upload_log, None
+        used = [c for c in cands if len(c.trace) or c.dirty or logs[id(c)]]
+        if len(used) != 1:
+            # Nothing recorded, or work in several sessions: stays eager.
+            for c in used:
+                c.flush()
+            return out, None
+        sess = used[0]
+        uploads = {h: (t, st, dt) for h, t, st, dt in logs[id(sess)]}
         plan: dict = {}
         sess.flush(plan=plan)
         built = plan.get("built")
         if built is None:
             return out, None
         sources = []
-        cpu_args = [i for i, (k, _) in enumerate(arg_h) if k == "cpu"]
         for v in built.input_values:
             src = None
             if v.kind == HANDLE:
@@ -92,13 +135,23 @@ class Captured:
                     if k == "handle" and h == v.handle:
                         src = ("arg", i)
                         break
+                if src is None and v.handle in uploads:
+                    # x.to(dev) inside the step: rebind the argument each replay.
+                    t, st, dt = uploads[v.handle]
+                    i = _same_cpu_tensor(t, st, ts, cpu_args, before)
+                    if i is not None:
+                        src = ("upload", i, dt)
+                    elif t._version == st[0]:
+                        src = ("const", sess.cpu_value(t.to(dt)))
+                    else:
+                        src = ("changed",)  # modified after the upload: never replayed
                 if src is None:
                     if v.handle in plan["freed"]:
-                        raise CaptureError("the step reads a tensor that it also frees; run a few eager steps first "
+                        raise CaptureError("the step reads a server tensor that it also frees (a temporary made "
+                                           "before the step and dropped inside it); run a few eager steps first "
                                            "(e.g. zero_grad(set_to_none=False))")
                     src = ("handle", v.handle)
             elif v.kind == CPU:
-                ts = _arg_tensors(args)
                 for i in cpu_args:
                     if v.payload.shape == ts[i].shape and torch.equal(v.payload, ts[i].detach().cpu()):
                         src = ("arg", i)
@@ -116,15 +169,16 @@ class Captured:
                 specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_REBIND, handle=sp.handle))
             else:
                 specs.append(sp)
-        return out, {"hash": built.graph_hash, "sources": sources, "specs": specs,
+        return out, {"sess": sess, "hash": built.graph_hash, "sources": sources, "specs": specs,
                      "owners": [st for st, _ in plan["owners"]]}
 
     @staticmethod
     def _same(a, b) -> bool:
-        if a is None or b is None or a["hash"] != b["hash"] or len(a["sources"]) != len(b["sources"]):
+        if (a is None or b is None or a["sess"] is not b["sess"] or a["hash"] != b["hash"]
+                or len(a["sources"]) != len(b["sources"])):
             return False
         for x, y in zip(a["sources"], b["sources"]):
-            if x[0] != y[0]:
+            if x[0] != y[0] or x[0] == "changed":
                 return False
             if x[0] == "scalar" and x[1] != y[1]:
                 return False
@@ -132,14 +186,15 @@ class Captured:
                 return False
             if x[0] == "arg" and x[1] != y[1]:
                 return False
+            if x[0] == "upload" and x[1:] != y[1:]:
+                return False
         return True
 
     def __call__(self, *args):
-        sess = self._session()
         sig = _sig(args)
         if self.plan is not None and sig == self.sig:
-            return self._replay(sess, args)
-        out, plan = self._record(sess, args)
+            return self._replay(self.plan["sess"], args)
+        out, plan = self._record(args)
         if sig == self.sig and self._same(self.prev, plan):
             self.plan, self.out = plan, out
         elif self.prev is not None and sig == self.sig and plan is not None and self.prev["hash"] == plan["hash"]:
@@ -158,7 +213,7 @@ class Captured:
         if len(sess.trace):
             sess.flush()
         sess.raise_async()
-        arg_h = self._arg_handles(sess, args)
+        arg_h = self._arg_handles(args)
         ts = _arg_tensors(args)
         values = []
         from .trace import Value
@@ -171,6 +226,8 @@ class Captured:
                     values.append(Value(HANDLE, None, handle=arg_h[i][1]))
                 else:
                     values.append(sess.cpu_value(ts[i]))
+            elif kind == "upload":
+                values.append(sess.cpu_value(ts[src[1]].to(src[2])))
             elif kind == "handle":
                 values.append(Value(HANDLE, None, handle=src[1]))
             elif kind == "const":

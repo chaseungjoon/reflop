@@ -169,7 +169,10 @@ reflopd rails set --ram 8GiB --disk 50GiB --disk-percent 15
 
 Quotas are about fairness, and there are none by default: Guests and you agree
 on usage among yourselves. When the GPU is full, the Guest whose allocation fails
-gets an `OUT_OF_MEMORY` error and their session keeps working. If you need
+gets an `OUT_OF_MEMORY` error and their session keeps working. Sessions whose
+client disconnected without closing are kept for `[session] ttl`, but the
+oldest of them on that GPU is ended (audit event `session_evicted`) when a new
+session cannot start or an allocation fails for lack of memory. If you need
 limits:
 
 ```sh
@@ -251,7 +254,8 @@ tf32_matmul = false
 tf32_cudnn = true
 
 [session]
-ttl = "30m"       # how long a disconnected session's state is kept
+ttl = "30m"       # how long a disconnected session's state is kept; a kept
+                  # session is evicted early when a new session needs its GPU memory
 
 [sandbox]
 accept_weak_isolation = false

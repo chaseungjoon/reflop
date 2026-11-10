@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,8 +88,24 @@ func (s *Server) openSession(c *clientConn, req *pb.OpenSession) (*Session, erro
 	}
 	sess.numerics = s.allowedNumerics(req.Numerics)
 	w, err := s.spawnWorker(context.Background(), sess)
+	// A detached session belongs to a client that went away; its worker still
+	// holds GPU memory until the session TTL. Reclaim those before refusing.
+	for err != nil && isOOM(err) && slot.GPU != nil {
+		victim := s.oldestDetached(slot)
+		if victim == nil {
+			break
+		}
+		s.logf("GPU full while starting a session for %q: ending detached session %s of %q", c.identity.Name, victim.hex()[:8], victim.Identity.Name)
+		s.audit.Write(audit.Record{Identity: victim.Identity.Name, ID: victim.Identity.ID, Session: victim.hex(), Event: "session_evicted",
+			Fields: map[string]any{"reason": "gpu_full", "for": c.identity.Name}})
+		victim.close("ended while detached: the GPU was needed for a new session")
+		w, err = s.spawnWorker(context.Background(), sess)
+	}
 	if err != nil {
 		s.logf("session for %q: %v", c.identity.Name, err)
+		if isOOM(err) {
+			return nil, statusf(pb.ErrorCode_ERROR_OUT_OF_MEMORY, "the GPU has no free memory for a new session (other sessions or the Owner are using it): %v", firstLine(err.Error()))
+		}
 		return nil, statusf(pb.ErrorCode_ERROR_INTERNAL, "could not start a worker: %v", firstLine(err.Error()))
 	}
 	sess.worker = w
@@ -105,6 +122,28 @@ func (s *Server) openSession(c *clientConn, req *pb.OpenSession) (*Session, erro
 }
 
 func (s *Session) hex() string { return hex.EncodeToString(s.ID[:]) }
+
+func isOOM(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "out of memory")
+}
+
+// oldestDetached returns the session on slot that has been detached longest.
+func (s *Server) oldestDetached(slot *DeviceSlot) *Session {
+	var best *Session
+	var since time.Time
+	for _, sess := range s.allSessions() {
+		if sess.Device != slot {
+			continue
+		}
+		sess.mu.Lock()
+		d, ok := sess.detached, sess.conn == nil && !sess.closed && !sess.detached.IsZero()
+		sess.mu.Unlock()
+		if ok && (best == nil || d.Before(since)) {
+			best, since = sess, d
+		}
+	}
+	return best
+}
 
 func (s *Server) resume(c *clientConn, id []byte) (*Session, error) {
 	if len(id) != 16 {
@@ -289,6 +328,15 @@ func (s *Session) deliver(env *pb.Envelope) {
 		return
 	}
 	if e := env.GetError(); e != nil {
+		if e.Code == pb.ErrorCode_ERROR_OUT_OF_MEMORY && s.Device.GPU != nil {
+			if victim := s.srv.oldestDetached(s.Device); victim != nil && victim != s {
+				s.srv.logf("GPU out of memory in session %s of %q: ending detached session %s of %q", s.hex()[:8], s.Identity.Name, victim.hex()[:8], victim.Identity.Name)
+				s.srv.audit.Write(audit.Record{Identity: victim.Identity.Name, ID: victim.Identity.ID, Session: victim.hex(), Event: "session_evicted",
+					Fields: map[string]any{"reason": "gpu_full", "for": s.Identity.Name}})
+				victim.close("ended while detached: the GPU was needed by another session")
+				e.Message += " (a disconnected session was holding GPU memory and has been ended; retrying may succeed)"
+			}
+		}
 		s.srv.audit.Write(audit.Record{Identity: s.Identity.Name, ID: s.Identity.ID, Session: s.hex(), Event: "request_failed",
 			Fields: map[string]any{"kind": r.kind, "code": e.Code.String(), "stage": e.Stage.String(), "message": trunc(e.Message, 300)}})
 	} else if er := env.GetExecuteResult(); er != nil && env.End {

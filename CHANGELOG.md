@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Client: `t.device` reports the tensor's session, so `device=t.device`,
+  `t.to(other)`, `module.to(...)` and differentiable moves work across the GPU
+  and server-CPU sessions; `tensor.data = other` works; `torch.tensor(...,
+  device=dev)` works.
+- Client: `reflop.capture` accepts steps that move CPU arguments with
+  `x.to(dev)`; sessions close when the Python process exits; dataset batches
+  send their indices once.
+- `reflopd`: a session that cannot start, or an allocation that fails, for lack
+  of GPU memory evicts the oldest disconnected session on that GPU; start-up
+  OOM is reported as `OUT_OF_MEMORY`.
+- macOS: separate Keychain keys per `REFLOP_CLIENT_HOME`; `libreflop` links
+  with an `@rpath` install name.
+
 ## 0.1.0 (2026-11-10)
 
 First implementation of PLAN.md milestones M0–M7.
