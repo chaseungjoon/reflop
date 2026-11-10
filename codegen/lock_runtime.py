@@ -180,7 +180,7 @@ def python_build() -> dict:
 
 def main() -> None:
     lock = {"format": 1, "python": python_build(), "variants": {}}
-    for v, (req, index, cuda, drv, ccmin, ccmax) in VARIANTS.items():
+    for v, (req, _index, cuda, drv, ccmin, ccmax) in VARIANTS.items():
         lock["variants"][v] = {
             "torch": req.split("==")[1], "cuda": cuda, "min_driver": drv,
             "min_cc": ccmin, "max_cc": ccmax,

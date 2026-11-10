@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import torch
-
 from reflop_worker._pb import compute_pb2 as cpb
 from reflop_worker._pb import graph_pb2 as gpb
 from reflop_worker._pb import worker_pb2 as wpb
@@ -109,7 +108,7 @@ def run(sess, g, inputs: list[torch.Tensor], ret=True):
 
 
 def decode(td):
-    from reflop_worker.execute import tensor_from_bytes
     from reflop_worker.dtypes import PB_TO_TORCH
+    from reflop_worker.execute import tensor_from_bytes
 
     return tensor_from_bytes(td.data, PB_TO_TORCH[td.meta.dtype], tuple(td.meta.shape), "cpu")

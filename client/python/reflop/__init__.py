@@ -10,13 +10,14 @@ and tensor data go to the server.
 """
 
 from .api import close, device, fetch, placement, seed, stats, step_boundary, synchronize
+from .capture import CaptureError, capture
 from .errors import OutOfMemoryError, ReflopError, ReflopRemoteError, SessionLostError
 from .trace import UnsupportedOperatorError
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "device", "fetch", "placement", "seed", "step_boundary", "synchronize", "close", "stats",
+    "device", "capture", "CaptureError", "fetch", "placement", "seed", "step_boundary", "synchronize", "close", "stats",
     "ReflopError", "ReflopRemoteError", "OutOfMemoryError", "SessionLostError", "UnsupportedOperatorError",
     "dataset", "__version__",
 ]

@@ -20,7 +20,6 @@ from ._pb import graph_pb2 as gpb
 from .errors import FatalError, ReflopError
 from .graph import Program, Ref, ScalarRef
 from .handles import check_new
-from .meta import DatasetMeta, call_args
 from .ops_generated import FLAG_UNINIT
 
 E1 = cpb.STAGE_E1_BINDINGS
@@ -40,7 +39,53 @@ def tensor_from_bytes(data: bytes, dt: torch.dtype, shape, device) -> torch.Tens
         return torch.empty(shape, dtype=dt, device=device)
     buf = bytearray(data)
     t = torch.frombuffer(buf, dtype=torch.uint8).view(dt).reshape(shape)
-    return t.to(device)
+    r = validators.measure(t) if dt in validators.INT_DTYPES else None  # on the host: no device sync later
+    out = t.to(device)
+    validators.set_range(out, r)
+    return out
+
+
+# Ops whose integer output takes values from their first input only, so a
+# verified range carries over (no device synchronization needed).
+RANGE_PRESERVING = {
+    "aten.view.default", "aten._unsafe_view.default", "aten.reshape.default", "aten.clone.default",
+    "aten.contiguous.default", "aten.alias.default", "aten.detach.default", "aten.expand.default",
+    "aten.permute.default", "aten.t.default", "aten.transpose.int", "aten.squeeze.dim", "aten.squeeze.dims",
+    "aten.unsqueeze.default", "aten.select.int", "aten.slice.Tensor", "aten.flatten.using_ints",
+    "aten.index_select.default", "aten.gather.default", "aten.repeat.default", "aten.cat.default",
+    "aten.split_with_sizes.default", "aten.split.Tensor", "aten.unbind.int", "aten.flip.default",
+    "aten.roll.default", "aten.lift_fresh_copy.default", "aten.diagonal.default", "aten.narrow.default",
+    "reflop.dataset_gather.default",
+}
+
+
+def propagate_range(node, pos: list, outs: list) -> None:
+    name = node.op.name
+    src = None
+    if name in RANGE_PRESERVING and pos:
+        a = pos[0]
+        if isinstance(a, list):  # cat
+            rs = [validators.known_range(x) for x in a if isinstance(x, torch.Tensor)]
+            if rs and all(r is not None for r in rs):
+                src = (min(r[0] for r in rs), max(r[1] for r in rs))
+        elif isinstance(a, torch.Tensor) or hasattr(a, "value_range"):
+            src = a.value_range if hasattr(a, "value_range") else validators.known_range(a)
+            if isinstance(a, torch.Tensor) and outs and outs[0].dtype != a.dtype:
+                src = None
+    elif name == "aten._to_copy.default" and pos and isinstance(pos[0], torch.Tensor) and outs:
+        r = validators.known_range(pos[0])
+        o = outs[0]
+        if r is not None and o.dtype in validators.INT_DTYPES and o.dtype != torch.bool:
+            info = torch.iinfo(o.dtype)
+            if info.min <= r[0] and r[1] <= info.max:
+                src = r
+    elif name in ("aten.randperm.default", "reflop.randperm_seeded.default") and pos:
+        src = (0, max(int(pos[0]) - 1, 0))
+    elif name in ("aten.argmax.default", "aten.argmin.default") and pos:
+        src = (0, max(pos[0].numel() - 1, 0))
+    if src is not None:
+        for o in outs:
+            validators.set_range(o, src)
 
 
 def is_cuda_fatal(e: BaseException) -> bool:
@@ -115,7 +160,7 @@ class Executor:
                     raise binding_error(f"input {i}: dataset tensor does not match the graph")
                 env[Ref(-1, i)] = t
         seen = set()
-        for o, (spec, r) in enumerate(zip(ex.outputs, prog.outputs)):
+        for o, spec in enumerate(ex.outputs):
             k = cpb.OutputSpec
             if spec.kind == k.KIND_STORE:
                 check_new(spec.handle)
@@ -141,64 +186,98 @@ class Executor:
 
     # -------------------------------------------------------------- E2 + E3
 
+    def compile(self, prog: Program) -> list:
+        """Flatten a validated program into per-node plans (once per graph)."""
+        if getattr(prog, "_compiled", None) is not None:
+            return prog._compiled
+        expiring: dict[int, list] = {}
+        for r, last in prog.last_use.items():
+            if r.node >= 0 and r not in set(prog.outputs):
+                expiring.setdefault(last, []).append(r)
+        plans = []
+        for node in prog.nodes:
+            args = []
+            for spec, a in zip(node.op.args, node.args):
+                if isinstance(a, Ref):
+                    kind, val = 0, a
+                elif isinstance(a, ScalarRef):
+                    kind, val = 1, a.input
+                elif isinstance(a, list) and any(isinstance(x, (Ref, ScalarRef)) for x in a):
+                    kind, val = 2, a
+                elif isinstance(a, str) and a == "session-device":
+                    kind, val = 3, None
+                else:
+                    kind, val = 4, a
+                args.append((spec.kwarg_only, spec.name, kind, val))
+            outs = []
+            for k in range(node.outputs):
+                r = Ref(node.index, k)
+                m = prog.metas[r]
+                outs.append((r, m.dtype, tuple(m.shape), r in prog.last_use))
+            plans.append((node, node.op.fn, natives.is_native(node.op), args, outs,
+                          validators.has_runtime(node.op), bool(node.op.flags & FLAG_UNINIT),
+                          expiring.get(node.index, ())))
+        prog._compiled = plans
+        return plans
+
     def run(self, prog: Program, ex: cpb.Execute) -> cpb.ExecuteResult:
         if self.flops_quota and prog.flops > self.flops_quota:
             raise ReflopError(cpb.ERROR_QUOTA, f"graph needs ~{prog.flops} FLOPs; the per-execute quota is "
                               f"{self.flops_quota}", cpb.STAGE_V5_SAFETY)
+        plans = self.compile(prog)
         env = self.bind(prog, ex)
         scalars = env.pop("__scalars__")
         t0 = time.perf_counter()
-        expiring: dict[int, list] = {}
-        for r, last in prog.last_use.items():
-            expiring.setdefault(last, []).append(r)
         dev = self.device
-        protected = set(prog.outputs)
         node = None
-        if dev.type == "cuda":
-            torch.cuda.reset_peak_memory_stats(dev)
         try:
             with torch.inference_mode():
-                for node in prog.nodes:
-                    def resolve(a):
-                        if isinstance(a, Ref):
-                            return env[a]
-                        if isinstance(a, ScalarRef):
-                            return scalars[a.input]
-                        if isinstance(a, list):
-                            return [resolve(x) for x in a]
-                        if a == "session-device":
-                            return dev
-                        return a
-
-                    pos, kw = call_args(node, resolve)
-                    validators.check_runtime(node, pos, kw)
-                    if natives.is_native(node.op):
-                        out = natives.call(node.op.name, pos, kw, dev)
+                for node, fn, native, args, outs, check, uninit, free in plans:
+                    pos, kw = [], {}
+                    for is_kw, name, kind, val in args:
+                        if kind == 0:
+                            v = env[val]
+                        elif kind == 4:
+                            v = val
+                        elif kind == 1:
+                            v = scalars[val]
+                        elif kind == 3:
+                            v = dev
+                        else:
+                            v = [None if x is None else (env[x] if isinstance(x, Ref) else scalars[x.input])
+                                 for x in val]
+                        if is_kw:
+                            kw[name] = v
+                        else:
+                            pos.append(v)
+                    if check:
+                        validators.check_runtime(node, pos, kw)
+                    out = natives.call(node.op.name, pos, kw, dev) if native else fn(*pos, **kw)
+                    if isinstance(out, torch.Tensor):
+                        flat = [out]
                     else:
-                        out = node.op.fn(*pos, **kw)
-                    flat = [x for x in tree_flatten(out)[0] if isinstance(x, torch.Tensor)]
-                    if len(flat) != node.outputs:
+                        flat = [x for x in tree_flatten(out)[0] if isinstance(x, torch.Tensor)]
+                    if len(flat) != len(outs):
                         raise ReflopError(cpb.ERROR_INTERNAL, f"{node.op.name}: produced {len(flat)} outputs, "
-                                          f"validated {node.outputs}", E3, node.index, node.op.id)
-                    uninit = node.op.flags & FLAG_UNINIT
-                    for k, t in enumerate(flat):
-                        r = Ref(node.index, k)
-                        m = prog.metas[r]
+                                          f"validated {len(outs)}", E3, node.index, node.op.id)
+                    propagate_range(node, pos, flat)
+                    for t, (r, dt, shape, used) in zip(flat, outs):
                         # A few kernels give unused auxiliary outputs a different
                         # shape than their meta kernel (e.g. _embedding_bag's
                         # offset2bag). Anything that is consumed must match.
-                        if (t.dtype != m.dtype or tuple(t.shape) != tuple(m.shape)) and r in prog.last_use:
-                            raise ReflopError(cpb.ERROR_INTERNAL, f"{node.op.name}: output {k} is {t.dtype}"
-                                              f"{list(t.shape)}, validated {m.dtype}{list(m.shape)}", E3,
+                        if used and (t.dtype != dt or tuple(t.shape) != shape):
+                            raise ReflopError(cpb.ERROR_INTERNAL, f"{node.op.name}: output is {t.dtype}"
+                                              f"{list(t.shape)}, validated {dt}{list(shape)}", E3,
                                               node.index, node.op.id)
                         if uninit:
                             t.zero_()  # never return stale memory (I13)
-                        env[Ref(node.index, k)] = t
-                    for r in expiring.get(node.index, ()):
-                        if r not in protected and r.node >= 0:
-                            env.pop(r, None)
-                if dev.type == "cuda":
-                    torch.cuda.synchronize(dev)
+                        env[r] = t
+                    for r in free:
+                        env.pop(r, None)
+                # No device sync here: the next execute's Python dispatch overlaps
+                # with this one's kernels. RETURN outputs sync when copied out;
+                # asynchronous kernel faults surface on the next sync and are
+                # treated as fatal (SESSION_LOST).
         except ReflopError:
             raise
         except torch.OutOfMemoryError as e:
@@ -215,8 +294,6 @@ class Executor:
         K = cpb.OutputSpec
         for spec, r in zip(ex.outputs, prog.outputs):
             t = env[r]
-            if isinstance(t, DatasetMeta):  # pragma: no cover - rejected in V2
-                raise ReflopError(cpb.ERROR_INTERNAL, "dataset output", E3)
             if spec.kind == K.KIND_STORE:
                 self.handles.put_new(spec.handle, t)
             elif spec.kind == K.KIND_REBIND:
@@ -229,8 +306,7 @@ class Executor:
                     data=tensor_bytes(t)))
         res.duration_us = int((time.perf_counter() - t0) * 1e6)
         res.flops = prog.flops
-        if dev.type == "cuda":
-            res.peak_memory_bytes = torch.cuda.max_memory_allocated(dev)
+        res.peak_memory_bytes = prog.peak_bytes
         return res
 
 

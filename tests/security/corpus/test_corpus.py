@@ -6,9 +6,24 @@ from __future__ import annotations
 
 import pytest
 import torch
-
-from helpers import (B, F, I, INTS, NAME, NONE, call, decode, graph, make_session, meta, register, run, tensor_binding,
-                     tin, tnode)
+from helpers import (
+    INTS,
+    NAME,
+    NONE,
+    B,
+    F,
+    I,
+    call,
+    decode,
+    graph,
+    make_session,
+    meta,
+    register,
+    run,
+    tensor_binding,
+    tin,
+    tnode,
+)
 from reflop_worker._pb import compute_pb2 as cpb
 from reflop_worker._pb import graph_pb2 as gpb
 

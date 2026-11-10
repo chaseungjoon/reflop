@@ -5,7 +5,6 @@ import json
 import struct
 
 import pytest
-
 from reflop_worker.safetensors import SafetensorsError, parse_header
 
 

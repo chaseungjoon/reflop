@@ -53,15 +53,48 @@ def _check_index_dtype(node, idx, what="index") -> None:
         raise _bad(node, f"{what} must be int32 or int64, got {idx.dtype}")
 
 
+RANGE_ATTR = "_rf_range"  # (min, max) of an immutable server tensor, verified
+
+
+def known_range(t: torch.Tensor):
+    return getattr(t, "_rf_range", None)
+
+
+def set_range(t: torch.Tensor, r) -> None:
+    if r is not None and _is_t(t) and t.dtype in INT_DTYPES:
+        try:
+            t._rf_range = r
+        except (AttributeError, RuntimeError):
+            pass
+
+
+def measure(t: torch.Tensor):
+    """Exact (min, max) of an integer tensor (one sync if on the device)."""
+    if t.numel() == 0:
+        return None
+    mn, mx = torch.aminmax(t.reshape(-1).to(torch.int64) if t.dtype == torch.bool else t.reshape(-1))
+    return int(mn), int(mx)
+
+
 def bounds(node, idx: torch.Tensor, lo: int, hi: int, sentinel: int | None = None, what: str = "index") -> None:
-    """Fail unless every element is in [lo, hi) (or equals sentinel)."""
+    """Fail unless every element is in [lo, hi) (or equals sentinel).
+
+    Server tensors are never mutated in place, so a tensor's value range,
+    once known (measured on the host at upload, scanned for datasets,
+    inherited through gathers and views, or measured here), stays valid and
+    is reused instead of synchronizing with the device again."""
     if not _is_t(idx) or idx.numel() == 0:
         return
     if idx.dtype not in INDEX_DTYPES and idx.dtype not in INT_DTYPES:
         raise _oob(node, f"{what} has non-integer dtype {idx.dtype}")
+    r = known_range(idx)
+    if r is not None and r[0] >= lo and r[1] < hi:
+        return
     if sentinel is None:
-        mn, mx = torch.aminmax(idx.reshape(-1))
-        mn, mx = int(mn), int(mx)  # one device synchronization
+        if r is None:
+            r = measure(idx)
+            set_range(idx, r)
+        mn, mx = r
         if mn < lo or mx >= hi:
             raise _oob(node, f"{what} out of range: values span [{mn}, {mx}], valid range is [{lo}, {hi})")
         return

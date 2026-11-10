@@ -10,7 +10,7 @@ import time
 
 from .._pb import compute_pb2 as cpb
 from .._pb import data_pb2 as dpb
-from ..errors import ReflopError, sanitize
+from ..errors import sanitize
 
 EPILOG = """\
 Your programs run on this machine. Only operator graphs and tensors go to
@@ -121,7 +121,6 @@ def cmd_init(a) -> int:
     """Measure the link and write .reflop.toml (capability cache, §14.2)."""
     import torch
 
-    from .._pb import compute_pb2 as cpb
     from ..client import admin
 
     c = admin(a.server)
@@ -152,7 +151,6 @@ def cmd_init(a) -> int:
 
 
 def cmd_data(a) -> int:
-    from .._pb import compute_pb2 as cpb
     from .._pb import data_pb2 as dpb
 
     if a.action == "build":

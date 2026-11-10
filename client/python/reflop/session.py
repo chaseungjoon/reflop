@@ -18,7 +18,7 @@ from . import _opset_generated as opset
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
 from .errors import ReflopRemoteError
-from .trace import (CPU, DATASET, HANDLE, NODE, SCALAR, ArgEncoder, GraphBuilder, Trace, Value, tensor_meta)
+from .trace import CPU, DATASET, HANDLE, NODE, SCALAR, ArgEncoder, GraphBuilder, Trace, Value, tensor_meta
 
 FLUSH_NODES = int(os.environ.get("REFLOP_FLUSH_NODES", "20000"))
 
@@ -226,10 +226,12 @@ class Session:
         if self.depth == 0 and len(self.trace) >= FLUSH_NODES:
             self.flush()
 
-    def flush(self, returns: list[Value] | None = None) -> list[torch.Tensor]:
+    def flush(self, returns: list[Value] | None = None, plan: dict | None = None) -> list[torch.Tensor]:
         """Execute the pending trace. Live tensors become server handles; the
-        values in `returns` come back as CPU tensors."""
+        values in `returns` come back as CPU tensors. With `plan`, the built
+        graph, output specs and freed handles are recorded (reflop.capture)."""
         returns = returns or []
+        self._plan = plan
         with self.lock:
             self.raise_async()
             outputs: list[Value] = []
@@ -268,7 +270,12 @@ class Session:
             if outputs:
                 self._execute(outputs, specs, owners, ret_pos, results)
             self.trace = Trace()
+            if plan is not None:
+                plan["freed"] = set(self.pending_free)
+                plan.setdefault("specs", specs)
+                plan.setdefault("owners", owners)
             self._send_frees()
+            self._plan = None
             for i, v in enumerate(returns):
                 if results[i] is not None:
                     continue
@@ -284,6 +291,8 @@ class Session:
 
     def _execute(self, outputs, specs, owners, ret_pos, results) -> None:
         built = GraphBuilder(self.trace, self.gdevice, outputs).build()
+        if getattr(self, "_plan", None) is not None:
+            self._plan["built"] = built
         self.stats["flushes"] += 1
         if built.graph_hash not in self.registered:
             fut = self.conn.request(cpb.Envelope(register_graph=cpb.RegisterGraph(graph=built.graph)))
@@ -299,9 +308,32 @@ class Session:
             self._track(fut, "register")
             self.registered.add(built.graph_hash)
         ex = cpb.Execute(graph_hash=built.graph_hash)
+        temp = self.bind_inputs(ex, built.input_values)
+        ex.outputs.extend(specs)
+        fut = self.conn.request(cpb.Envelope(execute=ex))
+        self.stats["executes"] += 1
+        for st, h in owners:
+            st.set(Value(HANDLE, st.meta, handle=h))
+            st.handle = h
+        self.pending_free.extend(temp)
+        if ret_pos:
+            try:
+                r = fut.result()  # raises ReflopRemoteError
+            except ReflopRemoteError:
+                self.raise_async()  # a failed registration explains a failed execute
+                raise
+            for k, pos in enumerate(ret_pos):
+                td = r.execute_result.returned[k]
+                results[pos] = _tensor_from_data(td, td.meta, td.data)
+                self.stats["bytes_down"] += len(td.data)
+        else:
+            self._track(fut, "execute")
+
+    def bind_inputs(self, ex: cpb.Execute, values: list) -> list[bytes]:
+        """Fill ex.bindings for graph input values; returns temporary handles."""
         temp: list[bytes] = []
         inline_max = int(self.limits.max_inline_tensor_bytes or (1 << 20))
-        for v in built.input_values:
+        for v in values:
             b = ex.bindings.add()
             if v.kind == HANDLE:
                 b.handle = v.handle
@@ -329,25 +361,7 @@ class Session:
                     b.scalar.f = float(x)
             elif v.kind == DATASET:
                 b.dataset.dataset_id, b.dataset.tensor = v.payload
-        ex.outputs.extend(specs)
-        fut = self.conn.request(cpb.Envelope(execute=ex))
-        self.stats["executes"] += 1
-        for st, h in owners:
-            st.set(Value(HANDLE, st.meta, handle=h))
-            st.handle = h
-        self.pending_free.extend(temp)
-        if ret_pos:
-            try:
-                r = fut.result()  # raises ReflopRemoteError
-            except ReflopRemoteError:
-                self.raise_async()  # a failed registration explains a failed execute
-                raise
-            for k, pos in enumerate(ret_pos):
-                td = r.execute_result.returned[k]
-                results[pos] = _tensor_from_data(td, td.meta, td.data)
-                self.stats["bytes_down"] += len(td.data)
-        else:
-            self._track(fut, "execute")
+        return temp
 
     # -------------------------------------------------------------- fetch
 

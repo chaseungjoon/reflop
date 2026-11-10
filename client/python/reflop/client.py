@@ -167,7 +167,7 @@ def dial_ssh(target: str, key, port: int | None = None) -> Framer:
         p.terminate()
 
     def drain():
-        for line in p.stderr:
+        for _line in p.stderr:
             pass  # ssh diagnostics are not trusted output; ignore
     threading.Thread(target=drain, daemon=True).start()
     return Framer(p.stdout, p.stdin, close)

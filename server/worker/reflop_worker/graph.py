@@ -251,9 +251,10 @@ class Builder:
             if which != "ints":
                 raise bad(f"expected an int list, got {which}")
             vals = list(a.ints.values)
-            n = _fixed_len(core)
-            if len(vals) > self.limits.max_list_length or (n is not None and len(vals) not in (1, n)):
-                raise bad(f"bad list length {len(vals)}")
+            # int[N] is PyTorch's broadcast hint ("one int means N copies"), not
+            # a fixed length; meta inference checks each op's real rule.
+            if len(vals) > self.limits.max_list_length:
+                raise bad(f"list of {len(vals)} exceeds the limit")
             return vals
         if core == "float":
             if which == "f":
@@ -275,9 +276,8 @@ class Builder:
             if which != "bools":
                 raise bad(f"expected a bool list, got {which}")
             vals = list(a.bools.values)
-            n = _fixed_len(core)
-            if n is not None and len(vals) not in (1, n):
-                raise bad(f"bad list length {len(vals)}")
+            if len(vals) > self.limits.max_list_length:
+                raise bad(f"list of {len(vals)} exceeds the limit")
             return vals
         if core == "Scalar":
             if which == "i":

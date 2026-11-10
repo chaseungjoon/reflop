@@ -23,7 +23,7 @@ import torch
 from torch.utils._pytree import tree_flatten, tree_map, tree_unflatten
 
 from . import _opset_generated as opset
-from .trace import HANDLE, NODE, UnsupportedOperatorError, Value, _base, normalize
+from .trace import HANDLE, UnsupportedOperatorError, Value, _base, normalize
 
 aten = torch.ops.aten
 
@@ -171,6 +171,57 @@ def run_meta(func, args, kwargs):
         return func(*tree_map(_to_meta, args), **tree_map(_to_meta, kwargs))
 
 
+# Meta inference cache for non-view ops. Output shapes/dtypes depend on input
+# metas and on int/bool/dtype arguments, never on float values (ALLOC ops,
+# whose sizes can depend on floats, are not cached). Python meta kernels
+# dominate client time, so this is the main eager-mode speedup.
+_META_CACHE: dict = {}
+_META_CACHE_MAX = 1 << 16
+_UNCACHED_FLAGS = None
+
+
+def _sig(x):
+    if isinstance(x, RemoteTensor):
+        m = x._rf_meta
+        return ("T", m.dtype, tuple(m.shape), m.stride(), m.storage_offset())
+    if isinstance(x, torch.Tensor):
+        return ("C", x.dtype, tuple(x.shape), x.stride(), x.device.type)
+    if isinstance(x, float):
+        return ("f",)
+    if isinstance(x, (list, tuple)):
+        return (type(x).__name__, tuple(_sig(y) for y in x))
+    if isinstance(x, torch.device):
+        return ("d", x.type)
+    if isinstance(x, (int, bool, str, type(None), torch.dtype, torch.memory_format, torch.layout, complex)):
+        return (type(x).__name__, x)
+    raise TypeError  # unknown: do not cache
+
+
+def meta_cached(func, args, kwargs):
+    global _UNCACHED_FLAGS
+    if _UNCACHED_FLAGS is None:
+        _UNCACHED_FLAGS = opset.FLAG_ALLOC | opset.FLAG_RNG
+    entry = opset.OPS.get(str(func))
+    if entry is None or entry[1] & _UNCACHED_FLAGS:
+        return run_meta(func, args, kwargs)
+    try:
+        key = (func, _sig(args), _sig(tuple(sorted(kwargs.items()))))
+    except TypeError:
+        return run_meta(func, args, kwargs)
+    hit = _META_CACHE.get(key)
+    if hit is not None:
+        spec, leaves = hit
+        return tree_unflatten([torch.empty_strided(sh, st, dtype=dt, device="meta") if sh is not None else v
+                               for sh, st, dt, v in leaves], spec)
+    out = run_meta(func, args, kwargs)
+    flat, spec = tree_flatten(out)
+    leaves = [(tuple(t.shape), t.stride(), t.dtype, None) if isinstance(t, torch.Tensor) else (None, None, None, t)
+              for t in flat]
+    if len(_META_CACHE) < _META_CACHE_MAX:
+        _META_CACHE[key] = (spec, leaves)
+    return out
+
+
 def _flat_tensors(out) -> list:
     leaves, _ = tree_flatten(out)
     return [x for x in leaves if isinstance(x, torch.Tensor)]
@@ -201,7 +252,8 @@ def value_of(t: RemoteTensor) -> Value:
         if cached is not None and cached[0] == st.version:
             v, cur_meta = cached[1], cached[2]
             continue
-        out_meta = run_meta(func, (cur_meta, *rest), {})
+        a, kw = _rebind(func, [cur_meta, *rest])
+        out_meta = run_meta(func, a, kw)
         metas = _flat_tensors(out_meta)
         outs = sess.record_values(str(func), func, [v, *rest], metas, self_is_value=True)
         v = outs[k if k is not None else 0]
@@ -291,7 +343,8 @@ def write(t: RemoteTensor, new_val: Value, new_meta: torch.Tensor | None = None)
     vals, metas = [st.value], [st.meta]
     cur, cm = st.value, st.meta
     for func, rest, k in t._rf_chain[:-1]:
-        om = _flat_tensors(run_meta(func, (cm, *rest), {}))
+        a, kw = _rebind(func, [cm, *rest])
+        om = _flat_tensors(run_meta(func, a, kw))
         cur = sess.record_values(str(func), func, [cur, *rest], om, self_is_value=True)[k or 0]
         cm = om[k or 0]
         vals.append(cur)
@@ -442,7 +495,7 @@ def _functional(sess, func, args, kwargs):
         return _fallback(sess, func, args, kwargs)
     if entry[1] & opset.FLAG_DDS:
         return _dds(sess, func, args, kwargs)
-    out_meta = run_meta(func, args, kwargs)
+    out_meta = meta_cached(func, args, kwargs)
     vals = normalize(func, args, kwargs)
     outs = sess.record_values(name, func, vals, _flat_tensors(out_meta))
     return _wrap_outputs(sess, out_meta, outs)
@@ -508,7 +561,6 @@ def _mutating(sess, func, args, kwargs):
                 return d(*args, **kwargs)
             raise UnsupportedOperatorError(f"{name}: no functional form is known for this in-place operator")
         ffunc, mutated = found
-        fname = str(ffunc)
         out_pos = [i for i in mutated if schema.arguments[i].kwarg_only]
         fvals = [v for i, v in enumerate(vals) if i not in out_pos]
     targets = [vals[i] for i in mutated]

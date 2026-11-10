@@ -42,9 +42,8 @@ def test_client_never_sends_environment(monkeypatch):
     import os
     import socket
 
-    import torch
-
     import reflop
+    import torch
     from reflop.connection import LocalConnection
 
     secret = "REFLOP_TEST_SECRET_9f8a7b"

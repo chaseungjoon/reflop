@@ -85,8 +85,10 @@ def register() -> None:
             from torch.utils.backend_registration import _setup_privateuseone_for_python_backend
 
             _setup_privateuseone_for_python_backend(BACKEND, backend_module=_BackendModule())
-        from . import tensor  # noqa: F401  registers factory kernels
-        from . import autocast
+        from . import (
+            autocast,
+            tensor,  # noqa: F401  registers factory kernels
+        )
 
         tensor.register_backend_kernels()
         autocast.register()

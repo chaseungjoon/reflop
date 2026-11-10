@@ -34,6 +34,14 @@ class DatasetTensor:
             self.offsets.append(self.offsets[-1] + p.shape[0])
         self._whole_cpu: torch.Tensor | None = None
         self._on_device: torch.Tensor | None = None
+        # Value range of integer tensors, scanned once on the host, so batch
+        # indices gathered from labels need no device sync to be validated.
+        self.value_range = None
+        int_types = {torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64}
+        if dtype in int_types and self.shape.numel() > 0:
+            mn = min(int(p.min()) for p in parts if p.numel())
+            mx = max(int(p.max()) for p in parts if p.numel())
+            self.value_range = (mn, mx)
 
     def nbytes(self) -> int:
         return self.shape.numel() * torch.empty((), dtype=self.dtype).element_size()

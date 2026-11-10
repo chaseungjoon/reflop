@@ -16,7 +16,7 @@ WINDOW = 16
 
 def push(conn, pack: str, name: str, progress=True) -> dpb.DatasetInfo:
     raw, man = read_manifest(pack)
-    for i, sh in enumerate(man["shards"]):
+    for sh in man["shards"]:
         f = Path(pack) / sh["file"]
         if f.stat().st_size != sh["size_bytes"]:
             raise RuntimeError(f"{f} does not match the manifest; rebuild the pack")

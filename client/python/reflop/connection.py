@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import os
 import sys
 import threading
 from concurrent.futures import Future
@@ -170,7 +171,7 @@ class LocalConnection(Connection):
             init.device.kind = gpb.DEVICE_CUDA
             init.device.index = int(device.split(":")[1]) if ":" in device else 0
         init.limits.CopyFrom(limits or default_limits(kpb))
-        init.numerics.tf32_cudnn = True
+        init.numerics.tf32_cudnn = os.environ.get("REFLOP_LOCAL_TF32", "1") == "1"
         self.worker = Session(init)
         self.gdevice = init.device
         self.ready = self.worker.ready(wpb.SandboxReport())
