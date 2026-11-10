@@ -16,9 +16,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/store"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"

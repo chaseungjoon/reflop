@@ -66,6 +66,10 @@ def cmd_key(a) -> int:
     from .. import keys
 
     k = keys.load_or_create()
+    if a.write_file:
+        f = keys.write_key_file(k)
+        _p(f"wrote {f} (mode 0600) for libreflop and SSH pipe mode")
+        return 0
     if a.ssh:
         _p(keys.openssh_public(k, comment=f"reflop:{os.environ.get('USER', 'guest')}"))
     else:
@@ -247,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_servers)
     p = sub.add_parser("key", help="print this machine's public key")
     p.add_argument("--ssh", action="store_true", help="OpenSSH format, for SSH pipe mode invites")
+    p.add_argument("--write-file", action="store_true",
+                   help="also store the private key as ~/.config/reflop/id_ed25519 (needed by libreflop on macOS)")
     p.set_defaults(fn=cmd_key)
     sub.add_parser("status", help="show the server's devices, limits and quotas").set_defaults(fn=cmd_status)
     sub.add_parser("init", help="measure the link, write .reflop.toml").set_defaults(fn=cmd_init)

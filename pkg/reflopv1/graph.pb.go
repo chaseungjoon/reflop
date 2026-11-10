@@ -1460,7 +1460,7 @@ const file_reflop_v1_graph_proto_rawDesc = "" +
 	"\x1eMEMORY_FORMAT_CHANNELS_LAST_3D\x10\x04*0\n" +
 	"\x06Layout\x12\x12\n" +
 	"\x0eLAYOUT_INVALID\x10\x00\x12\x12\n" +
-	"\x0eLAYOUT_STRIDED\x10\x01BDZBgithub.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1b\x06proto3"
+	"\x0eLAYOUT_STRIDED\x10\x01B-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_graph_proto_rawDescOnce sync.Once

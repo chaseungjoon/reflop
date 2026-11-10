@@ -13,17 +13,14 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
+	"github.com/chaseungjoon/reflop/pkg/opset"
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
 )
 
 func opID(name string) uint32 {
-	for id, o := range opTable {
-		if o.name == name {
-			return id
-		}
-	}
-	return 0
+	o, _ := opset.ByName(name)
+	return o.ID
 }
 
 func f32bytes(v []float32) []byte {

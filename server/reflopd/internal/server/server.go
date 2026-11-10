@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chaseungjoon/reflop/pkg/opset"
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
@@ -26,7 +28,6 @@ import (
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/runtime"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
@@ -381,11 +382,12 @@ func (s *Server) filterOps(slot *DeviceSlot) []uint32 {
 	}
 	var out []uint32
 	for _, id := range slot.Enabled {
-		name := opName(id)
+		o, _ := opset.ByID(id)
+		name := o.Name
 		if disabled[name] {
 			continue
 		}
-		if c := opCapability(id); c != "" {
+		if c := o.Capability; c != "" {
 			if on, ok := cfg.Ops.Capabilities[c]; ok && !on {
 				continue
 			}

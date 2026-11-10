@@ -20,7 +20,7 @@ import "reflop/v1/auth.proto";
 import "reflop/v1/capabilities.proto";
 import "reflop/v1/data.proto";
 
-option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+option go_package = "github.com/chaseungjoon/reflop/pkg/reflopv1";
 
 // ---------------------------------------------------------------- errors
 

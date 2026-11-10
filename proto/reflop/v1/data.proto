@@ -12,7 +12,7 @@ package reflop.v1;
 
 import "reflop/v1/graph.proto";
 
-option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+option go_package = "github.com/chaseungjoon/reflop/pkg/reflopv1";
 
 // PackBegin starts (or resumes) an upload. The server answers with
 // PackStatus listing the chunks it still needs.

@@ -627,7 +627,7 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\adevices\x18\x05 \x03(\v2\x15.reflop.v1.DeviceInfoR\adevices\x12/\n" +
 	"\bnumerics\x18\x06 \x01(\v2\x13.reflop.v1.NumericsR\bnumerics\x12)\n" +
 	"\x06limits\x18\a \x01(\v2\x11.reflop.v1.LimitsR\x06limits\x129\n" +
-	"\fruntime_info\x18\b \x01(\v2\x16.reflop.v1.RuntimeInfoR\vruntimeInfoBDZBgithub.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1b\x06proto3"
+	"\fruntime_info\x18\b \x01(\v2\x16.reflop.v1.RuntimeInfoR\vruntimeInfoB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_capabilities_proto_rawDescOnce sync.Once

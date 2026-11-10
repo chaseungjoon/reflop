@@ -13,7 +13,7 @@ syntax = "proto3";
 
 package reflop.v1;
 
-option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+option go_package = "github.com/chaseungjoon/reflop/pkg/reflopv1";
 
 // DType values are permanent. 0 is invalid so that a missing field fails closed.
 enum DType {

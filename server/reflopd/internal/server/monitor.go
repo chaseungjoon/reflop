@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
 )
 

@@ -473,7 +473,7 @@ const file_reflop_v1_auth_proto_rawDesc = "" +
 	"\rTransportKind\x12\x15\n" +
 	"\x11TRANSPORT_INVALID\x10\x00\x12\x11\n" +
 	"\rTRANSPORT_TLS\x10\x01\x12\x11\n" +
-	"\rTRANSPORT_SSH\x10\x02BDZBgithub.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1b\x06proto3"
+	"\rTRANSPORT_SSH\x10\x02B-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_auth_proto_rawDescOnce sync.Once

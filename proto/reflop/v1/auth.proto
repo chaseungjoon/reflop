@@ -17,7 +17,7 @@ package reflop.v1;
 
 import "reflop/v1/capabilities.proto";
 
-option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+option go_package = "github.com/chaseungjoon/reflop/pkg/reflopv1";
 
 // Authenticate proves possession of a registered Ed25519 key.
 //   signature = Ed25519.Sign(key, "reflop-auth-v1\x00" || server_nonce || server_key_fingerprint || public_key)

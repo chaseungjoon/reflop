@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
 // broadcaster delivers informational events to subscribed connections.

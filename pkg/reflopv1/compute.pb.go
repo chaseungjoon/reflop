@@ -3451,7 +3451,7 @@ const file_reflop_v1_compute_proto_rawDesc = "" +
 	"\x0fSTAGE_V5_SAFETY\x10\x06\x12\x15\n" +
 	"\x11STAGE_E1_BINDINGS\x10\a\x12\x14\n" +
 	"\x10STAGE_E2_RUNTIME\x10\b\x12\x14\n" +
-	"\x10STAGE_E3_EXECUTE\x10\tBDZBgithub.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1b\x06proto3"
+	"\x10STAGE_E3_EXECUTE\x10\tB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_compute_proto_rawDescOnce sync.Once

@@ -19,11 +19,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/server"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sshpipe"
 )

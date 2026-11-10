@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
 )
 

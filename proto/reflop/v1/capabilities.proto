@@ -10,7 +10,7 @@ package reflop.v1;
 
 import "reflop/v1/graph.proto";
 
-option go_package = "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1";
+option go_package = "github.com/chaseungjoon/reflop/pkg/reflopv1";
 
 message DeviceInfo {
   Device device = 1;

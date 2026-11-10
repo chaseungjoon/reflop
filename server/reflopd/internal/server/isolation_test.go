@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/runtime"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"

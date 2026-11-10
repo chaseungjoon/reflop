@@ -16,11 +16,11 @@ case "$("$PROTOC" --version)" in
 	*) echo "gen_proto: need protoc 29.x, got: $("$PROTOC" --version)" >&2; exit 1 ;;
 esac
 
-go_out=server/reflopd/internal/pb
+go_out=pkg
 rm -rf "$go_out/reflopv1"
 mkdir -p "$go_out"
 "$PROTOC" -I proto --plugin=protoc-gen-go="$PROTOC_GEN_GO" \
-	--go_out="$go_out" --go_opt=module=github.com/chaseungjoon/reflop/server/reflopd/internal/pb \
+	--go_out="$go_out" --go_opt=module=github.com/chaseungjoon/reflop/pkg \
 	proto/reflop/v1/*.proto
 
 for dst in server/worker/reflop_worker/_pb client/python/reflop/_pb; do

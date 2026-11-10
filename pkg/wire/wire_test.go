@@ -9,7 +9,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protowire"
 
-	pb "github.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1"
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
 func TestRoundTrip(t *testing.T) {

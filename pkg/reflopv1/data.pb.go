@@ -655,7 +655,7 @@ const file_reflop_v1_data_proto_rawDesc = "" +
 	"\rDeleteDataset\x12\x1d\n" +
 	"\n" +
 	"dataset_id\x18\x01 \x01(\fR\tdatasetId\"\x10\n" +
-	"\x0eDatasetDeletedBDZBgithub.com/chaseungjoon/reflop/server/reflopd/internal/pb/reflopv1b\x06proto3"
+	"\x0eDatasetDeletedB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_data_proto_rawDescOnce sync.Once
