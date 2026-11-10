@@ -102,6 +102,15 @@ def _cpu_impl(name):
                 fn(p, g, m, v, mx, st, lr=lr, beta1=b1, beta2=b2, weight_decay=wd, eps=eps, amsgrad=ams,
                    maximize=mxz, grad_scale=k.get("grad_scale"), found_inf=k.get("found_inf"))
             return p, m, v, mx, st
+        if name == "amp_unscale_and_check":
+            g = [t.clone() for t in a[0]]
+            fi = a[1].clone()
+            torch._amp_foreach_non_finite_check_and_unscale_(g, fi, a[2])
+            return g, fi
+        if name == "amp_update_scale":
+            sc, tr = a[0].clone(), a[1].clone()
+            torch._amp_update_scale_(sc, tr, a[2], a[3], a[4], a[5])
+            return sc, tr
         raise NotImplementedError(f"reflop::{name} has no CPU reference implementation")
     return f
 

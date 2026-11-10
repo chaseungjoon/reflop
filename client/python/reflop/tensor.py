@@ -632,6 +632,10 @@ def _mutating(sess, func, args, kwargs):
         from . import optim
 
         return optim.fused(sess, func, vals)
+    if name in ("aten._amp_foreach_non_finite_check_and_unscale_.default", "aten._amp_update_scale_.default"):
+        from . import optim
+
+        return optim.amp(sess, func, vals)
     sp = _SPECIAL_FUNCTIONAL.get(name)
     if sp is not None:
         fname, ffunc = sp

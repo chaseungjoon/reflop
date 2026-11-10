@@ -47,3 +47,23 @@ def fused(sess, func, vals):
 
     _ = _rebind
     raise UnsupportedOperatorError(f"{name}: unsupported fused optimizer")
+
+
+def amp(sess, func, vals):
+    """GradScaler's in-place kernels → reflop-native functional ops."""
+    from .tensor import _assign, dispatch
+
+    name = str(func)
+    if name == "aten._amp_foreach_non_finite_check_and_unscale_.default":
+        grads, found_inf, inv_scale = vals
+        new_grads, new_found = dispatch(sess, op("amp_unscale_and_check"), (list(grads), found_inf, inv_scale), {})
+        for t, r in zip(grads, new_grads, strict=True):
+            _assign(sess, t, r)
+        _assign(sess, found_inf, new_found)
+        return None
+    # _amp_update_scale_(self, growth_tracker, found_inf, growth_factor, backoff_factor, growth_interval)
+    scale, tracker, found_inf, gf, bf, gi = vals
+    new_scale, new_tracker = dispatch(sess, op("amp_update_scale"), (scale, tracker, found_inf, gf, bf, gi), {})
+    _assign(sess, scale, new_scale)
+    _assign(sess, tracker, new_tracker)
+    return scale
