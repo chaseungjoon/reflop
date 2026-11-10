@@ -13,14 +13,16 @@
 [![Linux](https://img.shields.io/badge/server-Linux-FCC624?logo=linux&logoColor=black)](docs/OWNER_GUIDE.md)
 [![macOS](https://img.shields.io/badge/client-macOS%20%7C%20Linux-000000?logo=apple&logoColor=white)](docs/GUEST_GUIDE.md)
 
-**Lend your GPU as a calculator. Nobody gets a shell.**
+**Lend your GPU as a calculator. They don't get shell access, they can only run floating point calculations.**
 
 </div>
 
 ---
 
-One person in the team has the GPU workstation. Everyone else trains on it from
-their laptop. reFLOP sends tensor math to the GPU, and only tensor math: your
+One person in the team has a powerful GPU workstation. Everyone else trains on it from
+their laptop. 
+
+**reFLOP** sends raw tensor math to the GPU directly, and ***only tensor math*** is sent: your
 Python program keeps running on your machine.
 
 ```python
@@ -45,11 +47,14 @@ python train.py
 reflop run python train.py    # .cuda() and device="cuda" go to the reflop server
 ```
 
-The server never runs your code. It accepts operator graphs over a closed set of
+The server **never runs full code**. It accepts operator graphs over a closed set of
 582 operators (571 PyTorch overloads and 11 reflop-native ones), validates them, and executes them in a sandboxed worker.
+
 A Guest cannot delete the Owner's files, fill the disk, start processes, open
 network connections, or read anyone else's data, because no request can express
 any of that.
+
+Only floating point calculations are sent to the server.
 
 ## Table of Contents
 
