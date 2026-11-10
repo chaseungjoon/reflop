@@ -88,6 +88,15 @@ def propagate_range(node, pos: list, outs: list) -> None:
             validators.set_range(o, src)
 
 
+def oom_message(e: BaseException) -> str:
+    """Keep only the failed allocation: PyTorch's full OOM text names other
+    processes and their memory use, which would leak across tenants."""
+    import re
+
+    m = re.search(r"Tried to allocate [0-9.]+ [KMGT]?i?B", str(e))
+    return (m.group(0) if m else "allocation failed") + "; the device is shared with other sessions"
+
+
 def is_cuda_fatal(e: BaseException) -> bool:
     s = str(e)
     return any(k in s for k in ("device-side assert", "CUDA error: an illegal", "CUDA error: unspecified launch",
@@ -283,7 +292,7 @@ class Executor:
         except torch.OutOfMemoryError as e:
             if dev.type == "cuda":
                 torch.cuda.empty_cache()
-            raise ReflopError(cpb.ERROR_OUT_OF_MEMORY, f"out of device memory: {str(e)[:300]}", E3) from None
+            raise ReflopError(cpb.ERROR_OUT_OF_MEMORY, f"out of device memory: {oom_message(e)}", E3) from None
         except Exception as e:  # noqa: BLE001 - every kernel error becomes a structured error
             if is_cuda_fatal(e):
                 raise FatalError(f"CUDA context lost: {e}") from None

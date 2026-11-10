@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import os
 import secrets
 import shutil
 import socket
@@ -148,7 +149,7 @@ def dial_tls(addresses: list[str], fingerprint: bytes, timeout: float = 15.0) ->
 
 
 def dial_ssh(target: str, key, port: int | None = None) -> Framer:
-    ssh = shutil.which("ssh")
+    ssh = os.environ.get("REFLOP_SSH_COMMAND") or shutil.which("ssh")
     if ssh is None:
         raise ReflopError("ssh is not installed")
     keyfile = keys.ssh_key_file(key)

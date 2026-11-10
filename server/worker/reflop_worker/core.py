@@ -18,7 +18,7 @@ from ._pb import worker_pb2 as wpb
 from .cost import analyze, input_bytes
 from .datasets import open_dataset
 from .errors import FatalError, ReflopError
-from .execute import Executor, graph_hash, tensor_from_bytes
+from .execute import Executor, graph_hash, oom_message, tensor_from_bytes
 from .graph import Builder
 from .handles import HandleTable, check_new
 from .meta import infer
@@ -184,7 +184,7 @@ class Session:
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()
             send(cpb.Envelope(request_id=rid, end=True, error=ReflopError(
-                cpb.ERROR_OUT_OF_MEMORY, f"out of memory: {str(e)[:300]}").to_pb()))
+                cpb.ERROR_OUT_OF_MEMORY, f"out of memory: {oom_message(e)}").to_pb()))
 
     def register(self, g: gpb.Graph) -> cpb.GraphRegistered:
         h = graph_hash(g)

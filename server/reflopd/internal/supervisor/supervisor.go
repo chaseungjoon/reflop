@@ -182,10 +182,9 @@ func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) []byte
 	defer childPass.Close()
 	defer cfgR.Close()
 
-	self, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
+	// /proc/self/exe is the running binary even if the file on disk was
+	// replaced (an upgrade); reflopd's own Landlock rule covers exactly it.
+	self := "/proc/self/exe"
 	// -I: isolated mode (no environment, user site or cwd on sys.path). The
 	// worker package path is fixed by reflopd, never by a Guest.
 	boot := fmt.Sprintf("import sys; sys.path.insert(0, %q); from reflop_worker.main import main; main()", spec.WorkerDir)

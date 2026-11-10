@@ -72,6 +72,9 @@ func AuthorizedKeysLine(reflopd, identityID, key string, l paths.Layout) string 
 
 // AuthorizedKeysPath is the Owner's (or the reflop user's) authorized_keys.
 func AuthorizedKeysPath() (string, error) {
+	if p := os.Getenv("REFLOP_AUTHORIZED_KEYS"); p != "" {
+		return p, nil // tests and unusual sshd setups
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -147,7 +150,7 @@ func Scan(path string) ([]Finding, error) {
 		}
 		opts := ""
 		if !strings.HasPrefix(l, "ssh-") {
-			opts, _, _ = strings.Cut(l, " ")
+			opts = optionsField(l)
 		}
 		if !hasOpt(opts, "restrict") {
 			out = append(out, Finding{i, true, "reflop key without `restrict`: this key can open a shell"})
@@ -159,10 +162,36 @@ func Scan(path string) ([]Finding, error) {
 	return out, sc.Err()
 }
 
+// optionsField returns the options of an authorized_keys line: everything
+// before the first space that is outside double quotes.
+func optionsField(l string) string {
+	inQ := false
+	for i := 0; i < len(l); i++ {
+		switch l[i] {
+		case '\\':
+			i++
+		case '"':
+			inQ = !inQ
+		case ' ', '\t':
+			if !inQ {
+				return l[:i]
+			}
+		}
+	}
+	return l
+}
+
 func hasOpt(opts, name string) bool {
-	for _, o := range strings.Split(opts, ",") {
-		if o == name {
-			return true
+	inQ, start := false, 0
+	for i := 0; i <= len(opts); i++ {
+		if i < len(opts) && opts[i] == '"' {
+			inQ = !inQ
+		}
+		if i == len(opts) || (opts[i] == ',' && !inQ) {
+			if opts[start:i] == name {
+				return true
+			}
+			start = i + 1
 		}
 	}
 	return false
