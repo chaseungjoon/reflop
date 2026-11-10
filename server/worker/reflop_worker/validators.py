@@ -480,7 +480,37 @@ RUNTIME = {
 KNOWN = set(STATIC) | set(RUNTIME)
 
 
+DIM_ARGS = {"dim", "dim0", "dim1", "dim2", "start_dim", "end_dim", "dims", "source", "destination"}
+# Ops whose dim may address one past the input's last dim (they add a dim).
+DIM_PLUS_ONE = ("aten.unsqueeze", "aten.stack", "aten.unsqueeze_copy", "aten.diag_embed")
+
+
+def check_dims(node, args, kwargs) -> None:
+    """V3 for every op: dim-like arguments must address a real dimension of
+    the first tensor input (§9.2: "dim within rank")."""
+    named = _named(node, args, kwargs)
+    first = next((v for v in named.values() if isinstance(v, torch.Tensor)), None)
+    if first is None:
+        lst = next((v for v in named.values() if isinstance(v, list) and v and isinstance(v[0], torch.Tensor)), None)
+        first = lst[0] if lst else None
+    if first is None:
+        return
+    rank = max(first.dim(), 1)
+    if node.op.name.startswith(DIM_PLUS_ONE):
+        rank += 1
+    for spec in node.op.args:
+        if spec.name not in DIM_ARGS:
+            continue
+        v = named.get(spec.name)
+        vals = v if isinstance(v, list) else [v]
+        for d in vals:
+            if isinstance(d, int) and not isinstance(d, bool) and not -rank <= d < rank:
+                raise invalid(f"{node.op.name}: {spec.name}={d} is out of range for a {first.dim()}-d input",
+                              cpb.STAGE_V3_SCHEMA, node.index, node.op.id)
+
+
 def check_static(node, args, kwargs) -> None:
+    check_dims(node, args, kwargs)
     name = node.op.validator
     if name is None:
         return

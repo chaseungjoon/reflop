@@ -182,8 +182,12 @@ class Executor:
                                           f"validated {node.outputs}", E3, node.index, node.op.id)
                     uninit = node.op.flags & FLAG_UNINIT
                     for k, t in enumerate(flat):
-                        m = prog.metas[Ref(node.index, k)]
-                        if t.dtype != m.dtype or tuple(t.shape) != tuple(m.shape):
+                        r = Ref(node.index, k)
+                        m = prog.metas[r]
+                        # A few kernels give unused auxiliary outputs a different
+                        # shape than their meta kernel (e.g. _embedding_bag's
+                        # offset2bag). Anything that is consumed must match.
+                        if (t.dtype != m.dtype or tuple(t.shape) != tuple(m.shape)) and r in prog.last_use:
                             raise ReflopError(cpb.ERROR_INTERNAL, f"{node.op.name}: output {k} is {t.dtype}"
                                               f"{list(t.shape)}, validated {m.dtype}{list(m.shape)}", E3,
                                               node.index, node.op.id)
