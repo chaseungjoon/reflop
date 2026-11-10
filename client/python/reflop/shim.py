@@ -13,6 +13,7 @@ from torch.overrides import TorchFunctionMode
 
 _installed = False
 _dev: torch.device | None = None
+_pending_seed: int | None = None
 
 
 def _target() -> torch.device:
@@ -21,7 +22,20 @@ def _target() -> torch.device:
         import reflop
 
         _dev = reflop.device()
+        if _pending_seed is not None:
+            reflop.seed(_pending_seed)
     return _dev
+
+
+def _seed(seed: int) -> None:
+    # Seeding happens before the first CUDA use; connect lazily and apply then.
+    global _pending_seed
+    if _dev is None:
+        _pending_seed = int(seed)
+    else:
+        import reflop
+
+        reflop.seed(int(seed))
 
 
 def _map(x):
@@ -52,6 +66,6 @@ def install() -> None:
     torch.cuda.is_available = lambda: True
     torch.cuda.device_count = lambda: 1
     torch.cuda.synchronize = lambda device=None: __import__("reflop").synchronize()
-    torch.cuda.manual_seed = torch.cuda.manual_seed_all = lambda seed: __import__("reflop").seed(seed)
+    torch.cuda.manual_seed = torch.cuda.manual_seed_all = _seed
     _mode = _CudaToReflop()
     _mode.__enter__()

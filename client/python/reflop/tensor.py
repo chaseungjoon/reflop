@@ -437,8 +437,31 @@ def dispatch(sess, func, args, kwargs):
         sess.depth -= 1
 
 
+def _placement_local(sess, func, args, kwargs):
+    """placement("local"), or "auto" when the cost model prefers it: run the
+    op on the client and return client tensors (granularity: this tensor)."""
+    from . import _placement as placement
+
+    mode = placement.mode()
+    if mode == "local":
+        return True
+    if mode != "auto":
+        return False
+    leaves = tree_flatten((args, kwargs))[0]
+    remote = [x for x in leaves if isinstance(x, RemoteTensor)]
+    local = [x for x in leaves if isinstance(x, torch.Tensor) and not isinstance(x, RemoteTensor) and x.dim() > 0]
+    if not local or not remote:
+        return False
+    rb = sum(x.numel() * x.element_size() for x in remote)
+    lb = sum(x.numel() * x.element_size() for x in local)
+    flops = max(x.numel() for x in remote + local)
+    return placement.prefer_local(flops, rb, lb)
+
+
 def _dispatch(sess, func, args, kwargs):
     name = str(func)
+    if name not in _SPECIALS and _placement_local(sess, func, args, kwargs):
+        return _run_locally(sess, func, args, kwargs, keep_local=True)
     special = _SPECIALS.get(name)
     if special is not None:
         return special(sess, func, args, kwargs)
@@ -516,7 +539,9 @@ def _fallback(sess, func, args, kwargs):
                 return r
         except Exception:  # noqa: BLE001 - not every op can decompose
             pass
-    if sess.allow_local_fallback:
+    from . import _placement as placement
+
+    if sess.allow_local_fallback and placement.mode() != "remote":
         if name not in _warned_local:
             _warned_local.add(name)
             warnings.warn(f"reflop: {name} is not supported by the server; running it on the client CPU",
@@ -530,11 +555,13 @@ def _fallback(sess, func, args, kwargs):
                                    "local fallback with reflop.placement('auto').")
 
 
-def _run_locally(sess, func, args, kwargs):
-    local = tree_map(lambda x: x.cpu() if isinstance(x, RemoteTensor) else
+def _run_locally(sess, func, args, kwargs, keep_local=False):
+    local = tree_map(lambda x: x._rf_storage.session.fetch(value_of(x), x._rf_meta) if isinstance(x, RemoteTensor) else
                      (torch.device("cpu") if isinstance(x, torch.device) and x.type == "reflop" else x), (args, kwargs))
     with torch._C._DisableTorchDispatch():
         out = func(*local[0], **local[1])
+    if keep_local:
+        return out
     return tree_map(lambda x: sess.upload_tensor(x) if isinstance(x, torch.Tensor) else x, out)
 
 
@@ -662,7 +689,11 @@ def _to_copy(sess, func, args, kwargs):
                       memory_format=mf or torch.preserve_format)
     if not isinstance(src, RemoteTensor):
         t = src.to(dtype=dtype or src.dtype)
-        return sess.upload_tensor(t)
+        return _session_for(device).upload_tensor(t)
+    if device is not None and (torch.device(device).index or 0) != src._rf_storage.session.device_index:
+        # reflop:i -> reflop:j: different server sessions, move through the client.
+        cpu = sess.fetch(value_of(src), src._rf_meta)
+        return _session_for(device).upload_tensor(cpu.to(dtype=dtype or cpu.dtype))
     return _functional(sess, func, args, kwargs)
 
 
@@ -704,6 +735,28 @@ def _fill_(sess, func, args, kwargs):
         return dst
     res = dispatch(sess, aten.fill.Scalar, (dst, value), {})
     write(dst, value_of(res), res._rf_meta)
+    return dst
+
+
+def _random_(sess, func, args, kwargs):
+    """random_(from, to) → randint.low on the session generator (functional)."""
+    vals = normalize(func, args, kwargs)
+    dst = vals[0]
+    name = str(func)
+    if name == "aten.random_.from":
+        lo, hi = vals[1], vals[2]
+    elif name == "aten.random_.to":
+        lo, hi = 0, vals[1]
+    else:
+        lo = 0
+        hi = (1 << 63) - 1 if dst.dtype == torch.int64 else (
+            2 if dst.dtype == torch.bool else int(torch.iinfo(dst.dtype).max) + 1
+            if not dst.dtype.is_floating_point else 1 << torch.finfo(dst.dtype).nmant + 1)
+    if hi is None:
+        hi = int(torch.iinfo(dst.dtype).max) + 1 if not dst.dtype.is_floating_point else 1 << 24
+    r = dispatch(sess, aten.randint.low, (lo, hi, list(dst.shape)),
+                 {"dtype": dst.dtype, "device": dst.device})
+    write(dst, value_of(r), r._rf_meta)
     return dst
 
 
@@ -785,6 +838,9 @@ _SPECIALS = {
     "aten.fill_.Scalar": _fill_,
     "aten.fill_.Tensor": _fill_,
     "aten.zero_.default": _zero_,
+    "aten.random_.from": _random_,
+    "aten.random_.to": _random_,
+    "aten.random_.default": _random_,
     "aten.equal.default": _equal,
     "aten.is_nonzero.default": _is_nonzero,
     "aten.is_same_size.default": _is_same_size,
@@ -805,10 +861,38 @@ _SPECIALS = {
 # ---------------------------------------------------------------- factory kernels
 
 
-def _new_empty(size, dtype, stride=None):
-    from . import session
+def _session_for(device):
+    from . import _placement, session
 
-    sess = session.current()
+    if _placement.mode() == "remote-cpu":
+        return _cpu_session()
+
+    if isinstance(device, (str, int)):
+        device = torch.device(device) if isinstance(device, str) else torch.device("reflop", device)
+    idx = device.index if isinstance(device, torch.device) and device.index is not None else 0
+    try:
+        return session.by_index(idx)
+    except KeyError:
+        raise RuntimeError(f"no reflop session for device reflop:{idx}; call reflop.device({idx}) first") from None
+
+
+def _cpu_session():
+    """The server-CPU session, opened on demand (placement "remote-cpu")."""
+    from . import session
+    from ._pb import graph_pb2 as gpb
+
+    for s in list(session._sessions.values()):
+        if s.gdevice.kind == gpb.DEVICE_CPU:
+            return s
+    import reflop
+
+    idx = max(session._sessions, default=-1) + 1
+    reflop.device(idx, kind="cpu", local=getattr(session.current().conn, "local_kind", None) and "cpu")
+    return session.by_index(idx)
+
+
+def _new_empty(size, dtype, stride=None, device=None):
+    sess = _session_for(device)
     with torch._C._DisableTorchDispatch():
         if stride is None:
             meta = torch.empty(size, dtype=dtype or torch.get_default_dtype(), device="meta")
@@ -818,7 +902,7 @@ def _new_empty(size, dtype, stride=None):
 
 
 def _empty_memory_format(size, dtype=None, layout=None, device=None, pin_memory=None, memory_format=None):
-    t = _new_empty(size, dtype)
+    t = _new_empty(size, dtype, device=device)
     if memory_format not in (None, torch.contiguous_format, torch.preserve_format):
         with torch._C._DisableTorchDispatch():
             meta = torch.empty(size, dtype=t.dtype, device="meta", memory_format=memory_format)
@@ -827,7 +911,7 @@ def _empty_memory_format(size, dtype=None, layout=None, device=None, pin_memory=
 
 
 def _empty_strided(size, stride, dtype=None, layout=None, device=None, pin_memory=None):
-    return _new_empty(size, dtype, stride)
+    return _new_empty(size, dtype, stride, device=device)
 
 
 _lib = None

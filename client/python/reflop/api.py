@@ -73,8 +73,18 @@ def close() -> None:
 
 @contextlib.contextmanager
 def placement(mode: str):
-    """Override placement: "auto" (default), "remote", "local", "remote-cpu"."""
-    from . import placement as pl
+    """Override placement (PLAN.md §13.3):
+
+    "auto"        default: ops on reflop tensors run remotely; an op that
+                  mixes big client tensors with small reflop tensors may run
+                  locally (cost model); unsupported ops fall back locally
+    "remote"      never run locally: unsupported ops raise
+    "local"       ops on reflop tensors run on the client and return client
+                  tensors (fetches inputs)
+    "remote-cpu"  new tensors and .to(reflop.device()) go to the server CPU
+                  (opens a second session on demand)
+    """
+    from . import _placement as pl
 
     with pl.override(mode):
         yield
