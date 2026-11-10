@@ -13,7 +13,8 @@ The first two calls run eagerly. If both produced the same graph with the
 same baked-in values, later calls skip Python entirely and send a single
 Execute that binds the new arguments. Requirements (checked, not assumed):
 
-- tensor arguments keep their shapes and dtypes (else it re-captures);
+- tensor arguments (also inside lists, tuples and dicts) keep their shapes
+  and dtypes (else it re-captures);
 - values that change every step must live in tensors, not Python numbers:
   use `capturable=True` (or `fused=True`) optimizers and tensor learning
   rates; a step whose Python scalars drift is refused with an explanation;
@@ -26,6 +27,7 @@ from __future__ import annotations
 import functools
 
 import torch
+from torch.utils._pytree import tree_flatten
 
 from . import session as _session
 from ._pb import compute_pb2 as cpb
@@ -37,7 +39,8 @@ class CaptureError(RuntimeError):
 
 
 def _arg_tensors(args):
-    return [a for a in args if isinstance(a, torch.Tensor)]
+    # Tensors nested in lists, tuples and dicts (a dataset batch) count too.
+    return [a for a in tree_flatten(args)[0] if isinstance(a, torch.Tensor)]
 
 
 def _state(t):
@@ -55,8 +58,9 @@ def _same_cpu_tensor(t, state, ts, cpu_args, before):
 
 
 def _sig(args):
-    return tuple((tuple(a.shape), a.dtype, type(a).__name__) if isinstance(a, torch.Tensor) else ("py", repr(a))
-                 for a in args)
+    leaves, spec = tree_flatten(args)
+    return (str(spec), *((tuple(a.shape), a.dtype, type(a).__name__) if isinstance(a, torch.Tensor)
+                         else ("py", repr(a)) for a in leaves))
 
 
 class Captured:

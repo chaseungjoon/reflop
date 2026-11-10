@@ -77,6 +77,20 @@ def test_lstm_gru_on_the_server_cpu_with_a_gpu_session_open(devs):
     assert losses[0] == pytest.approx(losses[1], rel=1e-5)
 
 
+def test_composite_ops_create_tensors_in_their_inputs_session(devs):
+    # The causal mask is built in C++ with the inputs' C++ device (reflop:0).
+    _, d1 = devs
+    g = torch.Generator().manual_seed(0)
+    q, k, v = (torch.randn(2, 4, 8, 16, generator=g) for _ in range(3))
+    qr, kr, vr = (t.to(d1).requires_grad_() for t in (q, k, v))
+    out = F.scaled_dot_product_attention(qr, kr, vr, is_causal=True)
+    assert sess(out) == 1
+    out.sum().backward()
+    assert sess(qr.grad) == 1
+    want = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+    assert torch.allclose(out.cpu(), want, atol=1e-5)
+
+
 def test_moves_between_sessions(devs):
     d0, d1 = devs
     m = nn.Linear(3, 2).to(d0)

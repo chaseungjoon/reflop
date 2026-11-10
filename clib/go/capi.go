@@ -31,7 +31,7 @@ import (
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 var (
 	mu       sync.Mutex

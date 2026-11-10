@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 (2026-11-10)
+
+- Client: operators that PyTorch builds out of others in C++ (such as the
+  causal mask of `scaled_dot_product_attention(is_causal=True)`) create their
+  temporary tensors in their inputs' session, so transformers train on the
+  server-CPU session while a GPU session is open.
+- Client: `reflop.capture` binds tensors inside list, tuple and dict arguments,
+  so a step that takes a dataset batch (`step(batch)`) replays instead of
+  running eagerly every call.
+
 ## 0.1.1 (2026-11-10)
 
 - Client: `t.device` reports the tensor's session, so `device=t.device`,

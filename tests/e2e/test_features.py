@@ -97,6 +97,32 @@ def test_capture_uploads_cpu_batches_inside_the_step(dev):
     assert s.replays >= 3
 
 
+def test_capture_binds_tensors_inside_dict_arguments(dev):
+    # A dataset batch is a dict of tensors.
+    m, r = mk().to(dev), mk()
+    o = torch.optim.SGD(m.parameters(), 0.1, momentum=0.9)
+    ro = torch.optim.SGD(r.parameters(), 0.1, momentum=0.9)
+
+    def step(b):
+        o.zero_grad(set_to_none=True)
+        loss = F.cross_entropy(m(b["x"]), b["y"])
+        loss.backward()
+        o.step()
+        return loss
+
+    s = reflop.capture(step)
+    g = torch.Generator().manual_seed(4)
+    for _ in range(6):
+        x, y = torch.randn(32, 16, generator=g), torch.randint(0, 4, (32,), generator=g)
+        loss = s({"x": x.to(dev), "y": y.to(dev)})
+        rl = F.cross_entropy(r(x), y)
+        ro.zero_grad()
+        rl.backward()
+        ro.step()
+        assert abs(loss.item() - rl.item()) < tol()
+    assert s.replays >= 3
+
+
 def test_capture_refuses_drifting_scalars(dev):
     m = mk().to(dev)
     o = torch.optim.Adam(m.parameters(), 1e-2)

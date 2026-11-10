@@ -174,7 +174,8 @@ The first two calls run eagerly. If both produced the same graph with the same
 constants, later calls send a single request that binds the new arguments, and
 your Python function is not run. Rules (checked, not assumed):
 
-- Arguments must keep their shapes and dtypes; a change re-captures.
+- Tensor arguments, also inside lists, tuples and dicts (such as a dataset
+  batch), must keep their shapes and dtypes; a change re-captures.
 - Anything that changes every step must be a tensor. With a plain Adam or AdamW,
   the bias correction is a Python number that changes each step: pass
   `capturable=True` (or `fused=True`). A Python learning-rate schedule has the

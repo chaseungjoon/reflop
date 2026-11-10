@@ -185,7 +185,19 @@ class RemoteTensor(torch.Tensor):
                 nb = bool(rest[1] if len(rest) > 1 else kw.get("non_blocking", False))
                 return args[0].to(device=other.device, dtype=other.dtype, non_blocking=nb, copy=copy,
                                   memory_format=kw.get("memory_format", torch.preserve_format))
-        return torch._C._disabled_torch_function_impl(func, types, args, kwargs or {})
+        kwargs = kwargs or {}
+        # C++ composites (scaled_dot_product_attention's causal mask, ...)
+        # create tensors with the inputs' C++ device, reflop:0: put them in
+        # the inputs' session instead.
+        sess = _call_session(func, args, kwargs)
+        if sess is None:
+            return torch._C._disabled_torch_function_impl(func, types, args, kwargs)
+        prev = getattr(_active, "sess", None)
+        _active.sess = sess
+        try:
+            return torch._C._disabled_torch_function_impl(func, types, args, kwargs)
+        finally:
+            _active.sess = prev
 
     def to(self, *args, **kwargs):
         other = args[0] if args and isinstance(args[0], torch.Tensor) else kwargs.get("tensor")
@@ -213,6 +225,31 @@ def _split_copy(args, kwargs):
         copy = bool(args[i])
         args = args[:i] + args[i + 1:]
     return tuple(args), kwargs, copy
+
+
+_DEVICE_PREFIXES = ("reflop", "cpu", "cuda", "meta", "mps")
+# Calls that may legitimately reach other sessions (backward through a
+# differentiable move between sessions) or that name a device themselves.
+_NO_CALL_SESSION = {torch.Tensor.to, torch.Tensor.cuda, torch.Tensor.type, torch.Tensor.backward,
+                    torch.autograd.backward, torch.autograd.grad}
+
+
+def _call_session(func, args, kwargs):
+    """The one session all reflop tensors of a call live in, when the call does
+    not name a device itself (then its own device decides)."""
+    if "device" in kwargs or func in _NO_CALL_SESSION:
+        return None
+    sess = None
+    for x in itertools.chain(args, kwargs.values()):
+        for y in (x if isinstance(x, (list, tuple)) else (x,)):
+            if isinstance(y, RemoteTensor):
+                s = y._rf_storage.session
+                if sess is not None and s is not sess:
+                    return None
+                sess = s
+            elif isinstance(y, torch.device) or (isinstance(y, str) and y.startswith(_DEVICE_PREFIXES)):
+                return None
+    return sess
 
 
 def is_remote(x) -> bool:
