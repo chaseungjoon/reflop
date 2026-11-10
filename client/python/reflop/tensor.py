@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import itertools
+import threading
 import warnings
 from typing import Any
 
@@ -79,9 +80,13 @@ class RemoteTensor(torch.Tensor):
     def __new__(cls, meta: torch.Tensor, storage: Storage, chain: tuple = (), requires_grad: bool = False):
         from .device import torch_device
 
+        # Every reflop tensor reports reflop:0: PyTorch's Python backends
+        # expose a single device to autograd. The tensor's server session
+        # (GPU, or the server CPU from reflop.device(1, kind="cpu")) is
+        # tracked in its Storage instead.
         r = torch.Tensor._make_wrapper_subclass(
             cls, meta.shape, strides=meta.stride(), storage_offset=meta.storage_offset(), dtype=meta.dtype,
-            device=torch_device(storage.session.device_index), requires_grad=requires_grad)
+            device=torch_device(0), requires_grad=requires_grad)
         r._rf_meta = meta
         r._rf_storage = storage
         r._rf_chain = chain
@@ -98,8 +103,13 @@ class RemoteTensor(torch.Tensor):
         sess = None
         for x in itertools.chain(tree_flatten(args)[0], tree_flatten(kwargs)[0]):
             if isinstance(x, RemoteTensor):
-                sess = x._rf_storage.session
-                break
+                s = x._rf_storage.session
+                if sess is None:
+                    sess = s
+                elif s is not sess and str(func) != "aten._to_copy.default":
+                    raise RuntimeError(
+                        f"{func}: these reflop tensors live in different server sessions (device "
+                        f"{sess.device_index} and {s.device_index}); move one with .to(reflop.device(i))")
         if sess is None:  # pragma: no cover - torch only calls us with a RemoteTensor
             return func(*args, **kwargs)
         return dispatch(sess, func, args, kwargs)
@@ -385,14 +395,25 @@ def functional_of(func) -> tuple[Any, list[int]] | None:
     pref = [func._overloadname.replace("_out", "").replace("out", "default") or "default", func._overloadname]
     names = list(cand_pkt.overloads())
     names.sort(key=lambda n: (n not in pref, n))
+    loose = None
     for ov in names:
         f = getattr(cand_pkt, ov)
         fs = f._schema
         if any(a.alias_info is not None and a.alias_info.is_write for a in fs.arguments):
             continue
-        if [_arg_sig(a) for a in fs.arguments] == want:
+        sig = [_arg_sig(a) for a in fs.arguments]
+        if sig == want:
             return f, mutated
-    return None
+        # Factory out= variants (arange.start_out): the functional form adds
+        # keyword-only dtype/layout/device/pin_memory, filled from `out`.
+        extra = fs.arguments[len(want):]
+        if (loose is None and out_args and sig[:len(want)] == want
+                and all(a.kwarg_only and a.name in _FACTORY_KW for a in extra)):
+            loose = (f, mutated)
+    return loose
+
+
+_FACTORY_KW = {"dtype", "layout", "device", "pin_memory", "memory_format"}
 
 
 # Mutating ops whose functional form is not found by name.
@@ -431,10 +452,13 @@ def dispatch(sess, func, args, kwargs):
     if sess.depth == 0:
         sess.maybe_flush()
     sess.depth += 1
+    prev = getattr(_active, "sess", None)
+    _active.sess = sess
     try:
         return _dispatch(sess, func, args, kwargs)
     finally:
         sess.depth -= 1
+        _active.sess = prev
 
 
 def _placement_local(sess, func, args, kwargs):
@@ -511,13 +535,15 @@ def _wrap_outputs(sess, out_meta, values: list[Value]):
 
 def _functional(sess, func, args, kwargs):
     name = str(func)
+    entry = opset.OPS.get(name)
+    if entry is not None and entry[1] & opset.FLAG_DDS:
+        return _dds(sess, func, args, kwargs)
     if name in sess.unsupported_names or not sess.op_enabled(name):
-        return _fallback(sess, func, args, kwargs)
-    entry = opset.OPS[name]
-    if entry[1] & (opset.FLAG_CLIENT | opset.FLAG_BANNED):
         return _fallback(sess, func, args, kwargs)
     if entry[1] & opset.FLAG_DDS:
         return _dds(sess, func, args, kwargs)
+    if entry[1] & (opset.FLAG_CLIENT | opset.FLAG_BANNED):
+        return _fallback(sess, func, args, kwargs)
     out_meta = meta_cached(func, args, kwargs)
     vals = normalize(func, args, kwargs)
     outs = sess.record_values(name, func, vals, _flat_tensors(out_meta))
@@ -527,7 +553,9 @@ def _functional(sess, func, args, kwargs):
 def _fallback(sess, func, args, kwargs):
     """Not in the opset: decompose, else run locally, else fail (§11.2 step 2)."""
     name = str(func)
-    d = _decomp_table().get(func)
+    from .decomp import TABLE as REFLOP_DECOMP
+
+    d = REFLOP_DECOMP.get(func) or _decomp_table().get(func)
     if d is not None:
         r = d(*args, **kwargs)
         if r is not NotImplemented:
@@ -590,6 +618,12 @@ def _mutating(sess, func, args, kwargs):
         ffunc, mutated = found
         out_pos = [i for i in mutated if schema.arguments[i].kwarg_only]
         fvals = [v for i, v in enumerate(vals) if i not in out_pos]
+        fschema = ffunc._schema.arguments
+        if len(fschema) > len(fvals) and out_pos:
+            out_t = vals[out_pos[0]]
+            fill = {"dtype": out_t.dtype, "layout": torch.strided, "device": out_t.device, "pin_memory": None,
+                    "memory_format": None}
+            fvals = fvals + [fill[a.name] for a in fschema[len(fvals):]]
     targets = [vals[i] for i in mutated]
     # Run the functional op (records, decomposes, or falls back as usual).
     fargs, fkwargs = _rebind(ffunc, fvals)
@@ -690,7 +724,7 @@ def _to_copy(sess, func, args, kwargs):
     if not isinstance(src, RemoteTensor):
         t = src.to(dtype=dtype or src.dtype)
         return _session_for(device).upload_tensor(t)
-    if device is not None and (torch.device(device).index or 0) != src._rf_storage.session.device_index:
+    if device is not None and _target_index(device) != src._rf_storage.session.device_index:
         # reflop:i -> reflop:j: different server sessions, move through the client.
         cpu = sess.fetch(value_of(src), src._rf_meta)
         return _session_for(device).upload_tensor(cpu.to(dtype=dtype or cpu.dtype))
@@ -861,11 +895,24 @@ _SPECIALS = {
 # ---------------------------------------------------------------- factory kernels
 
 
+def _target_index(device) -> int:
+    d = torch.device(device) if not isinstance(device, torch.device) else device
+    return d.index or 0
+
+
+_active = threading.local()
+
+
 def _session_for(device):
     from . import _placement, session
 
     if _placement.mode() == "remote-cpu":
         return _cpu_session()
+    # Inside an op's decomposition every new tensor belongs to the session
+    # being dispatched (tensors all report reflop:0, see RemoteTensor.__new__).
+    act = getattr(_active, "sess", None)
+    if act is not None:
+        return act
 
     if isinstance(device, (str, int)):
         device = torch.device(device) if isinstance(device, str) else torch.device("reflop", device)
@@ -873,6 +920,8 @@ def _session_for(device):
     try:
         return session.by_index(idx)
     except KeyError:
+        if idx == 0 and session.has_default():
+            return session.current()
         raise RuntimeError(f"no reflop session for device reflop:{idx}; call reflop.device({idx}) first") from None
 
 
@@ -914,6 +963,31 @@ def _empty_strided(size, stride, dtype=None, layout=None, device=None, pin_memor
     return _new_empty(size, dtype, stride, device=device)
 
 
+# Factory ops get direct kernels: their composite forms allocate an empty
+# tensor and resize it through out=, which a remote tensor cannot do.
+FACTORIES = [
+    "arange.default", "arange.start", "arange.start_step", "linspace.default", "logspace.default", "eye.default",
+    "eye.m", "full.default", "zeros.default", "ones.default", "rand.default", "randn.default", "randint.default",
+    "randint.low", "randperm.default", "scalar_tensor.default",
+]
+
+
+def _factory_kernel(op):
+    name = str(op)
+
+    def kernel(*args, **kwargs):
+        sess = _session_for(kwargs.get("device"))
+        if name not in sess.enabled:
+            raise UnsupportedOperatorError(f"{name} is not enabled on this server")
+        meta_kw = dict(kwargs, device=torch.device("meta"))
+        with torch._C._DisableTorchDispatch():
+            meta = op(*args, **meta_kw)
+        vals = normalize(op, args, kwargs)
+        out = sess.record_values(name, op, vals, [meta])[0]
+        return RemoteTensor(meta, Storage(sess, meta, out))
+    return kernel
+
+
 _lib = None
 
 
@@ -926,6 +1000,12 @@ def register_backend_kernels() -> None:
     _lib = torch.library.Library("aten", "IMPL")
     _lib.impl("empty.memory_format", _empty_memory_format, "PrivateUse1")
     _lib.impl("empty_strided", _empty_strided, "PrivateUse1")
+    for qual in FACTORIES:
+        base, ov = qual.split(".")
+        pkt = getattr(aten, base, None)
+        if pkt is None or ov not in pkt.overloads():
+            continue
+        _lib.impl(base if ov == "default" else qual, _factory_kernel(getattr(pkt, ov)), "PrivateUse1")
 
 
 __all__ = ["RemoteTensor", "Storage", "dispatch", "value_of", "write", "is_remote", "run_meta"]

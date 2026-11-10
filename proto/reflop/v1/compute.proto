@@ -107,6 +107,7 @@ message SessionOpened {
   bool resumed = 2;
   Numerics numerics = 3;  // effective
   uint64 seed = 4;        // effective seed
+  repeated uint32 enabled_op_ids = 5;  // operators enabled on this session's device
 }
 
 message CloseSession {}

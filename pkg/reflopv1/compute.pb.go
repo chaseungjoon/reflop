@@ -639,8 +639,9 @@ type SessionOpened struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     []byte                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // 16 bytes
 	Resumed       bool                   `protobuf:"varint,2,opt,name=resumed,proto3" json:"resumed,omitempty"`
-	Numerics      *Numerics              `protobuf:"bytes,3,opt,name=numerics,proto3" json:"numerics,omitempty"` // effective
-	Seed          uint64                 `protobuf:"varint,4,opt,name=seed,proto3" json:"seed,omitempty"`        // effective seed
+	Numerics      *Numerics              `protobuf:"bytes,3,opt,name=numerics,proto3" json:"numerics,omitempty"`                                       // effective
+	Seed          uint64                 `protobuf:"varint,4,opt,name=seed,proto3" json:"seed,omitempty"`                                              // effective seed
+	EnabledOpIds  []uint32               `protobuf:"varint,5,rep,packed,name=enabled_op_ids,json=enabledOpIds,proto3" json:"enabled_op_ids,omitempty"` // operators enabled on this session's device
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -701,6 +702,13 @@ func (x *SessionOpened) GetSeed() uint64 {
 		return x.Seed
 	}
 	return 0
+}
+
+func (x *SessionOpened) GetEnabledOpIds() []uint32 {
+	if x != nil {
+		return x.EnabledOpIds
+	}
+	return nil
 }
 
 type CloseSession struct {
@@ -3223,13 +3231,14 @@ const file_reflop_v1_compute_proto_rawDesc = "" +
 	"\bhas_seed\x18\x02 \x01(\bR\ahasSeed\x12\x12\n" +
 	"\x04seed\x18\x03 \x01(\x04R\x04seed\x12/\n" +
 	"\bnumerics\x18\x04 \x01(\v2\x13.reflop.v1.NumericsR\bnumerics\x12*\n" +
-	"\x11resume_session_id\x18\x05 \x01(\fR\x0fresumeSessionId\"\x8d\x01\n" +
+	"\x11resume_session_id\x18\x05 \x01(\fR\x0fresumeSessionId\"\xb3\x01\n" +
 	"\rSessionOpened\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\fR\tsessionId\x12\x18\n" +
 	"\aresumed\x18\x02 \x01(\bR\aresumed\x12/\n" +
 	"\bnumerics\x18\x03 \x01(\v2\x13.reflop.v1.NumericsR\bnumerics\x12\x12\n" +
-	"\x04seed\x18\x04 \x01(\x04R\x04seed\"\x0e\n" +
+	"\x04seed\x18\x04 \x01(\x04R\x04seed\x12$\n" +
+	"\x0eenabled_op_ids\x18\x05 \x03(\rR\fenabledOpIds\"\x0e\n" +
 	"\fCloseSession\"\x0f\n" +
 	"\rSessionClosed\"7\n" +
 	"\rRegisterGraph\x12&\n" +

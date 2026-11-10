@@ -60,12 +60,29 @@ def detect_capabilities(device: torch.device, allowed: set[str] | None) -> list[
     return sorted(keep)
 
 
+_COMPOSITE_KEYS = None
+
+
+def has_kernel(op, device: torch.device) -> bool:
+    """Whether this PyTorch build can run the op on the device (some ops,
+    e.g. _thnn_fused_lstm_cell, exist only as CUDA kernels)."""
+    global _COMPOSITE_KEYS
+    if not hasattr(op.fn, "has_kernel_for_dispatch_key"):
+        return True  # reflop-native
+    K = torch._C.DispatchKey
+    if _COMPOSITE_KEYS is None:
+        _COMPOSITE_KEYS = [K.CompositeExplicitAutograd, K.CompositeImplicitAutograd,
+                           K.CompositeExplicitAutogradNonFunctional]
+    key = K.CUDA if device.type == "cuda" else K.CPU
+    return op.fn.has_kernel_for_dispatch_key(key) or any(op.fn.has_kernel_for_dispatch_key(k) for k in _COMPOSITE_KEYS)
+
+
 def enabled_ops(device: torch.device, caps: list[str], requested: list[int]) -> list[int]:
     dev = device.type
     req = set(requested) if requested else None
     out = []
     for i, op in OPS.items():
-        if op.fn is None or dev not in op.devices:
+        if op.fn is None or dev not in op.devices or not has_kernel(op, device):
             continue
         if op.capability and op.capability not in caps:
             continue

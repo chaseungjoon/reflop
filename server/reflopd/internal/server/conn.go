@@ -262,7 +262,8 @@ func (c *clientConn) openSession(rid uint64, req *pb.OpenSession) error {
 		}
 		c.session = sess
 		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_SessionOpened{SessionOpened: &pb.SessionOpened{
-			SessionId: sess.ID[:], Resumed: true, Numerics: sess.numerics, Seed: sess.seed}}})
+			SessionId: sess.ID[:], Resumed: true, Numerics: sess.numerics, Seed: sess.seed,
+			EnabledOpIds: c.srv.filterOps(sess.Device)}}})
 	}
 	sess, err := c.srv.openSession(c, req)
 	if err != nil {
@@ -276,7 +277,7 @@ func (c *clientConn) openSession(rid uint64, req *pb.OpenSession) error {
 	}
 	c.session = sess
 	return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_SessionOpened{SessionOpened: &pb.SessionOpened{
-		SessionId: sess.ID[:], Numerics: sess.numerics, Seed: sess.seed}}})
+		SessionId: sess.ID[:], Numerics: sess.numerics, Seed: sess.seed, EnabledOpIds: c.srv.filterOps(sess.Device)}}})
 }
 
 type statusError struct {

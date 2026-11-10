@@ -38,7 +38,7 @@ def has_default() -> bool:
 
 
 def device_count() -> int:
-    return max(len(_sessions), 1)
+    return 1  # see RemoteTensor.__new__: tensors always report reflop:0
 
 
 def by_index(i: int) -> Session:

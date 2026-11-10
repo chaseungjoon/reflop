@@ -334,6 +334,11 @@ class RemoteConnection(Connection):
             req.has_seed, req.seed = True, seed
         r = self.call(cpb.Envelope(open_session=req), timeout=300)
         self.session_id = r.session_opened.session_id
+        if r.session_opened.enabled_op_ids:
+            # This session's device may support fewer operators than the
+            # server's first device (e.g. CUDA-only fused kernels on the CPU).
+            del self.caps.enabled_op_ids[:]
+            self.caps.enabled_op_ids.extend(r.session_opened.enabled_op_ids)
 
     def _read_loop(self, fr: Framer) -> None:
         try:
