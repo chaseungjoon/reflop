@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2026-11-10)
 
 - Client: `t.device` reports the tensor's session, so `device=t.device`,
   `t.to(other)`, `module.to(...)` and differentiable moves work across the GPU
