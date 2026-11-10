@@ -67,7 +67,9 @@ def test_capture_with_capturable_adamw(dev):
         rl.backward()
         ro.step()
     assert s.replays >= 3
-    assert abs(loss.item() - rl.item()) < tol()
+    # capturable=True computes bias corrections with tensor ops, the reference
+    # with Python floats: equal up to float32 rounding.
+    assert abs(loss.item() - rl.item()) < max(tol(), 1e-5)
 
 
 def test_capture_refuses_drifting_scalars(dev):
