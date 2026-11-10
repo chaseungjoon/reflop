@@ -10,6 +10,10 @@ dist/
 .ruff_cache/
 .hypothesis/
 
+# docs
+PLAN.md
+LIVE_TEST.md
+
 # Go
 /bin/
 /server/reflopd/reflopd
