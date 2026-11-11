@@ -19,12 +19,17 @@ Execute that binds the new arguments. Requirements (checked, not assumed):
   use `capturable=True` (or `fused=True`) optimizers and tensor learning
   rates; a step whose Python scalars drift is refused with an explanation;
 - the returned tensors are the same objects every call (their contents
-  change), as with CUDA graphs.
+  change), as with CUDA graphs;
+- CPU work inside the step is not replayed: a CPU argument modified in place
+  before `.to(dev)` (or another CPU tensor uploaded inside the step that
+  changes every call) keeps the step eager. reflop.capture warns once, with
+  the reason, when a step still runs eagerly after warm-up.
 """
 
 from __future__ import annotations
 
 import functools
+import warnings
 
 import torch
 from torch.utils._pytree import tree_flatten
@@ -57,6 +62,37 @@ def _same_cpu_tensor(t, state, ts, cpu_args, before):
     return None
 
 
+def _aliased_cpu_arg(t, ts, cpu_args):
+    """Index of a CPU argument whose memory `t` shares (the argument itself, a
+    view of it, or the argument modified in place)."""
+    try:
+        p = t.untyped_storage().data_ptr()
+    except RuntimeError:
+        return None
+    for i in cpu_args:
+        if ts[i].untyped_storage().data_ptr() == p:
+            return i
+    return None
+
+
+# Why a step stays eager, for the one-time warning.
+_WHY = {
+    "nothing": "the step did no work on a reflop device, or worked on several reflop devices",
+    "graph": "the step builds a different graph each call (Python control flow that depends on values, or a "
+             "different number of operations)",
+    "mutated": "the step modifies a CPU argument in place and then uploads it (for example x.sub_(mean) before "
+               "x.to(dev)); replaying would skip that CPU work. Do it on the device after .to(dev), or before "
+               "calling the step",
+    "view": "the step uploads a slice or view of a CPU argument (for example x[:, :8].to(dev)); upload the whole "
+            "argument and slice it on the device",
+    "const": "a CPU tensor uploaded inside the step changes every call but is not one of the step's arguments "
+             "(for example it is computed from an argument on the CPU); compute it on the device, or pass it in "
+             "as an argument",
+    "changed": "the step uploads a CPU tensor and then modifies it",
+    "handle": "the step's inputs on the server differ between calls",
+}
+
+
 def _sig(args):
     leaves, spec = tree_flatten(args)
     return (str(spec), *((tuple(a.shape), a.dtype, type(a).__name__) if isinstance(a, torch.Tensor)
@@ -72,6 +108,8 @@ class Captured:
         self.sig = None
         self.out = None
         self.replays = 0
+        self.warned = False
+        self.misses = 0  # consecutive same-signature calls that did not capture
         functools.update_wrapper(self, fn)
 
     def _candidates(self, args) -> list:
@@ -145,10 +183,15 @@ class Captured:
                     i = _same_cpu_tensor(t, st, ts, cpu_args, before)
                     if i is not None:
                         src = ("upload", i, dt)
+                    elif (j := _aliased_cpu_arg(t, ts, cpu_args)) is not None:
+                        # An argument changed by CPU work inside the step, or a
+                        # view of one: its data is not a constant, and a replay
+                        # would skip the CPU work. Never replayed.
+                        src = ("changed", "mutated" if ts[j]._version != before[j][0] else "view")
                     elif t._version == st[0]:
                         src = ("const", sess.cpu_value(t.to(dt)))
                     else:
-                        src = ("changed",)  # modified after the upload: never replayed
+                        src = ("changed", "changed")  # modified after the upload: never replayed
                 if src is None:
                     if v.handle in plan["freed"]:
                         raise CaptureError("the step reads a server tensor that it also frees (a temporary made "
@@ -178,21 +221,30 @@ class Captured:
 
     @staticmethod
     def _same(a, b) -> bool:
-        if (a is None or b is None or a["sess"] is not b["sess"] or a["hash"] != b["hash"]
-                or len(a["sources"]) != len(b["sources"])):
-            return False
+        return Captured._differs(a, b) is None
+
+    @staticmethod
+    def _differs(a, b) -> str | None:
+        """None if two recorded calls can be replayed as one plan, else a
+        key of _WHY saying why not."""
+        if a is None or b is None or a["sess"] is not b["sess"]:
+            return "nothing"
+        if a["hash"] != b["hash"] or len(a["sources"]) != len(b["sources"]):
+            return "graph"
         for x, y in zip(a["sources"], b["sources"]):
-            if x[0] != y[0] or x[0] == "changed":
-                return False
+            if x[0] == "changed":
+                return x[1]
+            if y[0] == "changed":
+                return y[1]
+            if x[0] != y[0]:
+                return "const" if "const" in (x[0], y[0]) else "handle"
             if x[0] == "scalar" and x[1] != y[1]:
-                return False
+                return "scalar"
             if x[0] == "const" and not torch.equal(x[1].payload, y[1].payload):
-                return False
-            if x[0] == "arg" and x[1] != y[1]:
-                return False
-            if x[0] == "upload" and x[1:] != y[1:]:
-                return False
-        return True
+                return "const"
+            if x[0] in ("arg", "upload", "handle") and x[1:] != y[1:]:
+                return "handle"
+        return None
 
     def __call__(self, *args):
         sig = _sig(args)
@@ -210,6 +262,16 @@ class Captured:
                     "non-capturable optimizer's bias correction or a Python learning-rate schedule). Replaying "
                     "would freeze them. Use capturable=True or fused=True optimizers and tensor-valued "
                     "hyperparameters, or call the step without reflop.capture.")
+        self.misses = self.misses + 1 if self.plan is None and sig == self.sig else 0
+        # The first calls may differ (optimizer state created, gradients set to
+        # None): warn only when warm-up is clearly over.
+        if self.misses >= 3 and not self.warned:
+            why = self._differs(self.prev, plan)
+            if why in _WHY:
+                self.warned = True
+                name = getattr(self.fn, "__qualname__", "the step")
+                warnings.warn(f"reflop.capture: {name} runs eagerly (no replay): {_WHY[why]}.",
+                              RuntimeWarning, stacklevel=2)
         self.prev, self.sig = plan, sig
         return out
 

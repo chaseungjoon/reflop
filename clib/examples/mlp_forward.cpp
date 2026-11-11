@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Two-layer MLP forward on a reFLOP server with the C++ wrapper; checks
-// against a local reference.
+// Two-layer MLP forward on a reFLOP server with the C++ wrapper, including a
+// node built inline as another node's argument; checks against a local
+// reference.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -40,9 +41,10 @@ int main() {
     auto gb1 = g.input(REFLOP_F32, {H});
     auto gw2 = g.input(REFLOP_F32, {O, H});
     auto gb2 = g.input(REFLOP_F32, {O});
-    auto w1t = g.op("aten.t.default").tensor(gw1).end();
-    // addmm(self, mat1, mat2, *, beta=1, alpha=1)
-    auto a1 = g.op("aten.addmm.default").tensor(gb1).tensor(gx).tensor(w1t).i(1).i(1).end();
+    // addmm(self, mat1, mat2, *, beta=1, alpha=1). Layer 1 builds t(W1) inline
+    // as an argument (nested builders); layer 2 builds it first. Both work.
+    auto a1 = g.op("aten.addmm.default").tensor(gb1).tensor(gx)
+                  .tensor(g.op("aten.t.default").tensor(gw1).end()).i(1).i(1).end();
     auto r1 = g.op("aten.relu.default").tensor(a1).end();
     auto w2t = g.op("aten.t.default").tensor(gw2).end();
     auto y = g.op("aten.addmm.default").tensor(gb2).tensor(r1).tensor(w2t).i(1).i(1).end();

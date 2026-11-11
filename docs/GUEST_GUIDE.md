@@ -119,9 +119,14 @@ under one name add up). This needs reflopd 0.1.4 or newer.
 | Exception | Meaning |
 |---|---|
 | `reflop.UnsupportedOperatorError` | an operation has no form the server accepts; the message names it |
-| `reflop.OutOfMemoryError` | the GPU is full (other people use it too); your session still works |
+| `reflop.OutOfMemoryError` | the GPU is full (other people use it too), or one graph needs more memory than the GPU has. It is also a `torch.OutOfMemoryError`, so code that catches that to shrink the batch works as is. Your session still works |
 | `reflop.SessionLostError` | the worker ended: the Owner paused with `--now` or killed it, a rail was hit, or it crashed. State on the server is gone |
 | `reflop.ReflopRemoteError` | the server rejected a request; the message names the validation stage and the operator |
+
+Requests are sent without waiting for the answer, so an error can surface a few
+lines after the operation that caused it, at the next value you read
+(`.item()`, `print`, `.cpu()`) or at `reflop.synchronize()`. The message then
+says which request failed ("running a graph failed: ...").
 
 Messages from the server are stripped of terminal control sequences before you
 see them.
@@ -207,6 +212,23 @@ your Python function is not run. Rules (checked, not assumed):
 - CPU tensor arguments may be moved inside the step (`x.to(dev)`, as above) or
   before the call (`step(x.to(dev), y.to(dev))`). Inside the step, each replay
   uploads the new argument.
+- CPU work inside the step is not replayed. A step that changes a CPU argument
+  in place before uploading it (`x.sub_(mean)` then `x.to(dev)`), or uploads a
+  slice of one, stays eager: results are correct, but there is no speed-up.
+  Normalize on the device after `.to(dev)`, or before calling the step.
+
+When a step still runs eagerly after warm-up, `reflop.capture` warns once with
+the reason. `step.replays` counts the calls that were replayed.
+
+### When capture does not help
+
+Capture removes the client's per-operation cost. It does not make uploads
+faster. A step that uploads its batch every call is bound by the upload: in a
+live test, ResNet-18 at batch 128 took 143 ms per step both eagerly and with
+capture, because the batch dominated. With the data already on the server, the
+same step took 19 ms eagerly and 5.7 ms with capture. Keep the data on the
+server: use a [dataset](#datasets), or upload the tensors once before the loop
+and index them inside the step.
 
 `torch.compile` does not work with reflop tensors (TorchDynamo cannot trace this
 kind of tensor subclass). `reflop.capture` gives the same benefit.

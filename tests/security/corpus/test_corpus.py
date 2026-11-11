@@ -410,7 +410,7 @@ def test_peak_larger_than_device():
     s.dev_info.total_memory_bytes = 1 << 20  # pretend the device has 1 MiB
     g = graph(s, [], [("aten.full.default", [INTS(1024, 1024), F(1.0), NONE, NONE, gpb.Arg(device=s.gdevice), NONE])],
               [(torch.float32, (1024, 1024))])
-    expect(register(s, g).error, E.ERROR_RESOURCE_LIMIT, E.STAGE_V5_SAFETY)
+    expect(register(s, g).error, E.ERROR_OUT_OF_MEMORY, E.STAGE_V5_SAFETY)
 
 
 def test_alloc_beyond_numel_limit(sess):

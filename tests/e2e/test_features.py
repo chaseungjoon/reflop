@@ -165,3 +165,42 @@ def test_grad_scaler(dev):
         first = first if first is not None else loss.item()
     assert loss.item() < first
     assert sc.get_scale() > 0
+
+
+def test_capture_stays_eager_and_warns_when_the_step_mutates_a_cpu_argument(dev):
+    # Replaying would skip the CPU-side x.mul_(2). Two equal batches followed
+    # by a different one must not replay a baked-in copy of the first.
+    w = torch.ones(4, device=dev)
+
+    def step(x):
+        x.mul_(2)
+        return (x.to(dev) * w).sum()
+
+    s = reflop.capture(step)
+    with pytest.warns(RuntimeWarning, match="modifies a CPU argument in place"):
+        for i in range(6):
+            v = 1.0 if i < 3 else 5.0
+            assert s(torch.full((4,), v)).item() == 8 * v
+    assert s.replays == 0
+
+
+def test_capture_still_replays_when_the_step_mutates_a_device_argument(dev):
+    w = torch.ones(4, device=dev)
+
+    def step(acc, x):
+        acc.add_(x)
+        return (acc * w).sum()
+
+    s = reflop.capture(step)
+    acc = torch.zeros(4).to(dev)
+    for _ in range(6):
+        loss = s(acc, torch.ones(4).to(dev))
+    assert loss.item() == 24 and s.replays >= 3
+
+
+def test_graph_larger_than_the_device_is_torch_out_of_memory(dev):
+    with pytest.raises(torch.OutOfMemoryError, match="bytes of device memory") as e:
+        torch.empty(1 << 40, dtype=torch.uint8, device=dev).sum().item()
+    assert isinstance(e.value, reflop.OutOfMemoryError)
+    assert "earlier" not in str(e.value)
+    assert torch.ones(2, device=dev).sum().item() == 2  # the session still works

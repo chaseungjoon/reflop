@@ -59,7 +59,9 @@ reflop_value reflop_graph_input(reflop_graph g, reflop_dtype dtype, int ndim, co
 
 /* Add one node: op name is the fully qualified overload ("aten.mm.default").
  * Push every schema argument in order (keyword-only ones included), then
- * reflop_op_end. Its first output is returned in *out (others: node + k). */
+ * reflop_op_end. Its first output is returned in *out (others: node + k).
+ * Nodes nest: reflop_op_begin while another node is open starts an inner node,
+ * arguments go to the innermost open node, and reflop_op_end closes it. */
 int reflop_op_begin(reflop_graph g, const char *op);
 int reflop_arg_tensor(reflop_graph g, reflop_value v);
 int reflop_arg_tensors(reflop_graph g, const reflop_value *v, int n);

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import re
 
+import torch
+
 # C0 controls except \t and \n, DEL, C1 controls, and complete ANSI/OSC
 # escape sequences.
 _ESC = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-Z\\-_]")
@@ -64,8 +66,11 @@ class ReflopRemoteError(ReflopError):
         return cls(e.code, e.message, e.stage, e.node_index if e.has_node else None, op_name)
 
 
-class OutOfMemoryError(ReflopRemoteError):
-    pass
+class OutOfMemoryError(ReflopRemoteError, torch.OutOfMemoryError):
+    """The server's device (or host) ran out of memory, or a graph needs more
+    device memory than the device has. Also a torch.OutOfMemoryError, so code
+    that catches that to shrink the batch works unchanged. The session keeps
+    working."""
 
 
 class SessionLostError(ReflopRemoteError):

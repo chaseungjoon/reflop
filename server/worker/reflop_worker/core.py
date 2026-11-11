@@ -215,7 +215,9 @@ class Session:
             analyze(prog, input_bytes(prog))
             total = self.dev_info.total_memory_bytes
             if total and prog.peak_bytes > total:
-                raise ReflopError(cpb.ERROR_RESOURCE_LIMIT, f"graph needs ~{prog.peak_bytes} bytes of device memory; "
+                # OUT_OF_MEMORY, not RESOURCE_LIMIT: the client raises it as
+                # torch.OutOfMemoryError, which batch-size fallbacks catch.
+                raise ReflopError(cpb.ERROR_OUT_OF_MEMORY, f"graph needs ~{prog.peak_bytes} bytes of device memory; "
                                   f"the device has {total}", cpb.STAGE_V5_SAFETY)
             q = self.init.device_memory_quota_bytes
             if q and prog.peak_bytes > q:

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.5 (2026-11-11)
+
+Fixes from issue #1.
+
+- libreflop: nodes nest. `reflop_op_begin` while a node is open starts an
+  inner node, so the C++ README pattern
+  `g.op("aten.addmm.default")...tensor(g.op("aten.t.default")...end())...`
+  works (before, it failed with "still open"). `reflop_register` rejects a
+  graph with a node still open. `make -C clib check` now builds a node inline.
+- A graph that needs more memory than the device has is now `OUT_OF_MEMORY`
+  (was `RESOURCE_LIMIT`), and `reflop.OutOfMemoryError` is also a
+  `torch.OutOfMemoryError`, so code that catches it to shrink the batch works.
+- When the graph being run fails its checks, that error is raised directly. An
+  error from a request sent without waiting keeps its class and names the
+  request ("checking a graph failed: ...") instead of "an earlier asynchronous
+  operation failed".
+- `reflop.capture`: a step that modifies a CPU argument in place before
+  uploading it (or uploads a slice of one) stays eager. Before, if two calls
+  happened to get equal data, later replays reused that data even after the
+  argument changed. A step that still runs eagerly after warm-up now gets a
+  one-time warning with the reason.
+- Docs: GUEST_GUIDE covers late async errors, the OOM case, what capture does
+  not replay, and why an upload-bound step gains nothing from capture.
+- README: the "How it works" picture.
+
 ## 0.1.4 (2026-11-11)
 
 - Guests can see their own compute: `reflop usage [--json]`, `reflop.usage()`

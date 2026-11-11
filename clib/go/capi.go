@@ -23,6 +23,7 @@ typedef uint64_t reflop_graph;
 import "C"
 
 import (
+	"fmt"
 	"sync"
 	"unsafe"
 
@@ -31,7 +32,7 @@ import (
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
-const version = "0.1.4"
+const version = "0.1.5"
 
 var (
 	mu       sync.Mutex
@@ -323,6 +324,9 @@ func reflop_register(s C.reflop_session, g C.reflop_graph, out *C.reflop_graph_i
 	b, found := graph(g)
 	if !found {
 		return fail(errBad("graph"))
+	}
+	if p := b.top(); p != nil {
+		return fail(fmt.Errorf("%s is still open: call reflop_op_end before reflop_register", p.op.Name))
 	}
 	gr := proto.Clone(b.g).(*pb.Graph)
 	gr.Device = c.device

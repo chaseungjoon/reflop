@@ -22,6 +22,9 @@ from .errors import ReflopRemoteError
 from .trace import CPU, DATASET, HANDLE, NODE, SCALAR, ArgEncoder, GraphBuilder, Trace, Value, tensor_meta
 
 FLUSH_NODES = int(os.environ.get("REFLOP_FLUSH_NODES", "20000"))
+# How raise_async names the request whose error it reports.
+_ASYNC_WHAT = {"upload": "uploading a tensor", "free": "freeing tensors", "register": "checking a graph",
+               "execute": "running a graph"}
 
 _sessions: dict[int, Session] = {}
 _default: list[Session] = []
@@ -132,6 +135,7 @@ class Session:
         self.pending_free: list[bytes] = []
         self.upload_log: list | None = None  # set by reflop.capture while it records a step
         self.async_error: BaseException | None = None
+        self.async_what = ""  # the request kind async_error came from (see _ASYNC_WHAT)
         self.inflight: list = []
         self.depth = 0
         self.epoch = 0  # increments at every flush (invalidates cached view replays)
@@ -229,6 +233,7 @@ class Session:
             e = f.exception()
             if e is not None and self.async_error is None:
                 self.async_error = e
+                self.async_what = what
         fut.add_done_callback(done)
         self.inflight.append(fut)
         if len(self.inflight) > 256:
@@ -239,8 +244,11 @@ class Session:
         if e is not None:
             self.async_error = None
             if isinstance(e, ReflopRemoteError):
-                raise ReflopRemoteError(e.code, f"an earlier asynchronous operation failed: {e.message}",
-                                        e.stage, e.node, e.op_name) from e
+                # Requests are sent without waiting, so this can surface on a
+                # later line than the operation that caused it. Name the
+                # request and keep the class (OutOfMemoryError stays one).
+                what = _ASYNC_WHAT.get(self.async_what, "a request")
+                raise type(e)(e.code, f"{what} failed: {e.message}", e.stage, e.node, e.op_name) from e
             raise e
 
     def synchronize(self) -> None:
@@ -329,6 +337,7 @@ class Session:
         if getattr(self, "_plan", None) is not None:
             self._plan["built"] = built
         self.stats["flushes"] += 1
+        reg = None
         if built.graph_hash not in self.registered:
             fut = self.conn.request(cpb.Envelope(register_graph=cpb.RegisterGraph(graph=built.graph)))
             self.stats["registers"] += 1
@@ -341,6 +350,7 @@ class Session:
                     self.async_error = RuntimeError("the server computed a different graph hash")
             fut.add_done_callback(check)
             self._track(fut, "register")
+            reg = fut
             self.registered.add(built.graph_hash)
         ex = cpb.Execute(graph_hash=built.graph_hash)
         temp = self.bind_inputs(ex, built.input_values)
@@ -355,7 +365,14 @@ class Session:
             try:
                 r = fut.result()  # raises ReflopRemoteError
             except ReflopRemoteError:
-                self.raise_async()  # a failed registration explains a failed execute
+                if reg is not None and reg.exception() is not None:
+                    # This graph failed validation (for example it needs more
+                    # memory than the device has): report that error itself.
+                    e = reg.exception()
+                    if self.async_error is e:
+                        self.async_error = None
+                    raise e from None
+                self.raise_async()  # an earlier failed request explains a failed execute
                 raise
             for k, pos in enumerate(ret_pos):
                 td = r.execute_result.returned[k]

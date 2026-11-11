@@ -91,6 +91,12 @@ argument in order, keyword-only ones included:
 | `Device` | `reflop_arg_device` (the session's device) |
 | an optional argument left as `None` | `reflop_arg_none` |
 
+Nodes nest. Calling `reflop_op_begin` while a node is open starts an inner
+node; arguments go to the innermost open node until its `reflop_op_end`, and
+the value it returns can be pushed as an argument of the outer node. This is
+what lets the C++ wrapper build `g.op("aten.t.default")...end()` inline as an
+argument. `reflop_register` rejects a graph with a node still open.
+
 `reflop_op_end` rejects a wrong argument count and names the schema. Declare
 each output with `reflop_graph_output`; the server's meta inference checks the
 dtype and shape you give and rejects the graph on a mismatch.

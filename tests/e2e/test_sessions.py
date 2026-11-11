@@ -157,5 +157,6 @@ def test_capture_does_not_replay_stale_uploads(devs):
         return (x.to(d0) * w).sum()
 
     s = reflop.capture(scaled)
-    for i in range(5):
-        assert s(torch.full((4,), float(i + 1))).item() == 40.0 * (i + 1)
+    with pytest.warns(RuntimeWarning, match="modifies a CPU argument in place"):
+        for i in range(5):
+            assert s(torch.full((4,), float(i + 1))).item() == 40.0 * (i + 1)
