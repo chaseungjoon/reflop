@@ -63,10 +63,10 @@ a kernel, or a pickled object. Anything else reaching the server is a defect.
 | Account | the Owner | system user `reflop` (no shell, no home of its own) |
 | no_new_privs | yes | yes |
 | Landlock | worker: read-only runtime, system libraries and device topology; read-write only its scratch directory and its own `/proc/<pid>`; device nodes of its GPU; TCP (and UDP on newer kernels) denied; abstract Unix sockets and signals scoped (ABI ≥ 6) | same |
-| seccomp | worker allowlist: no `execve`, no process creation, no new sockets of any family, no `connect`/`bind`, no `ptrace`, mount, namespaces, eBPF, perf, keyrings, `userfaultfd`, `io_uring`; signals only to itself | same |
+| seccomp | worker allowlist: no `execve`, no process creation, no new sockets of any family, no `connect`/`bind`, no `ptrace`, mount, namespaces, eBPF, perf, keyrings, `userfaultfd`, `io_uring`; signals only to itself. Fails closed: if the filter cannot be built, sent or installed, the worker never starts | same |
 | Namespaces | user + empty network namespace when unprivileged ones are allowed | same |
 | cgroup | per-worker leaf under a delegated scope: `pids.max`, OOM kills the whole worker, shared `memory.max` that tracks the host-RAM floor | delegated from the system unit |
-| reflopd itself | Landlock (system read-only, its own directories read-write, TCP bind only on its ports) and a seccomp denylist, applied by re-exec | plus systemd hardening |
+| reflopd itself | Landlock (system read-only, its own directories read-write, TCP bind only on its ports) and a seccomp denylist, applied by re-exec; its own cgroup's `memory.max` keeps the host-RAM floor | plus systemd hardening |
 | Environment | an explicit allowlist (no Owner variables) | same |
 
 Two details found on real hardware shaped the policy (ADR-004): the CUDA driver
@@ -89,9 +89,20 @@ unless the Owner passes `--accept-weak-isolation`.
 - Pairing: an HMAC with the invite's one-time secret over the same binding,
   plus a signature by the new key. An invite is consumed by its first use,
   successful or not.
-- SSH mode: `restrict` and a forced command; inside the pipe the same
-  signature check runs, and the key must belong to the identity in the forced
-  command. `SSH_ORIGINAL_COMMAND` is ignored except for the one value the client sends.
+- Before authentication: frames are capped at 64 KiB, and buffers grow only
+  as bytes arrive. Every connection counts against `max_connections` from the
+  moment it is accepted, one source address may hold at most 16 connections
+  that have not authenticated, and audit records for failed handshakes are
+  rate-limited per source and in total.
+- SSH mode: `restrict` and a forced command, with the reflopd path and
+  `REFLOP_HOME` shell-quoted; inside the pipe the same signature check runs,
+  and the key must belong to the identity in the forced command.
+  `SSH_ORIGINAL_COMMAND` is ignored except for the one value the client sends.
+  The invite carries sshd's host keys. The client writes them to a known_hosts
+  file of its own under a `HostKeyAlias` tied to the server's reflop key and
+  runs ssh with `StrictHostKeyChecking=yes`, so neither the user's known_hosts
+  nor their ssh_config can vouch for another host. Guests paired before 0.1.6
+  have no recorded keys and rely on their own known_hosts, still strictly.
 - Revocation takes effect on the next request: keys are dropped and sessions killed.
 
 ## Safety rails
@@ -99,8 +110,16 @@ unless the Owner passes `--accept-weak-isolation`.
 Rails protect the machine, not fairness, and are always on: disk free floor
 max(10%, 20 GiB), host RAM floor 4 GiB, 4096 processes/threads per worker,
 protocol sanity limits, and a peak-memory estimate against the GPU's total
-memory. Quotas (device memory, sessions, wall clock per execute, FLOPs per
-execute, storage, upload bandwidth) are optional and off by default.
+memory. No setting turns a rail off: the minimums are 1% and 1 GiB of disk,
+512 MiB of RAM and 64 processes, going below the defaults needs `--force`,
+and every protocol limit has a range that excludes 0. If host memory cannot
+be read, worker memory is frozen and no new worker starts.
+
+Quotas (device memory, sessions, wall clock per execute, FLOPs per execute,
+storage, upload bandwidth) are optional and off by default. 0 is rejected as
+a quota value, because an unset quota means no limit; `unlimited` removes one.
+The storage quota counts uploads still in progress, and uploads with no
+progress for 7 days are deleted.
 
 ## Client protection
 
@@ -108,12 +127,13 @@ execute, storage, upload bandwidth) are optional and off by default.
 |---|---|
 | server impersonation, MITM | pinned key; a mismatch is a hard failure |
 | deserialization attacks | protobuf and raw tensor bytes only; safetensors for checkpoints |
-| size bombs | frame size caps on every response |
+| size bombs | a frame cap the server cannot raise past 1 GiB; every fetch chunk is checked against the size its metadata declares, and a response is capped at 16 GiB |
 | path injection | the client never builds a path from server data |
 | terminal injection | ANSI, OSC, C0/C1 and bidi controls removed from every server string |
 | server-initiated actions | events are fixed-schema and only printed |
 | information leaks | no environment, paths, hostnames, source or telemetry are sent |
-| key theft | macOS Keychain, or a 0600 file the client refuses to use if others can read it |
+| key theft | macOS Keychain (written through stdin, never a command line), or a 0600 file the client refuses to use if others can read it. SSH mode always uses the file |
+| tampered releases | `checksums.txt` carries an OpenSSH signature made with an offline key that never touches GitHub; `install.sh`, `reflopd update` and `reflop update` refuse a release without a valid one |
 
 ## Residual risks
 

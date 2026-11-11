@@ -22,7 +22,7 @@ import subprocess
 import threading
 import time
 
-from . import keys
+from . import _sshhost, keys
 from ._pb import auth_pb2 as apb
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
@@ -34,6 +34,17 @@ PROTOCOL_VERSION = 1
 AUTH_CONTEXT = b"reflop-auth-v1\x00"
 PAIR_CONTEXT = b"reflop-pair-v1\x00"
 MAX_FRAME = 64 << 20
+# The largest frame the client accepts, whatever the server advertises
+# (reflopd's own limit is at most 1 GiB, plus 1 MiB of envelope).
+MAX_FRAME_CEILING = (1 << 30) + (1 << 20)
+
+
+def frame_limit(server_max_frame: int) -> int:
+    """The frame cap after authentication: the server's limit plus envelope
+    room, never above the client's own ceiling (SEC_SWEEP M3)."""
+    if server_max_frame <= 0:
+        return MAX_FRAME
+    return min(int(server_max_frame) + (1 << 20), MAX_FRAME_CEILING)
 
 def _repeated(fd) -> bool:
     """FieldDescriptor.label is gone in protobuf 7; is_repeated is newer."""
@@ -148,16 +159,23 @@ def dial_tls(addresses: list[str], fingerprint: bytes, timeout: float = 15.0) ->
     raise ReflopError(f"could not reach the server ({', '.join(addresses)}): {last}")
 
 
-def dial_ssh(target: str, key, port: int | None = None) -> Framer:
+def ssh_command(target: str, keyfile, fingerprint_hex: str, host_keys: list[str],
+                port: int | None = None) -> list[str]:
+    """The ssh argv for SSH pipe mode. With host keys recorded at pairing,
+    ssh trusts only those (SEC_SWEEP L6); without, it checks the user's
+    known_hosts and never accepts an unknown key."""
     ssh = os.environ.get("REFLOP_SSH_COMMAND") or shutil.which("ssh")
     if ssh is None:
         raise ReflopError("ssh is not installed")
-    keyfile = keys.ssh_key_file(key)
-    cmd = [ssh, "-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30", "-o", "IdentitiesOnly=yes",
-           "-o", "ForwardAgent=no", "-o", "ForwardX11=no", "-o", "ClearAllForwardings=yes", "-i", str(keyfile)]
+    cmd = [ssh, "-T", *_sshhost.BASE_OPTIONS, *_sshhost.known_hosts_options(fingerprint_hex, host_keys),
+           "-i", str(keyfile)]
     if port:
         cmd += ["-p", str(port)]
-    cmd += [target, "reflop-stdio"]
+    return cmd + ["--", target, "reflop-stdio"]
+
+
+def dial_ssh(target: str, key, fingerprint_hex: str, host_keys: list[str], port: int | None = None) -> Framer:
+    cmd = ssh_command(target, keys.ssh_key_file(key), fingerprint_hex, host_keys, port)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
 
     def close():
@@ -229,8 +247,13 @@ def pair(code: str, name: str | None = None) -> ServerEntry:
     fp = inv.server_key_fingerprint
     if len(fp) != 32:
         raise ReflopError("invite has no server key fingerprint")
+    host_keys: list[str] = []
     if inv.transport == apb.TRANSPORT_SSH:
-        fr = dial_ssh(inv.addresses[0], key)
+        try:
+            host_keys = _sshhost.normalize(inv.ssh_host_keys)
+        except ValueError as e:
+            raise ReflopError(f"invite: SSH host key: {e}") from None
+        fr = dial_ssh(inv.addresses[0], key, fp.hex(), host_keys)
     else:
         fr = dial_tls(list(inv.addresses), fp)
     try:
@@ -253,7 +276,7 @@ def pair(code: str, name: str | None = None) -> ServerEntry:
     entry = ServerEntry(
         name=name or _default_name(inv, cfg), transport="ssh" if inv.transport == apb.TRANSPORT_SSH else "tls",
         addresses=list(inv.addresses), fingerprint=fp.hex(), identity=sanitize(ar.identity_name, 64),
-        identity_id=ar.identity_id.hex())
+        identity_id=ar.identity_id.hex(), ssh_host_keys=host_keys)
     cfg.servers[entry.name] = entry
     if not cfg.default:
         cfg.default = entry.name
@@ -293,7 +316,8 @@ class RemoteConnection(Connection):
 
     def _open(self) -> None:
         if self.entry.transport == "ssh":
-            self.fr = dial_ssh(self.entry.addresses[0], self.key, self.entry.ssh_port)
+            self.fr = dial_ssh(self.entry.addresses[0], self.key, self.entry.fingerprint, self.entry.ssh_host_keys,
+                               self.entry.ssh_port)
         else:
             self.fr = dial_tls(self.entry.addresses, self.fp)
         hr = _hello(self.fr)
@@ -301,8 +325,10 @@ class RemoteConnection(Connection):
             self.fr.close()
             raise ServerKeyMismatch("the server's key does not match the pinned key")
         self.auth = _authenticate(self.fr, self.key, hr.server_nonce, self.fp)
-        if self.auth.capabilities.limits.max_frame_bytes:
-            self.fr.max_frame = int(self.auth.capabilities.limits.max_frame_bytes) + (1 << 20)
+        lim = self.auth.capabilities.limits
+        self.fr.max_frame = frame_limit(lim.max_frame_bytes)
+        if lim.max_fetch_bytes:
+            self.max_response_bytes = min(self.max_response_bytes, int(lim.max_fetch_bytes))
         self.closed = False
         self._reader = threading.Thread(target=self._read_loop, args=(self.fr,), daemon=True)
         self._reader.start()

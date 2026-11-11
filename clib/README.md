@@ -28,7 +28,8 @@ reflop_graph_id id;
 reflop_register(s, g, &id);
 reflop_handle in[2] = {ha, hb}, out[1];
 reflop_execute(s, id, in, 2, out, 1);
-reflop_fetch(s, out[0], c, sizeof c, NULL);
+size_t n;
+reflop_fetch(s, out[0], c, sizeof c, &n);
 ```
 
 The C++ header wraps the same calls:
@@ -101,5 +102,12 @@ argument. `reflop_register` rejects a graph with a node still open.
 each output with `reflop_graph_output`; the server's meta inference checks the
 dtype and shape you give and rejects the graph on a mismatch.
 
-Every function returns 0 on success; `reflop_last_error()` describes a failure.
+Every function returns 0 on success and a negative value on failure;
+`reflop_last_error()` describes the last failure on the calling thread. The
+pointer stays valid until the next failing call on that thread.
+
+`reflop_upload` requires `nbytes` to equal the shape times the dtype size.
+`reflop_fetch` needs a non-NULL `nbytes`, which receives the tensor size. Pass
+`buf = NULL, cap = 0` to ask for the size only. If the tensor is larger than
+`cap`, nothing is copied and it returns `REFLOP_ERANGE`.
 The server validates the graph exactly as it does for the Python client.

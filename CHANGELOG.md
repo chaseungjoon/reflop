@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.1.6 (2026-11-11)
+
+Security fixes from the 2026-11-11 sweep. Every fix has a reproducer test.
+
+Releases and updates:
+
+- Releases are signed. `checksums.txt` carries `checksums.txt.sig`, an
+  OpenSSH signature made with an offline key that never touches GitHub (CI
+  publishes a draft, and `scripts/sign-release.sh` signs and publishes it).
+  `install.sh` (via `ssh-keygen -Y verify`, OpenSSH 8.1+), `reflopd update` and
+  `reflop update` refuse a release without a valid signature. As a result they
+  cannot install 0.1.5 or older.
+- `REFLOP_UPDATE_URL` must be `https://` (plain `http://` only for localhost).
+  `reflop update` caps downloads at 256 MiB, like reflopd.
+
+reflopd:
+
+- Before authentication, frames are capped at 64 KiB (was the full
+  `max_frame_bytes`), and buffers grow only as bytes arrive. Connections count
+  against `max_connections` from accept, not from authentication. One source
+  address may hold at most 16 unauthenticated connections. reflopd caps its own
+  cgroup at total RAM minus the RAM floor.
+- Seccomp fails closed. If the filter cannot be built or is missing, or the
+  worker reports it inactive while seccomp is required, the worker is not
+  started. Before, a filter that failed to build meant workers ran without
+  one. A test pins the filter well below the kernel's 4096-instruction limit.
+- No setting turns a protection off. The rails have minimums (1% and 1 GiB of
+  disk, 512 MiB of RAM, 64 pids), and going below the defaults needs
+  `reflopd rails set --force`. Every `[limits]` value has a range that
+  excludes 0, and `audit.retention_days` must be 1..3650. **reflopd refuses
+  to start** with a configuration below these. Fix it with `reflopd rails set`.
+- Quotas reject 0, which used to mean "no limit": use `unlimited` to remove
+  one (`reflopd quota set alice --storage unlimited`). `device_memory = 0` in
+  `reflopd.toml` is an error.
+- The storage quota counts uploads in progress, so parallel uploads can no
+  longer exceed it together. Uploads with no progress for 7 days are deleted.
+- If `/proc/meminfo` cannot be read, worker memory is frozen and new workers
+  are refused (was: the RAM rail silently did nothing).
+- Audit records for failed pairing and authentication are rate-limited per
+  source and in total. The next record that is written counts the suppressed ones.
+- The SSH forced command shell-quotes the reflopd path and `REFLOP_HOME`.
+- Fixed: sizes such as `4GiB` and `512MiB` were rejected everywhere
+  (`reflopd rails set --ram 8GiB`, `quota set --device-memory 6GiB`, TOML).
+  Decimal units (`20GB`) worked.
+
+SSH pipe mode:
+
+- `reflopd invite --via ssh` puts the machine's sshd host keys in the invite
+  (`--ssh-host-keys <glob>` for an sshd elsewhere). The client keeps them in
+  its own known_hosts file under a `HostKeyAlias` tied to the server's reflop
+  key and runs ssh with `StrictHostKeyChecking=yes`. Servers paired before
+  0.1.6 use your known_hosts, also strictly. SSH invites from 0.1.6 need a
+  0.1.6 client (older clients reject the new field).
+- libreflop passes the same ssh options as the Python client (no X11 or port
+  forwarding, no LocalCommand), and both put `--` before the target.
+
+Clients:
+
+- A server can no longer exhaust a Guest's memory. Every fetch chunk is
+  checked against its tensor's declared size, offset and index, and a
+  response is capped at 16 GiB (and at the server's `max_fetch_bytes`). The
+  frame cap the server advertises is limited to 1 GiB plus 1 MiB.
+- macOS: the Keychain entry is written through `security -i` on stdin, so the
+  key seed no longer appears in the process list.
+
+libreflop (C API):
+
+- `reflop_last_error()` is per thread, as documented. The pointer stays valid
+  until the next failing call on the same thread. Before, it was one global
+  that the next call from any thread freed.
+- `reflop_upload` checks that `nbytes` equals shape × dtype size, so `size_t`
+  is never truncated to `int`.
+- `reflop_fetch` returns `REFLOP_ERANGE` when the buffer is too small (was
+  success with a partial copy). `nbytes` must not be NULL, and
+  `buf = NULL, cap = 0` asks for the size only.
+- `make -C clib test` runs API tests that need no server.
+
 ## 0.1.5 (2026-11-11)
 
 Fixes from issue #1.

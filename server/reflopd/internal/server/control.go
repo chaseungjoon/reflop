@@ -104,7 +104,14 @@ func (s *Server) acceptBridge(ctx context.Context, ln net.Listener) {
 			c.Close()
 			continue
 		}
+		// sshd already authenticated the Guest; the slot still counts.
+		adm := s.admit("ssh", false)
+		if adm == nil {
+			c.Close()
+			continue
+		}
 		go func() {
+			defer adm.release()
 			c.SetReadDeadline(time.Now().Add(10 * time.Second))
 			br := bufio.NewReader(c)
 			line, err := br.ReadString('\n')
@@ -122,7 +129,7 @@ func (s *Server) acceptBridge(ctx context.Context, ln net.Listener) {
 				c.Close()
 				return
 			}
-			s.handleConn(&bufferedConn{Conn: c, r: br}, "ssh", "ssh", f[2])
+			s.handleConn(&bufferedConn{Conn: c, r: br}, "ssh", "ssh", f[2], adm)
 		}()
 	}
 }

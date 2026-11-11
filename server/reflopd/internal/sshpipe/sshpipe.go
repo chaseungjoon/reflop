@@ -59,15 +59,52 @@ func ParseEd25519(line string) (ed25519.PublicKey, string, error) {
 	return ed25519.PublicKey(pub), comment, nil
 }
 
-// AuthorizedKeysLine builds the exact restricted line.
-func AuthorizedKeysLine(reflopd, identityID, key string, l paths.Layout) string {
+// AuthorizedKeysLine builds the exact restricted line. sshd runs the forced
+// command through the Owner's shell, so the reflopd path and REFLOP_HOME
+// are shell-quoted (SEC_SWEEP I1), then escaped for authorized_keys.
+func AuthorizedKeysLine(reflopd, identityID, key string, l paths.Layout) (string, error) {
 	f := strings.Fields(key)
+	if len(f) < 2 {
+		return "", errors.New("malformed public key")
+	}
 	env := ""
 	if h := os.Getenv("REFLOP_HOME"); h != "" {
-		env = "REFLOP_HOME=" + h + " "
+		q, err := shellQuote(h)
+		if err != nil {
+			return "", fmt.Errorf("REFLOP_HOME: %w", err)
+		}
+		env = "REFLOP_HOME=" + q + " "
 	}
-	cmd := fmt.Sprintf("%s%s serve --stdio --identity %s", env, reflopd, identityID)
-	return fmt.Sprintf(`restrict,command="%s" %s %s %s%s`, strings.ReplaceAll(cmd, `"`, `\"`), f[0], f[1], Marker, identityID)
+	exe, err := shellQuote(reflopd)
+	if err != nil {
+		return "", fmt.Errorf("reflopd path: %w", err)
+	}
+	if strings.Trim(identityID, "0123456789abcdef") != "" {
+		return "", errors.New("identity id must be hex")
+	}
+	cmd := fmt.Sprintf("%s%s serve --stdio --identity %s", env, exe, identityID)
+	return fmt.Sprintf(`restrict,command="%s" %s %s %s%s`, strings.ReplaceAll(cmd, `"`, `\"`), f[0], f[1], Marker, identityID), nil
+}
+
+// shellQuote quotes s for sh unless it is made only of safe characters.
+// Inside single quotes nothing is special, and an embedded single quote is
+// written as close-quote, backslash-quote, reopen-quote. sshd unescapes
+// only \" in command="", so the result survives both layers.
+func shellQuote(s string) (string, error) {
+	if s == "" || strings.ContainsAny(s, "\x00\n\r") {
+		return "", errors.New("empty, or contains a NUL or newline")
+	}
+	safe := true
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("_@%+=:,./-", c)) {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return s, nil
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'", nil
 }
 
 // AuthorizedKeysPath is the Owner's (or the reflop user's) authorized_keys.

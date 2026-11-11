@@ -18,7 +18,7 @@ import torch
 from . import _opset_generated as opset
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
-from .errors import ReflopRemoteError
+from .errors import ReflopError, ReflopRemoteError
 from .trace import CPU, DATASET, HANDLE, NODE, SCALAR, ArgEncoder, GraphBuilder, Trace, Value, tensor_meta
 
 FLUSH_NODES = int(os.environ.get("REFLOP_FLUSH_NODES", "20000"))
@@ -428,6 +428,8 @@ class Session:
             parts.setdefault(c.index, []).append(c.data)
         out = []
         for i in range(len(handles)):
+            if i not in metas:
+                raise ReflopError("the server's fetch response is missing a tensor")
             data = b"".join(parts.get(i, []))
             self.stats["bytes_down"] += len(data)
             out.append(_tensor_from_data(None, metas[i], data))

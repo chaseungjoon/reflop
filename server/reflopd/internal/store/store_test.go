@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
@@ -183,4 +184,68 @@ func FuzzSafetensors(f *testing.F) {
 func FuzzManifest(f *testing.F) {
 	f.Add([]byte(`{"format_version":1}`))
 	f.Fuzz(func(t *testing.T, data []byte) { ParseManifest(data, 1<<40) })
+}
+
+// SEC_SWEEP L4: parallel uploads used to be checked one at a time against
+// the quota, so N of them could reach N x quota. Pending uploads now
+// reserve their full size at PackBegin.
+func TestQuotaCountsPendingUploads(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir, 4, 1<<40, func() config.Rails { return config.Rails{} }, func(string) uint64 { return 150 })
+	begin := func(name, sha string) error {
+		m := manifest(t, ManifestShard{File: "shard-00000.safetensors", SHA256: sha, SizeBytes: 100, NumSamples: 2})
+		_, err := s.Begin("id1", &pb.PackBegin{Name: name, Manifest: m}, 1<<20)
+		return err
+	}
+	if err := begin("a", strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("first upload within quota: %v", err)
+	}
+	if err := begin("a", strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("resuming the same upload must not count it twice: %v", err)
+	}
+	err := begin("b", strings.Repeat("b", 64))
+	var se *Error
+	if err == nil || !errorsAs(err, &se) || se.Code != pb.ErrorCode_ERROR_QUOTA {
+		t.Fatalf("second parallel upload: want QUOTA, got %v", err)
+	}
+	// The same shard in another manifest is stored once, so it fits.
+	if err := begin("c", strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("shared shard counted twice: %v", err)
+	}
+}
+
+// SEC_SWEEP L4: abandoned uploads are removed after UploadTTL without
+// progress; live ones and their partial files stay.
+func TestSweepStaleUploads(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir, 4, 1<<40, func() config.Rails { return config.Rails{} }, func(string) uint64 { return 0 })
+	shaOld, shaNew := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	var ids [2][]byte
+	for i, sha := range []string{shaOld, shaNew} {
+		m := manifest(t, ManifestShard{File: "shard-00000.safetensors", SHA256: sha, SizeBytes: 100, NumSamples: 2})
+		st, err := s.Begin("id1", &pb.PackBegin{Name: "d", Manifest: m}, 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = st.PackId
+		up := filepath.Join(dir, "id1", "uploads")
+		os.WriteFile(filepath.Join(up, sha+".part"), []byte("x"), 0o600)
+		os.WriteFile(filepath.Join(up, sha+".chunks"), []byte{1}, 0o600)
+	}
+	up := filepath.Join(dir, "id1", "uploads")
+	old := time.Now().Add(-UploadTTL - time.Hour)
+	os.Chtimes(filepath.Join(up, hex.EncodeToString(ids[0])+".begin"), old, old)
+	os.WriteFile(filepath.Join(up, strings.Repeat("c", 64)+".part"), []byte("orphan"), 0o600)
+	s.SweepStale(UploadTTL)
+	exists := func(n string) bool { _, err := os.Stat(filepath.Join(up, n)); return err == nil }
+	for _, n := range []string{hex.EncodeToString(ids[0]) + ".begin", shaOld + ".part", shaOld + ".chunks", strings.Repeat("c", 64) + ".part"} {
+		if exists(n) {
+			t.Errorf("%s survived the sweep", n)
+		}
+	}
+	for _, n := range []string{hex.EncodeToString(ids[1]) + ".begin", shaNew + ".part", shaNew + ".chunks"} {
+		if !exists(n) {
+			t.Errorf("%s of a live upload was removed", n)
+		}
+	}
 }

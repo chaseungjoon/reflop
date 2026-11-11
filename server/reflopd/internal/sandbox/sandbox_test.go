@@ -141,3 +141,19 @@ func TestFilterFits(t *testing.T) {
 		t.Fatal("empty daemon filter")
 	}
 }
+
+// TestFilterFitsKernelLimit pins the seccomp program well below the
+// kernel's 4096-instruction limit. Filter() fails past the limit, and a
+// failure must never mean "run without seccomp" (SEC_SWEEP M2), so growth
+// of the allow/deny lists should trip this test long before the limit.
+func TestFilterFitsKernelLimit(t *testing.T) {
+	f, err := Policy{SelfPID: 4242}.Filter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const budget = 3072
+	if len(f) > budget {
+		t.Fatalf("seccomp filter has %d instructions; keep it under %d (kernel limit 4096)", len(f), budget)
+	}
+	t.Logf("seccomp filter: %d instructions", len(f))
+}

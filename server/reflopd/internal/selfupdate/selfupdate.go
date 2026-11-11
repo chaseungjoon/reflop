@@ -2,7 +2,8 @@
 // Adapted from recom (same sole author; relicensed under Apache-2.0, ADR-007).
 
 // Package selfupdate replaces the running reflopd binary with a published
-// GitHub release, verifying the archive against the release's checksums.txt.
+// GitHub release. checksums.txt must carry a valid signature by a reflop
+// release key (signature.go) before the archive is checked against it.
 package selfupdate
 
 import (
@@ -15,7 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,15 +43,38 @@ type Updater struct {
 	OS      string
 	Arch    string
 	Client  *http.Client
+	Keys    []string // release signing keys; nil means ReleaseKeys
 }
 
 // New returns an updater for this platform.
-func New() *Updater {
+func New() (*Updater, error) {
 	base := DefaultBaseURL
 	if v := os.Getenv("REFLOP_UPDATE_URL"); v != "" {
+		if err := CheckBaseURL(v); err != nil {
+			return nil, err
+		}
 		base = strings.TrimRight(v, "/")
 	}
-	return &Updater{BaseURL: base, OS: runtime.GOOS, Arch: runtime.GOARCH, Client: &http.Client{Timeout: 5 * time.Minute}}
+	return &Updater{BaseURL: base, OS: runtime.GOOS, Arch: runtime.GOARCH, Client: &http.Client{Timeout: 5 * time.Minute}}, nil
+}
+
+// CheckBaseURL accepts https URLs, and plain http only to this machine (a
+// local test mirror). Releases are signed either way (SEC_SWEEP M4).
+func CheckBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("REFLOP_UPDATE_URL %q is not a URL", raw)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		h := u.Hostname()
+		if ip := net.ParseIP(h); h == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+	}
+	return fmt.Errorf("REFLOP_UPDATE_URL must use https (http is allowed only for localhost), got %q", raw)
 }
 
 var tagRe = regexp.MustCompile(`^v\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$`)
@@ -106,14 +132,27 @@ func (u *Updater) get(ctx context.Context, url string) ([]byte, error) {
 	return b, nil
 }
 
-// Fetch downloads tag's archive for this platform, verifies its SHA-256
-// against checksums.txt, and returns the reflopd binary inside it.
+// Fetch downloads tag's archive for this platform, verifies the signature
+// on checksums.txt and the archive's SHA-256 against it, and returns the
+// reflopd binary inside. Nothing from the release is run before both pass.
 func (u *Updater) Fetch(ctx context.Context, tag string) ([]byte, error) {
 	name := u.Archive(tag)
 	base := u.BaseURL + "/download/" + tag + "/"
 	sums, err := u.get(ctx, base+"checksums.txt")
 	if err != nil {
 		return nil, err
+	}
+	sig, err := u.get(ctx, base+"checksums.txt.sig")
+	if err != nil {
+		return nil, fmt.Errorf("%w: release %s has no checksums.txt.sig (%v); releases before 0.1.6 are unsigned",
+			ErrSignature, tag, err)
+	}
+	keys := u.Keys
+	if keys == nil {
+		keys = ReleaseKeys
+	}
+	if err := VerifySignature(sums, sig, keys); err != nil {
+		return nil, fmt.Errorf("release %s: %w", tag, err)
 	}
 	want := ""
 	for _, line := range strings.Split(string(sums), "\n") {

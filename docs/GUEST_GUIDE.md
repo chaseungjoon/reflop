@@ -39,7 +39,16 @@ server's key. If the server ever presents a different key, the client stops
 before sending anything. With `REFLOP_CLIENT_HOME` set, the client keeps its
 config there and uses a separate key (a separate Keychain entry on macOS), so
 one machine can act as several Guests. The C API reads a key file; on macOS run
-`reflop key --write-file` once.
+`reflop key --write-file` once. SSH pipe mode also needs the key as a file, so
+on macOS the first SSH connection writes `~/.config/reflop/id_ed25519` (mode
+0600) next to the Keychain entry.
+
+With an SSH invite, the client also pins the server's SSH host keys. It keeps
+them in its own `known_hosts` file and runs ssh with
+`StrictHostKeyChecking=yes`, so a host that presents any other key is refused,
+whatever your `~/.ssh/config` says. Servers paired with an older client have no
+pinned host keys; ssh then checks your `~/.ssh/known_hosts`, and never accepts
+an unknown key. Pair again with a new invite to pin them.
 
 ## The device
 
@@ -333,7 +342,7 @@ convolutions by default, and some GPU kernels are not deterministic).
 | `reflop verify` | compare small results with your CPU |
 | `reflop doctor` | check torch, the key, the config and the connection |
 | `reflop key [--ssh] [--write-file]` | print your public key; `--write-file` also stores the private key for the C API on macOS |
-| `reflop update` | update the client |
+| `reflop update` | update the client (checks the release signature first) |
 
 `--server <name>` (or `REFLOP_SERVER`) selects a paired server for any command.
 

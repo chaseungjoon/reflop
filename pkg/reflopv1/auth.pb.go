@@ -336,8 +336,12 @@ type InviteCode struct {
 	ExpiresUnix          int64                  `protobuf:"varint,7,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
 	IdentityName         string                 `protobuf:"bytes,8,opt,name=identity_name,json=identityName,proto3" json:"identity_name,omitempty"`
 	ReflopdPath          string                 `protobuf:"bytes,9,opt,name=reflopd_path,json=reflopdPath,proto3" json:"reflopd_path,omitempty"` // SSH only: informational
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// SSH only: the server's sshd host keys as "type base64" lines. The client
+	// pins them in its own known_hosts file, so ssh never trusts a host key it
+	// learned elsewhere (SEC_SWEEP L6).
+	SshHostKeys   []string `protobuf:"bytes,10,rep,name=ssh_host_keys,json=sshHostKeys,proto3" json:"ssh_host_keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InviteCode) Reset() {
@@ -433,6 +437,13 @@ func (x *InviteCode) GetReflopdPath() string {
 	return ""
 }
 
+func (x *InviteCode) GetSshHostKeys() []string {
+	if x != nil {
+		return x.SshHostKeys
+	}
+	return nil
+}
+
 var File_reflop_v1_auth_proto protoreflect.FileDescriptor
 
 const file_reflop_v1_auth_proto_rawDesc = "" +
@@ -458,7 +469,7 @@ const file_reflop_v1_auth_proto_rawDesc = "" +
 	"PairResult\x12#\n" +
 	"\ridentity_name\x18\x01 \x01(\tR\fidentityName\x12\x1f\n" +
 	"\videntity_id\x18\x02 \x01(\fR\n" +
-	"identityId\"\xd2\x02\n" +
+	"identityId\"\xf6\x02\n" +
 	"\n" +
 	"InviteCode\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x126\n" +
@@ -469,7 +480,9 @@ const file_reflop_v1_auth_proto_rawDesc = "" +
 	"\x06secret\x18\x06 \x01(\fR\x06secret\x12!\n" +
 	"\fexpires_unix\x18\a \x01(\x03R\vexpiresUnix\x12#\n" +
 	"\ridentity_name\x18\b \x01(\tR\fidentityName\x12!\n" +
-	"\freflopd_path\x18\t \x01(\tR\vreflopdPath*L\n" +
+	"\freflopd_path\x18\t \x01(\tR\vreflopdPath\x12\"\n" +
+	"\rssh_host_keys\x18\n" +
+	" \x03(\tR\vsshHostKeys*L\n" +
 	"\rTransportKind\x12\x15\n" +
 	"\x11TRANSPORT_INVALID\x10\x00\x12\x11\n" +
 	"\rTRANSPORT_TLS\x10\x01\x12\x11\n" +

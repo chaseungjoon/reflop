@@ -149,8 +149,9 @@ func Env(spec Spec) []string {
 func Spawn(ctx context.Context, spec Spec) (*Worker, error) { return SpawnWithFilter(ctx, spec, nil) }
 
 // SpawnWithFilter is Spawn with a seccomp filter built for the worker's pid
-// (signals are restricted to the worker itself).
-func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) []byte) (*Worker, error) {
+// (signals are restricted to the worker itself). If filter returns an
+// error, the worker is killed before it receives its configuration.
+func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) ([]byte, error)) (*Worker, error) {
 	if spec.ReadyTimeout == 0 {
 		spec.ReadyTimeout = 3 * time.Minute
 	}
@@ -247,8 +248,28 @@ func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) []byte
 		return nil, fmt.Errorf("start worker: %w", err)
 	}
 	stderrW.Close()
+	// abort kills the child before it has its configuration (it is still in
+	// the sandbox helper, waiting on fd 5).
+	abort := func(err error) (*Worker, error) {
+		cfgW.Close()
+		cmd.Process.Kill()
+		cmd.Wait()
+		unix.Close(ctrlPair[0])
+		unix.Close(passPair[0])
+		if cgw != nil {
+			cgw.Remove()
+		}
+		return nil, err
+	}
 	if filter != nil && spec.Init != nil {
-		spec.Init.SeccompFilter = filter(cmd.Process.Pid)
+		f, err := filter(cmd.Process.Pid)
+		if err != nil {
+			return abort(err)
+		}
+		spec.Init.SeccompFilter = f
+	}
+	if spec.Init != nil && spec.Init.RequireSeccomp && len(spec.Init.SeccompFilter) == 0 {
+		return abort(errors.New("seccomp is required but no filter was built; not starting the worker"))
 	}
 	b, _ := json.Marshal(cfg)
 	cfgW.Write(b)
@@ -311,6 +332,12 @@ func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) []byte
 		switch b := r.env.Body.(type) {
 		case *pb.WorkerEnvelope_Ready:
 			w.Ready = b.Ready
+			// Fail closed (SEC_SWEEP M2): a worker that reports no seccomp
+			// when it is required never serves a Guest.
+			if spec.Init != nil && spec.Init.RequireSeccomp && !b.Ready.GetSandbox().GetSeccomp() {
+				w.Kill("seccomp missing")
+				return nil, w.failure(errors.New("the worker started without its seccomp filter although seccomp is required"))
+			}
 		case *pb.WorkerEnvelope_Fatal:
 			w.Kill("startup failed")
 			return nil, w.failure(errors.New(b.Fatal.Message))

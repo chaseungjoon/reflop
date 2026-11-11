@@ -39,7 +39,7 @@ jobs:
           for a in amd64 arm64; do CGO_ENABLED=0 GOARCH=$a go build -trimpath -o /tmp/reflopd-$a ./server/reflopd/cmd/reflopd; done
           /tmp/reflopd-amd64 version
       - name: libreflop
-        run: make clib
+        run: make clib && make -C clib test
 
   python:
     name: Python (worker, client, security corpus, conformance)

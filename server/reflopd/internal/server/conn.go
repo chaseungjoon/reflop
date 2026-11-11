@@ -45,20 +45,26 @@ type clientConn struct {
 	account   atomic.Pointer[string] // identity name, readable from other goroutines
 }
 
-func (s *Server) handleConn(rw io.ReadWriteCloser, transport, remote, sshID string) {
+// handleConn serves one connection. adm (from admit) is released by the
+// caller; handleConn only gives back its pre-authentication slot.
+func (s *Server) handleConn(rw io.ReadWriteCloser, transport, remote, sshID string, adm *admission) {
 	c := &clientConn{
 		srv: s, rw: rw, transport: transport, remote: remote, sshID: sshID,
 		gen:  connGen.Add(1),
 		done: make(chan struct{}),
 	}
 	max := uint32(s.cfg().Limits.MaxFrameBytes)
-	c.r = wire.NewReader(&countingReader{rw, &c.bytesUp}, max)
+	// Until AuthResult, frames are capped at a few KiB: an unauthenticated
+	// peer cannot make reflopd hold max_frame_bytes per connection (M1).
+	c.r = wire.NewReader(&countingReader{rw, &c.bytesUp}, preAuthMaxFrame)
 	c.w = wire.NewWriter(&countingWriter{rw, &c.bytesDown}, max)
 	defer c.close()
 	if err := c.handshake(); err != nil {
 		s.logf("connection from %s: %v", remote, err)
 		return
 	}
+	c.r.SetMax(max)
+	adm.authenticated()
 	s.addConn(c)
 	defer s.removeConn(c)
 	c.loop()
@@ -147,7 +153,7 @@ func (c *clientConn) handshake() error {
 			}
 			id, err := c.srv.ids.Redeem(b.Pair, c.nonce, fp[:])
 			if err != nil {
-				c.srv.audit.Write(audit.Record{Identity: "?", Event: "pair_failed", Fields: map[string]any{"remote": c.remote}})
+				c.auditFailure("pair_failed", map[string]any{"remote": c.remote})
 				msg := auth.ErrInvite.Error()
 				if !errors.Is(err, auth.ErrInvite) {
 					msg = err.Error()
@@ -164,8 +170,7 @@ func (c *clientConn) handshake() error {
 		case *pb.Envelope_Authenticate:
 			id, err := c.srv.ids.Authenticate(b.Authenticate, c.nonce, fp[:], c.sshID)
 			if err != nil {
-				c.srv.audit.Write(audit.Record{Identity: "?", Event: "auth_failed",
-					Fields: map[string]any{"remote": c.remote, "transport": c.transport}})
+				c.auditFailure("auth_failed", map[string]any{"remote": c.remote, "transport": c.transport})
 				time.Sleep(500 * time.Millisecond)
 				c.sendErr(env.RequestId, pb.ErrorCode_ERROR_UNAUTHENTICATED, "authentication failed")
 				return err
@@ -183,6 +188,19 @@ func (c *clientConn) handshake() error {
 		}
 	}
 	return errors.New("too many handshake messages")
+}
+
+// auditFailure writes a failed-handshake record, rate-limited per source
+// address and globally (L8). Suppressed records are counted in the next one.
+func (c *clientConn) auditFailure(event string, fields map[string]any) {
+	ok, suppressed := c.srv.fails.allow(c.remote, time.Now())
+	if !ok {
+		return
+	}
+	if suppressed > 0 {
+		fields["suppressed_before"] = suppressed
+	}
+	c.srv.audit.Write(audit.Record{Identity: "?", Event: event, Fields: fields})
 }
 
 func contains(xs []uint32, v uint32) bool {

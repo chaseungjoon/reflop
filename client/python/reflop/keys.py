@@ -5,6 +5,10 @@ macOS: the private key lives in the login Keychain (one entry per
 REFLOP_CLIENT_HOME). Elsewhere (or when the
 Keychain is unavailable): ~/.config/reflop/id_ed25519, mode 0600, OpenSSH
 format, which SSH pipe mode can use directly.
+
+SSH pipe mode needs a key file for ssh(1), so on macOS the first SSH
+connection also writes ~/.config/reflop/id_ed25519 (mode 0600): from then on
+the key is protected by file permissions, not only by the Keychain.
 """
 
 from __future__ import annotations
@@ -47,13 +51,26 @@ def _keychain_get() -> bytes | None:
                        capture_output=True, text=True)
     if r.returncode != 0:
         return None
-    return base64.b64decode(r.stdout.strip())
+    try:
+        return base64.b64decode(r.stdout.strip(), validate=True)
+    except ValueError:
+        return None
 
 
 def _keychain_put(seed: bytes) -> bool:
-    r = subprocess.run(["security", "add-generic-password", "-U", "-s", SERVICE, "-a", _account(),
-                        "-w", base64.b64encode(seed).decode()], capture_output=True, text=True)
-    return r.returncode == 0
+    """Store the seed. The secret goes to `security -i` on stdin, never on a
+    command line where `ps` would show it (SEC_SWEEP L7)."""
+    acct = _account()
+    if any(c in acct for c in '"\\\n\r'):
+        return False  # cannot be quoted for `security -i`; use the key file
+    line = f'add-generic-password -U -s {SERVICE} -a "{acct}" -w {base64.b64encode(seed).decode()}\n'
+    try:
+        subprocess.run(["security", "-i"], input=line, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    # `security -i` does not report a failed command in its exit status:
+    # read the entry back to know whether it was stored.
+    return _keychain_get() == seed
 
 
 def load_or_create() -> Ed25519PrivateKey:

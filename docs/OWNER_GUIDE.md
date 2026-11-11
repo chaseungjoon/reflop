@@ -115,7 +115,17 @@ reflopd through SSH. SSH then works as a pipe that can only start
    restrict,command="/home/you/.local/bin/reflopd serve --stdio --identity 09ef…" ssh-ed25519 AAAA… reflop-identity=09ef…
    ```
 
+   A reflopd path or `REFLOP_HOME` with spaces or shell characters is quoted
+   in the forced command.
+
 3. The Guest pairs with the code it prints.
+
+The invite also carries this machine's sshd host keys
+(`/etc/ssh/ssh_host_*_key.pub`). The Guest's ssh trusts those keys and no
+others, whatever the Guest's own `known_hosts` or `ssh_config` say. If the
+Guest reaches an sshd somewhere else (a container, a port forward to another
+host), pass that sshd's public keys with `--ssh-host-keys '<glob>'`. If you
+replace the host keys, Guests need a new invite.
 
 Inside the pipe, the client still authenticates with its key, and the key must
 belong to the identity named in the forced command. `reflopd doctor` scans
@@ -165,7 +175,13 @@ never hit them:
 ```sh
 reflopd rails show
 reflopd rails set --ram 8GiB --disk 50GiB --disk-percent 15
+reflopd rails set --ram 2GiB --force     # below a default: needs --force
 ```
+
+No value turns a rail off. The minimums are 1% and 1 GiB of disk, 512 MiB of
+RAM and 64 processes, and reflopd refuses to start with anything lower in
+`reflopd.toml` or `settings.json`. Every protocol limit in `[limits]` has a
+range, and 0 is outside all of them.
 
 Quotas are about fairness, and there are none by default: Guests and you agree
 on usage among yourselves. When the GPU is full, the Guest whose allocation fails
@@ -179,9 +195,15 @@ limits:
 reflopd quota set alice --device-memory 6GiB --max-sessions 1
 reflopd quota set alice --execute-wall-ms 60000      # longer executes kill the worker
 reflopd quota set alice --storage 50GiB --upload-bandwidth 20MiB
+reflopd quota set alice --storage unlimited          # remove one quota
 reflopd quota show
-reflopd quota clear alice
+reflopd quota clear alice                            # remove all of them
 ```
+
+A quota of 0 is rejected: an unset quota means no limit, so 0 would read as
+"nothing" and act as "everything". To block a Guest, revoke them. The storage
+quota counts uploads still in progress as well as stored datasets, and an
+upload with no progress for 7 days is deleted.
 
 ## Controls while Guests train
 
@@ -298,11 +320,17 @@ accept_weak_isolation = false
 ## Updating
 
 ```sh
-reflopd update                    # new binary, verified against the release checksums
+reflopd update                    # new binary, verified against the release signature and checksums
 reflopd runtime install           # if the release pins a new runtime
 reflopd stop && reflopd up
 reflopd runtime prune             # remove old runtimes and the download cache
 ```
+
+Every release since 0.1.6 signs its `checksums.txt` with an offline key.
+`install.sh`, `reflopd update` and `reflop update` check that signature
+before anything from the release runs, and refuse releases without one, so
+they cannot install 0.1.5 or older. `REFLOP_UPDATE_URL` must be an `https://`
+URL (plain `http://` works only for `localhost`).
 
 ## Troubleshooting
 

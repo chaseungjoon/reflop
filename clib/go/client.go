@@ -29,6 +29,9 @@ import (
 
 const maxFrame = 64 << 20
 
+// maxResponseBytes caps one fetch, whatever the server sends (SEC_SWEEP M3).
+const maxResponseBytes = 16 << 30
+
 type serverEntry struct {
 	Name        string   `json:"name"`
 	Transport   string   `json:"transport"`
@@ -37,6 +40,7 @@ type serverEntry struct {
 	Identity    string   `json:"identity"`
 	IdentityID  string   `json:"identity_id"`
 	SSHPort     *int     `json:"ssh_port"`
+	SSHHostKeys []string `json:"ssh_host_keys"`
 	Extra       any      `json:"extra"`
 }
 
@@ -126,12 +130,23 @@ func dial(e *serverEntry, fp []byte) (io.ReadWriteCloser, error) {
 		if bin == "" {
 			bin = "ssh"
 		}
-		args := []string{"-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "ForwardAgent=no",
-			"-i", filepath.Join(configDir(), "id_ed25519")}
+		// The same options as the Python client (SEC_SWEEP L6).
+		args := []string{"-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30", "-o", "IdentitiesOnly=yes",
+			"-o", "ForwardAgent=no", "-o", "ForwardX11=no", "-o", "ClearAllForwardings=yes",
+			"-o", "PermitLocalCommand=no", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no"}
+		pinned, err := pinnedHostArgs(e)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, pinned...)
+		args = append(args, "-i", filepath.Join(configDir(), "id_ed25519"))
 		if e.SSHPort != nil {
 			args = append(args, "-p", fmt.Sprint(*e.SSHPort))
 		}
-		args = append(args, e.Addresses[0], "reflop-stdio")
+		if len(e.Addresses) == 0 {
+			return nil, errors.New("servers.json: no SSH target")
+		}
+		args = append(args, "--", e.Addresses[0], "reflop-stdio")
 		cmd := exec.Command(bin, args...)
 		in, err := cmd.StdinPipe()
 		if err != nil {
@@ -274,6 +289,90 @@ func (c *conn) stream(env *pb.Envelope) ([]*pb.Envelope, error) {
 			return out, nil
 		}
 	}
+}
+
+// fetch downloads one tensor. Every chunk is checked against the size its
+// metadata declares, so a hostile server cannot make the caller buffer
+// without bound or pass off a partial tensor (SEC_SWEEP M3).
+func (c *conn) fetch(h []byte) ([]byte, error) {
+	c.nextID++
+	id := c.nextID
+	if err := c.w.Write(&pb.Envelope{RequestId: id, Body: &pb.Envelope_Fetch{Fetch: &pb.Fetch{Handles: [][]byte{h}}}}); err != nil {
+		return nil, err
+	}
+	var data []byte
+	want := int64(-1)
+	for {
+		r := &pb.Envelope{}
+		if err := c.r.Read(r); err != nil {
+			return nil, fmt.Errorf("connection lost: %w", err)
+		}
+		if r.GetEvent() != nil || r.RequestId != id {
+			continue
+		}
+		if e := r.GetError(); e != nil {
+			return nil, fmt.Errorf("[%s] %s", e.Code.String(), sanitize(e.Message))
+		}
+		fc := r.GetFetchChunk()
+		if fc == nil || fc.Index != 0 {
+			return nil, errors.New("the server sent an unexpected fetch response")
+		}
+		if fc.Meta != nil {
+			if want >= 0 {
+				return nil, errors.New("the server sent the tensor's metadata twice")
+			}
+			n, err := tensorBytes(fc.Meta)
+			if err != nil {
+				return nil, fmt.Errorf("server tensor: %w", err)
+			}
+			if n > maxResponseBytes {
+				return nil, fmt.Errorf("the server's tensor has %d bytes; the limit is %d", n, uint64(maxResponseBytes))
+			}
+			want = int64(n)
+			data = make([]byte, 0, min(n, 64<<20))
+		} else if want < 0 {
+			return nil, errors.New("the server sent tensor data before its metadata")
+		}
+		if fc.Offset != uint64(len(data)) {
+			return nil, errors.New("the server sent tensor data out of order")
+		}
+		if int64(len(data))+int64(len(fc.Data)) > want {
+			return nil, errors.New("the server sent more data than the tensor's metadata declares")
+		}
+		data = append(data, fc.Data...)
+		if r.End {
+			if int64(len(data)) != want {
+				return nil, errors.New("the server's fetch response ended before the tensor was complete")
+			}
+			return data, nil
+		}
+	}
+}
+
+var dtypeSize = map[pb.DType]uint64{
+	pb.DType_DTYPE_BOOL: 1, pb.DType_DTYPE_UINT8: 1, pb.DType_DTYPE_INT8: 1, pb.DType_DTYPE_INT16: 2,
+	pb.DType_DTYPE_INT32: 4, pb.DType_DTYPE_INT64: 8, pb.DType_DTYPE_FLOAT16: 2, pb.DType_DTYPE_BFLOAT16: 2,
+	pb.DType_DTYPE_FLOAT32: 4, pb.DType_DTYPE_FLOAT64: 8, pb.DType_DTYPE_COMPLEX64: 8, pb.DType_DTYPE_COMPLEX128: 16,
+	pb.DType_DTYPE_FLOAT8_E4M3FN: 1, pb.DType_DTYPE_FLOAT8_E5M2: 1,
+}
+
+// tensorBytes is numel x itemsize, with overflow checks.
+func tensorBytes(m *pb.TensorMeta) (uint64, error) {
+	size, ok := dtypeSize[m.Dtype]
+	if !ok {
+		return 0, fmt.Errorf("unknown dtype %d", m.Dtype)
+	}
+	n := size
+	for _, d := range m.Shape {
+		if d < 0 {
+			return 0, errors.New("negative dimension")
+		}
+		if d != 0 && n > (1<<62)/uint64(d) {
+			return 0, errors.New("tensor size overflows")
+		}
+		n *= uint64(d)
+	}
+	return n, nil
 }
 
 func (c *conn) newHandle() [16]byte {

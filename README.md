@@ -76,7 +76,9 @@ curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh
 
 `reflopd` goes to `~/.local/bin`. The client goes into the active virtual
 environment if there is one, otherwise into its own environment managed by `uv`
-(or a private venv). Both downloads are checked against the release's SHA-256 sums.
+(or a private venv). Both downloads are checked against the release's SHA-256 sums,
+and the sums against a signature made with the project's offline release key
+(the check uses `ssh-keygen`, OpenSSH 8.1 or newer).
 
 **Update:**
 
@@ -92,8 +94,16 @@ reflop update      # Guest
 
 Download `reflopd_<version>_linux_<arch>.tar.gz` or
 `reflop-<version>-py3-none-any.whl` from
-[Releases](https://github.com/chaseungjoon/reflop/releases), verify it against
-`checksums.txt`, and put `reflopd` on your `PATH` or `pip install` the wheel.
+[Releases](https://github.com/chaseungjoon/reflop/releases) with `checksums.txt`
+and `checksums.txt.sig`. Check the signature, then the file:
+
+```sh
+echo 'reflop-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKqs9C0dx4nGfqCL1Vw0hgwleOGNaDOPYyMBCwYU3lsW' > allowed_signers
+ssh-keygen -Y verify -f allowed_signers -I reflop-release -n reflop-release -s checksums.txt.sig < checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
+
+Then put `reflopd` on your `PATH` or `pip install` the wheel.
 
 </details>
 

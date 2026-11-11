@@ -150,6 +150,16 @@ func (m *Manager) SetMemoryMax(bytes uint64) error {
 	return write(m.workers(), "memory.max", v)
 }
 
+// SetDaemonMemoryMax caps reflopd's own cgroup (<root>/daemon), so the
+// daemon itself can never push the host below the RAM floor (SEC_SWEEP M1).
+func (m *Manager) SetDaemonMemoryMax(bytes uint64) error {
+	v := "max"
+	if bytes > 0 {
+		v = strconv.FormatUint(bytes, 10)
+	}
+	return write(filepath.Join(m.Root, "daemon"), "memory.max", v)
+}
+
 // MemoryCurrent returns the memory used by all workers.
 func (m *Manager) MemoryCurrent() uint64 {
 	return readUint(filepath.Join(m.workers(), "memory.current"))

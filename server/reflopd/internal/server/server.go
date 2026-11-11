@@ -76,13 +76,17 @@ type Server struct {
 	slots     []*DeviceSlot
 	logger    *log.Logger
 
-	mu        sync.Mutex
-	sessions  map[string]*Session
-	conns     map[*clientConn]bool
-	paused    atomic.Bool
-	yielding  atomic.Bool
-	events    *broadcaster
-	throttles map[string]*bucket
+	mu           sync.Mutex
+	sessions     map[string]*Session
+	conns        map[*clientConn]bool
+	nconns       int            // accepted and not yet closed, authenticated or not
+	preauth      map[string]int // unauthenticated connections per source address
+	fails        failLimiter
+	paused       atomic.Bool
+	ramErrLogged atomic.Bool
+	yielding     atomic.Bool
+	events       *broadcaster
+	throttles    map[string]*bucket
 
 	listeners []net.Listener
 	started   time.Time
@@ -122,7 +126,7 @@ func New(opts Options) (*Server, error) {
 		logger = log.New(os.Stderr, "reflopd: ", log.LstdFlags)
 	}
 	s := &Server{layout: l, opts: opts, config: cfg, key: key, ids: ids, audit: al, usage: ul, logger: logger,
-		sessions: map[string]*Session{}, conns: map[*clientConn]bool{}, events: newBroadcaster(),
+		sessions: map[string]*Session{}, conns: map[*clientConn]bool{}, preauth: map[string]int{}, events: newBroadcaster(),
 		throttles: map[string]*bucket{}, started: time.Now()}
 	s.store = store.New(l.Store(), int64(cfg.Limits.UploadChunkBytes), cfg.Limits.MaxTensorNumel,
 		func() config.Rails { return s.cfg().Rails },
@@ -336,9 +340,11 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 		init.DeviceMemoryQuotaBytes = uint64(q.DeviceMemoryBytes)
 		init.ExecuteFlopsQuota = q.ExecuteFLOPs
 	}
-	if m, err := rails.Memory(); err == nil {
-		init.HostMemoryBudgetBytes = rails.WorkerBudget(cfg.Rails, m, s.workersMemory())
+	m, err := rails.Memory()
+	if err != nil {
+		return nil, fmt.Errorf("the host RAM safety rail cannot read memory use (%v); not starting a worker", err)
 	}
+	init.HostMemoryBudgetBytes = rails.WorkerBudget(cfg.Rails, m, s.workersMemory())
 	var uuids []string
 	if slot.GPU != nil {
 		uuids = []string{slot.GPU.UUID}
@@ -362,16 +368,20 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 		spec.FSize = 1 << 20
 	}
 	// The filter needs the worker's pid, so it is built right after fork.
-	w, err := supervisor.SpawnWithFilter(ctx, spec, func(pid int) []byte {
+	w, err := supervisor.SpawnWithFilter(ctx, spec, func(pid int) ([]byte, error) {
 		if !sandbox.SeccompAvailable() {
-			return nil
+			return nil, nil
 		}
 		f, err := sandbox.Policy{SelfPID: pid}.Filter()
 		if err != nil {
-			s.logf("seccomp filter: %v", err)
-			return nil
+			if init.RequireSeccomp {
+				// Fail closed (SEC_SWEEP M2): never start a worker without the filter.
+				return nil, fmt.Errorf("seccomp filter: %w", err)
+			}
+			s.logf("seccomp filter: %v (accept_weak_isolation is set; starting without it)", err)
+			return nil, nil
 		}
-		return sandbox.Encode(f)
+		return sandbox.Encode(f), nil
 	})
 	if err != nil {
 		os.RemoveAll(scratch)
@@ -674,14 +684,15 @@ func (s *Server) acceptTLS(ctx context.Context, ln net.Listener) {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		s.mu.Lock()
-		n := len(s.conns)
-		s.mu.Unlock()
-		if n >= int(s.cfg().Limits.MaxConnections) {
+		// The slot is taken before the TLS handshake, so connections that
+		// never authenticate still count against max_connections (M1).
+		adm := s.admit(conn.RemoteAddr().String(), true)
+		if adm == nil {
 			conn.Close()
 			continue
 		}
 		go func() {
+			defer adm.release()
 			tc := conn.(*tls.Conn)
 			tc.SetDeadline(time.Now().Add(15 * time.Second))
 			if err := tc.HandshakeContext(ctx); err != nil {
@@ -689,7 +700,7 @@ func (s *Server) acceptTLS(ctx context.Context, ln net.Listener) {
 				return
 			}
 			tc.SetDeadline(time.Time{})
-			s.handleConn(tc, "tls", conn.RemoteAddr().String(), "")
+			s.handleConn(tc, "tls", conn.RemoteAddr().String(), "", adm)
 		}()
 	}
 }

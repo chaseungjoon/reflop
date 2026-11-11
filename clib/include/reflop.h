@@ -8,7 +8,8 @@
  * Python client (`reflop pair`); the server key is pinned.
  *
  * Every function returns 0 on success and a negative value on error; the
- * message is available from reflop_last_error() (thread-local, sanitized).
+ * message is available from reflop_last_error(): per thread, sanitized, and
+ * valid until the next failing call on the same thread.
  */
 #ifndef REFLOP_H
 #define REFLOP_H
@@ -35,6 +36,9 @@ typedef struct {
   uint32_t index; /* input index, or output index of the node */
 } reflop_value;
 
+/* Error codes (other failures return -1). */
+#define REFLOP_ERANGE (-34) /* reflop_fetch: the buffer is smaller than the tensor */
+
 typedef uint64_t reflop_session; /* 0 is never a valid session */
 typedef uint64_t reflop_graph;   /* 0 is never a valid graph builder */
 
@@ -46,9 +50,12 @@ const char *reflop_version(void);
 int reflop_connect(const char *server, const char *device, reflop_session *out);
 int reflop_close(reflop_session s);
 
+/* nbytes must equal the product of shape times the dtype size. */
 int reflop_upload(reflop_session s, reflop_dtype dtype, int ndim, const int64_t *shape, const void *data,
                   size_t nbytes, reflop_handle *out);
-/* Copies at most cap bytes into buf; *nbytes receives the tensor size. */
+/* *nbytes (required) receives the tensor size. With buf == NULL and cap == 0
+ * only the size is returned. If the tensor does not fit in cap bytes,
+ * nothing is copied and REFLOP_ERANGE is returned. */
 int reflop_fetch(reflop_session s, reflop_handle h, void *buf, size_t cap, size_t *nbytes);
 int reflop_free(reflop_session s, reflop_handle h);
 

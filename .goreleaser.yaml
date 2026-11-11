@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Releases are cut only by pushing a v* tag (see .github/workflows/release.yml).
+# The release is created as a draft: it becomes public only after
+# scripts/sign-release.sh signs checksums.txt with the offline release key.
 version: 2
 project_name: reflopd
 
@@ -35,6 +37,8 @@ release:
     owner: chaseungjoon
     name: reflop
   prerelease: auto
+  draft: true
+  target_commitish: "{{ .FullCommit }}"
   extra_files:
     - glob: ./dist-wheel/reflop-*.whl
   footer: |

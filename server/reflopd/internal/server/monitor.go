@@ -14,6 +14,7 @@ import (
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/store"
 )
 
 // monitor enforces the host-RAM rail, session TTLs, the optional watchdog
@@ -21,12 +22,16 @@ import (
 func (s *Server) monitor(ctx context.Context) {
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
-	var lastYield time.Time
+	var lastYield, lastSweep time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+		}
+		if time.Since(lastSweep) > time.Hour {
+			lastSweep = time.Now()
+			go s.store.SweepStale(store.UploadTTL) // abandoned uploads (L4)
 		}
 		s.ramRail()
 		s.reapDetached()
@@ -46,12 +51,24 @@ func (s *Server) monitor(ctx context.Context) {
 func (s *Server) ramRail() {
 	m, err := rails.Memory()
 	if err != nil {
+		// Fail closed (L5): with no reading, workers may not grow, and
+		// spawnWorker refuses new ones.
+		if s.ramErrLogged.CompareAndSwap(false, true) {
+			s.logf("host RAM rail: %v; freezing worker memory and refusing new sessions", err)
+		}
+		if s.cg != nil {
+			s.cg.SetMemoryMax(max(s.workersMemory(), 64<<20))
+		}
 		return
 	}
+	s.ramErrLogged.Store(false)
 	r := s.cfg().Rails
 	using := s.workersMemory()
 	budget := rails.WorkerBudget(r, m, using)
 	if s.cg != nil {
+		if ceiling := m.Total - rails.RAMFloor(r, m.Total); ceiling > 512<<20 {
+			s.cg.SetDaemonMemoryMax(ceiling)
+		}
 		// The kernel enforces it: an over-budget worker is OOM-killed inside
 		// its own cgroup, never the Owner's processes.
 		if budget < 64<<20 {

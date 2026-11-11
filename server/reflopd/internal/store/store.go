@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -133,8 +134,14 @@ func (s *Store) Begin(identity string, req *pb.PackBegin, maxManifest int) (*pb.
 		if err := rails.CheckDiskWrite(s.Rails(), s.Root, missing); err != nil {
 			return nil, errf(pb.ErrorCode_ERROR_SAFETY_RAIL, "%v", err)
 		}
-		if q := s.Quota(identity); q > 0 && s.usage(identity)+missing > q {
-			return nil, errf(pb.ErrorCode_ERROR_QUOTA, "storage quota of %s would be exceeded", config.Bytes(q))
+	}
+	// The quota covers committed blobs plus the full size of every pending
+	// upload, this one included, so parallel uploads cannot each fit and
+	// together exceed it (SEC_SWEEP L4).
+	if q := s.Quota(identity); q > 0 {
+		if need := s.reservedLocked(identity, id, m); need > q {
+			return nil, errf(pb.ErrorCode_ERROR_QUOTA, "storage quota of %s would be exceeded (%s committed or reserved by uploads in progress)",
+				config.Bytes(q), config.Bytes(need))
 		}
 	}
 	rec := struct {
@@ -188,6 +195,105 @@ func (s *Store) pending(identity string, packID []byte) (string, *Manifest, erro
 	return rec.Name, m, nil
 }
 
+// reservedLocked is the storage an identity holds or has reserved: its
+// blobs plus every distinct shard of every pending upload (with extra, the
+// upload being begun, counted once) that is not yet a blob.
+func (s *Store) reservedLocked(identity, extraID string, extra *Manifest) uint64 {
+	var n uint64
+	ents, _ := os.ReadDir(s.dir(identity, "blobs"))
+	have := map[string]bool{}
+	for _, e := range ents {
+		if fi, err := e.Info(); err == nil && fi.Mode().IsRegular() {
+			n += uint64(fi.Size())
+			have[e.Name()] = true
+		}
+	}
+	shards := map[string]int64{}
+	add := func(m *Manifest) {
+		for _, sh := range m.Shards {
+			if !have[sh.SHA256] {
+				shards[sh.SHA256] = sh.SizeBytes
+			}
+		}
+	}
+	if extra != nil {
+		add(extra)
+	}
+	ups, _ := os.ReadDir(s.dir(identity, "uploads"))
+	for _, e := range ups {
+		id, ok := strings.CutSuffix(e.Name(), ".begin")
+		if !ok || id == extraID {
+			continue
+		}
+		raw, err := hex.DecodeString(id)
+		if err != nil {
+			continue
+		}
+		if _, m, err := s.pending(identity, raw); err == nil {
+			add(m)
+		}
+	}
+	for _, sz := range shards {
+		n += uint64(sz)
+	}
+	return n
+}
+
+// UploadTTL is how long an upload may sit without progress before
+// SweepStale removes it (resumable uploads survive restarts until then).
+const UploadTTL = 7 * 24 * time.Hour
+
+// SweepStale removes uploads with no progress for longer than maxAge, and
+// partial shard files no pending upload refers to (SEC_SWEEP L4).
+func (s *Store) SweepStale(maxAge time.Duration) {
+	ents, _ := os.ReadDir(s.Root)
+	for _, e := range ents {
+		if e.IsDir() {
+			s.sweepIdentity(e.Name(), maxAge)
+		}
+	}
+}
+
+func (s *Store) sweepIdentity(identity string, maxAge time.Duration) {
+	unlock := s.lock(identity)
+	defer unlock()
+	dir := s.dir(identity, "uploads")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	keep := map[string]bool{}
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".begin")
+		if !ok {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		raw, derr := hex.DecodeString(id)
+		_, m, perr := s.pending(identity, raw)
+		if time.Since(fi.ModTime()) > maxAge || derr != nil || perr != nil {
+			os.Remove(filepath.Join(dir, e.Name()))
+			continue
+		}
+		for _, sh := range m.Shards {
+			keep[sh.SHA256] = true
+		}
+	}
+	for _, e := range ents {
+		n := e.Name()
+		sha, ok := strings.CutSuffix(n, ".part")
+		if !ok {
+			sha, ok = strings.CutSuffix(n, ".chunks")
+		}
+		if ok && !keep[sha] {
+			os.Remove(filepath.Join(dir, n))
+		}
+	}
+}
+
 // Chunk stores one verified chunk.
 func (s *Store) PutChunk(identity string, c *pb.PackChunk) error {
 	unlock := s.lock(identity)
@@ -196,6 +302,9 @@ func (s *Store) PutChunk(identity string, c *pb.PackChunk) error {
 	if err != nil {
 		return err
 	}
+	// Progress keeps an upload alive for SweepStale.
+	now := time.Now()
+	os.Chtimes(s.dir(identity, "uploads", hex.EncodeToString(c.PackId)+".begin"), now, now)
 	if int(c.Shard) >= len(m.Shards) {
 		return errf(pb.ErrorCode_ERROR_DATASET, "shard index out of range")
 	}

@@ -31,6 +31,7 @@ class ServerEntry:
     identity_id: str = ""
     ssh_port: int | None = None
     extra: dict = field(default_factory=dict)
+    ssh_host_keys: list[str] = field(default_factory=list)  # SSH mode: pinned sshd host keys
 
 
 @dataclass

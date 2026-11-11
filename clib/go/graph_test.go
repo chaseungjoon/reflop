@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,5 +70,55 @@ func TestEndWrongCountPopsOp(t *testing.T) {
 	}
 	if _, err := b.end(); err == nil {
 		t.Fatal("end with nothing open succeeded")
+	}
+}
+
+// SEC_SWEEP L2/M3: sizes come from shape x dtype, with overflow checks.
+func TestTensorBytes(t *testing.T) {
+	for _, c := range []struct {
+		m    *pb.TensorMeta
+		want uint64
+		ok   bool
+	}{
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_FLOAT32, Shape: []int64{2, 3}}, 24, true},
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_COMPLEX128, Shape: []int64{4}}, 64, true},
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_BOOL}, 1, true},
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_FLOAT32, Shape: []int64{0, 1 << 40}}, 0, true},
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_FLOAT32, Shape: []int64{-1}}, 0, false},
+		{&pb.TensorMeta{Dtype: pb.DType_DTYPE_FLOAT64, Shape: []int64{1 << 31, 1 << 31, 4}}, 0, false},
+		{&pb.TensorMeta{Dtype: pb.DType(99), Shape: []int64{1}}, 0, false},
+	} {
+		got, err := tensorBytes(c.m)
+		if (err == nil) != c.ok || (c.ok && got != c.want) {
+			t.Errorf("%v: got %d, %v", c.m, got, err)
+		}
+	}
+}
+
+// SEC_SWEEP L6: pinned host keys become a reflop-owned known_hosts file and
+// options that override the user's ssh_config.
+func TestPinnedHostArgs(t *testing.T) {
+	t.Setenv("REFLOP_CLIENT_HOME", t.TempDir()+"/a b%c")
+	fp := strings.Repeat("ab", 32)
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILs7graug4rm/Iz4hvKqazO5MLF8HcSzVedtFmkYjbTH"
+	args, err := pinnedHostArgs(&serverEntry{Fingerprint: fp, SSHHostKeys: []string{key}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"HostKeyAlias=reflop-" + fp, "GlobalKnownHostsFile=/dev/null", `/a b%%c/ssh_known_hosts/` + fp + `"`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("args %q lack %q", joined, want)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(configDir(), "ssh_known_hosts", fp))
+	if err != nil || string(b) != "reflop-"+fp+" "+key+"\n" {
+		t.Fatalf("known_hosts %q, %v", b, err)
+	}
+	if a, err := pinnedHostArgs(&serverEntry{Fingerprint: fp}); err != nil || a != nil {
+		t.Fatalf("no pinned keys: %v %v", a, err)
+	}
+	if _, err := pinnedHostArgs(&serverEntry{Fingerprint: fp, SSHHostKeys: []string{"ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQAB"}}); err == nil {
+		t.Fatal("key whose type does not match its data accepted")
 	}
 }

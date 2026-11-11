@@ -1,7 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# reFLOP installer: downloads a release from GitHub, verifies its SHA-256
-# checksum, and installs it. Adapted from recom's installer (ADR-007).
+# reFLOP installer: downloads a release from GitHub, verifies the release
+# signature on checksums.txt (ssh-keygen -Y verify, OpenSSH 8.1 or newer)
+# and the SHA-256 checksum, and installs it. Adapted from recom's installer
+# (ADR-007).
 #
 #   Guest machine (macOS or Linux), the reflop client:
 #     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
@@ -26,6 +28,10 @@ set -eu
 
 REPO="chaseungjoon/reflop"
 BASE_URL="https://github.com/${REPO}/releases"
+
+# Release signing keys (principal, then key). The same list is in reflopd
+# (selfupdate.ReleaseKeys) and the Python client (update.RELEASE_KEYS).
+RELEASE_SIGNERS='reflop-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKqs9C0dx4nGfqCL1Vw0hgwleOGNaDOPYyMBCwYU3lsW reflop-release'
 
 say() { printf 'reflop-install: %s\n' "$*" >&2; }
 die() { say "error: $*"; exit 1; }
@@ -64,6 +70,17 @@ sha256_of() {
 		shasum -a 256 "$1" | cut -d ' ' -f 1
 	else
 		die "sha256sum or shasum is required to verify the download"
+	fi
+}
+
+verify_signature() { # sums sig
+	# Every release since 0.1.6 signs checksums.txt with an offline key.
+	has ssh-keygen || die "ssh-keygen (OpenSSH) is required to verify the release signature; install openssh-client"
+	printf '%s\n' "$RELEASE_SIGNERS" > "$tmp/allowed_signers"
+	if ! ssh-keygen -Y verify -f "$tmp/allowed_signers" -I reflop-release -n reflop-release \
+		-s "$2" < "$1" > "$tmp/sigcheck" 2>&1; then
+		cat "$tmp/sigcheck" >&2
+		die "the signature on checksums.txt for ${tag} did not verify (releases before v0.1.6 are unsigned; OpenSSH 8.1+ is needed)"
 	fi
 }
 
@@ -205,7 +222,7 @@ main() {
 			--client) mode=client ;;
 			--version) shift; tag=${1:-} ;;
 			--version=*) tag=${1#--version=} ;;
-			-h | --help) sed -n '2,24p' "$0" 2>/dev/null || true; exit 0 ;;
+			-h | --help) sed -n '2,26p' "$0" 2>/dev/null || true; exit 0 ;;
 			*) die "unknown option: $1" ;;
 		esac
 		shift
@@ -218,6 +235,10 @@ main() {
 	trap 'rm -rf "$tmp"' EXIT
 	trap 'exit 130' INT TERM
 	download "${BASE_URL}/download/${tag}/checksums.txt" "$tmp/checksums.txt" || die "download failed: checksums.txt for ${tag}"
+	download "${BASE_URL}/download/${tag}/checksums.txt.sig" "$tmp/checksums.txt.sig" ||
+		die "download failed: checksums.txt.sig for ${tag} (releases before v0.1.6 are unsigned)"
+	verify_signature "$tmp/checksums.txt" "$tmp/checksums.txt.sig"
+	say "release signature verified"
 	if [ "$mode" = server ]; then
 		install_server
 	else

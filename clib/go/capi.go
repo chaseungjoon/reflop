@@ -19,11 +19,16 @@ typedef struct { uint8_t bytes[32]; } reflop_graph_id;
 typedef struct { int32_t node; uint32_t index; } reflop_value;
 typedef uint64_t reflop_session;
 typedef uint64_t reflop_graph;
+// lasterror.c: thread-local storage for reflop_last_error().
+void reflop_set_error(const char *msg, size_t n);
+const char *reflop_get_error(void);
 */
 import "C"
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"unsafe"
 
@@ -32,38 +37,39 @@ import (
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
-const version = "0.1.5"
+const version = "0.1.6"
+
+// Return codes besides 0 (include/reflop.h).
+const (
+	errGeneric = -1
+	errRange   = -34 // REFLOP_ERANGE: the caller's buffer is too small
+)
 
 var (
 	mu       sync.Mutex
 	nextObj  uint64
 	sessions = map[uint64]*conn{}
 	graphs   = map[uint64]*builder{}
-	lastErr  = map[uint64]string{} // per OS thread would need cgo TLS; per-object store plus a global is enough
-	errMsg   string
 	verC     = C.CString(version)
-	errC     *C.char
 )
 
-func fail(err error) C.int {
-	mu.Lock()
-	errMsg = sanitize(err.Error())
-	mu.Unlock()
-	return -1
+// fail records err for the calling thread and returns -1. Exported
+// functions run on the C thread that called them, so the message is
+// per-thread (SEC_SWEEP L1).
+func fail(err error) C.int { return failWith(errGeneric, err) }
+
+func failWith(code C.int, err error) C.int {
+	msg := sanitize(err.Error())
+	cs := C.CString(msg)
+	C.reflop_set_error(cs, C.size_t(len(msg)))
+	C.free(unsafe.Pointer(cs))
+	return code
 }
 
 func ok() C.int { return 0 }
 
 //export reflop_last_error
-func reflop_last_error() *C.char {
-	mu.Lock()
-	defer mu.Unlock()
-	if errC != nil {
-		C.free(unsafe.Pointer(errC))
-	}
-	errC = C.CString(errMsg)
-	return errC
-}
+func reflop_last_error() *C.char { return (*C.char)(unsafe.Pointer(C.reflop_get_error())) }
 
 //export reflop_version
 func reflop_version() *C.char { return verC }
@@ -127,13 +133,21 @@ type badErr string
 func (e badErr) Error() string { return "invalid " + string(e) + " handle" }
 func errBad(what string) error { return badErr(what) }
 
-func meta(dtype C.reflop_dtype, ndim C.int, shape *C.int64_t) *pb.TensorMeta {
+const maxDims = 64
+
+func meta(dtype C.reflop_dtype, ndim C.int, shape *C.int64_t) (*pb.TensorMeta, error) {
 	m := &pb.TensorMeta{Dtype: pb.DType(dtype)}
+	if ndim < 0 || ndim > maxDims {
+		return nil, fmt.Errorf("ndim must be between 0 and %d", maxDims)
+	}
 	if ndim > 0 {
+		if shape == nil {
+			return nil, errors.New("shape is NULL")
+		}
 		sh := unsafe.Slice((*int64)(unsafe.Pointer(shape)), int(ndim))
 		m.Shape = append([]int64(nil), sh...)
 	}
-	return m
+	return m, nil
 }
 
 //export reflop_upload
@@ -143,8 +157,31 @@ func reflop_upload(s C.reflop_session, dtype C.reflop_dtype, ndim C.int, shape *
 	if !found {
 		return fail(errBad("session"))
 	}
-	buf := C.GoBytes(data, C.int(nbytes))
-	h, err := c.upload(meta(dtype, ndim, shape), buf)
+	m, err := meta(dtype, ndim, shape)
+	if err != nil {
+		return fail(err)
+	}
+	// The byte count must be exactly shape x dtype size, checked before any
+	// memory is read (SEC_SWEEP L2: size_t is never narrowed).
+	want, err := tensorBytes(m)
+	if err != nil {
+		return fail(err)
+	}
+	if uint64(nbytes) != want {
+		return fail(fmt.Errorf("nbytes is %d, but the shape and dtype need %d bytes", uint64(nbytes), want))
+	}
+	if want > math.MaxInt {
+		return fail(errors.New("tensor is too large for this platform"))
+	}
+	var buf []byte
+	if want > 0 {
+		if data == nil {
+			return fail(errors.New("data is NULL"))
+		}
+		// Read in place: upload sends synchronously and keeps no reference.
+		buf = unsafe.Slice((*byte)(data), int(want))
+	}
+	h, err := c.upload(m, buf)
 	if err != nil {
 		return fail(err)
 	}
@@ -160,23 +197,26 @@ func reflop_fetch(s C.reflop_session, h C.reflop_handle, buf unsafe.Pointer, cap
 	if !found {
 		return fail(errBad("session"))
 	}
-	frames, err := c.stream(&pb.Envelope{Body: &pb.Envelope_Fetch{Fetch: &pb.Fetch{Handles: [][]byte{handle(h)}}}})
+	if nbytes == nil {
+		return fail(errors.New("nbytes is NULL; it receives the tensor size"))
+	}
+	if buf == nil && capacity > 0 {
+		return fail(errors.New("buf is NULL but cap is not 0"))
+	}
+	data, err := c.fetch(handle(h))
 	if err != nil {
 		return fail(err)
 	}
-	var data []byte
-	for _, f := range frames {
-		data = append(data, f.GetFetchChunk().GetData()...)
+	*nbytes = C.size_t(len(data))
+	if buf == nil {
+		return ok() // size query
 	}
-	if nbytes != nil {
-		*nbytes = C.size_t(len(data))
+	// A short buffer is an error, never a silent partial copy (SEC_SWEEP L3).
+	if uint64(len(data)) > uint64(capacity) {
+		return failWith(errRange, fmt.Errorf("the tensor has %d bytes but the buffer holds %d", len(data), uint64(capacity)))
 	}
-	n := len(data)
-	if n > int(capacity) {
-		n = int(capacity)
-	}
-	if n > 0 {
-		C.memcpy(buf, unsafe.Pointer(&data[0]), C.size_t(n))
+	if len(data) > 0 {
+		C.memcpy(buf, unsafe.Pointer(&data[0]), C.size_t(len(data)))
 	}
 	return ok()
 }
@@ -216,7 +256,12 @@ func reflop_graph_input(g C.reflop_graph, dtype C.reflop_dtype, ndim C.int, shap
 		fail(errBad("graph"))
 		return C.reflop_value{node: -2}
 	}
-	v := b.input(meta(dtype, ndim, shape))
+	m, err := meta(dtype, ndim, shape)
+	if err != nil {
+		fail(err)
+		return C.reflop_value{node: -2}
+	}
+	v := b.input(m)
 	return C.reflop_value{node: C.int32_t(v.node), index: C.uint32_t(v.index)}
 }
 
@@ -245,6 +290,9 @@ func reflop_arg_tensor(g C.reflop_graph, v C.reflop_value) C.int {
 
 //export reflop_arg_tensors
 func reflop_arg_tensors(g C.reflop_graph, vs *C.reflop_value, n C.int) C.int {
+	if n < 0 || (n > 0 && vs == nil) {
+		return fail(errors.New("invalid tensor list"))
+	}
 	return withGraph(g, func(b *builder) error {
 		l := &pb.TensorList{}
 		for _, v := range unsafe.Slice(vs, int(n)) {
@@ -261,6 +309,9 @@ func reflop_arg_int(g C.reflop_graph, v C.int64_t) C.int {
 
 //export reflop_arg_ints
 func reflop_arg_ints(g C.reflop_graph, v *C.int64_t, n C.int) C.int {
+	if n < 0 || (n > 0 && v == nil) {
+		return fail(errors.New("invalid int list"))
+	}
 	return withGraph(g, func(b *builder) error {
 		vals := append([]int64(nil), unsafe.Slice((*int64)(unsafe.Pointer(v)), int(n))...)
 		return b.push(&pb.Arg{Value: &pb.Arg_Ints{Ints: &pb.Int64List{Values: vals}}})
@@ -312,7 +363,14 @@ func reflop_op_end(g C.reflop_graph, out *C.reflop_value) C.int {
 
 //export reflop_graph_output
 func reflop_graph_output(g C.reflop_graph, v C.reflop_value, dtype C.reflop_dtype, ndim C.int, shape *C.int64_t) C.int {
-	return withGraph(g, func(b *builder) error { b.output(gv(v), meta(dtype, ndim, shape)); return nil })
+	return withGraph(g, func(b *builder) error {
+		m, err := meta(dtype, ndim, shape)
+		if err != nil {
+			return err
+		}
+		b.output(gv(v), m)
+		return nil
+	})
 }
 
 //export reflop_register
@@ -353,6 +411,9 @@ func reflop_execute(s C.reflop_session, id C.reflop_graph_id, inputs *C.reflop_h
 	if !found {
 		return fail(errBad("session"))
 	}
+	if nIn < 0 || nOut < 0 || (nIn > 0 && inputs == nil) || (nOut > 0 && outputs == nil) {
+		return fail(errors.New("invalid input or output array"))
+	}
 	ex := &pb.Execute{GraphHash: C.GoBytes(unsafe.Pointer(&id.bytes[0]), 32)}
 	for _, h := range unsafe.Slice(inputs, int(nIn)) {
 		ex.Bindings = append(ex.Bindings, &pb.Binding{Value: &pb.Binding_Handle{Handle: handle(h)}})
@@ -373,5 +434,3 @@ func reflop_execute(s C.reflop_session, id C.reflop_graph_id, inputs *C.reflop_h
 }
 
 func main() {}
-
-var _ = lastErr

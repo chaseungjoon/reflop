@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	"github.com/chaseungjoon/reflop/pkg/sshhost"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
@@ -93,7 +95,7 @@ func advertised(flags, cfg []string) []string {
 }
 
 func inviteCmd() *cobra.Command {
-	var name, via, key, sshTarget string
+	var name, via, key, sshTarget, hostKeys string
 	var addresses []string
 	var expires time.Duration
 	var yes bool
@@ -109,7 +111,11 @@ fingerprint (the Guest pins it), and a one-time secret.
 
 SSH pipe mode adds the Guest's key to authorized_keys with
 restrict,command="reflopd serve --stdio …": SSH becomes a pipe that can only
-run that command. Get the key on the Guest machine with: reflop key --ssh`,
+run that command. Get the key on the Guest machine with: reflop key --ssh
+
+SSH invites also carry this machine's sshd host keys (/etc/ssh/ssh_host_*.pub)
+and the Guest's ssh trusts only those. If the Guest reaches sshd somewhere else
+(a container, a jump host's target), point --ssh-host-keys at that sshd's keys.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
@@ -130,7 +136,7 @@ run that command. Get the key on the Guest machine with: reflop key --ssh`,
 					time.Now().Add(expires).Format(time.RFC1123), code)
 				return nil
 			case "ssh":
-				return inviteSSH(cmd, l, name, key, sshTarget, yes)
+				return inviteSSH(cmd, l, name, key, sshTarget, hostKeys, yes)
 			default:
 				return exitWith(ExitUsage, fmt.Errorf("--via must be tls or ssh"))
 			}
@@ -142,12 +148,24 @@ run that command. Get the key on the Guest machine with: reflop key --ssh`,
 	cmd.Flags().StringVar(&via, "via", "tls", "transport: tls (daemon) or ssh (forced-command pipe)")
 	cmd.Flags().StringVar(&key, "key", "", "ssh: the Guest's public key (from `reflop key --ssh`)")
 	cmd.Flags().StringVar(&sshTarget, "ssh-target", "", "ssh: user@host[:port] the Guest should connect to")
+	cmd.Flags().StringVar(&hostKeys, "ssh-host-keys", "", "ssh: glob of the sshd public host keys to pin (default /etc/ssh/ssh_host_*_key.pub)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ssh: append to authorized_keys without asking")
 	return cmd
 }
 
-func inviteSSH(cmd *cobra.Command, l paths.Layout, name, key, target string, yes bool) error {
+func inviteSSH(cmd *cobra.Command, l paths.Layout, name, key, target, hostKeyGlob string, yes bool) error {
 	out := cmd.OutOrStdout()
+	hostKeys, err := sshhost.LocalHostKeys(hostKeyGlob)
+	if err != nil {
+		return exitWith(ExitUsage, fmt.Errorf("--ssh-host-keys: %w", err))
+	}
+	if len(hostKeys) == 0 {
+		if hostKeyGlob != "" {
+			return exitWith(ExitUsage, fmt.Errorf("no SSH host keys match %s", hostKeyGlob))
+		}
+		fmt.Fprintln(out, "warning: no sshd host keys found in /etc/ssh; the Guest's ssh will rely on its own known_hosts.\n"+
+			"  Pass --ssh-host-keys to pin the keys of the sshd the Guest connects to.")
+	}
 	pub, comment, err := sshpipe.ParseEd25519(key)
 	if err != nil {
 		return exitWith(ExitUsage, err)
@@ -165,7 +183,10 @@ func inviteSSH(cmd *cobra.Command, l paths.Layout, name, key, target string, yes
 		return err
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
-	line := sshpipe.AuthorizedKeysLine(exe, id.ID, key, l)
+	line, err := sshpipe.AuthorizedKeysLine(exe, id.ID, key, l)
+	if err != nil {
+		return err
+	}
 	ak, err := sshpipe.AuthorizedKeysPath()
 	if err != nil {
 		return err
@@ -196,7 +217,7 @@ func inviteSSH(cmd *cobra.Command, l paths.Layout, name, key, target string, yes
 	}
 	code, err := auth.EncodeInvite(&pb.InviteCode{Version: 1, Transport: pb.TransportKind_TRANSPORT_SSH,
 		Addresses: []string{target}, ServerKeyFingerprint: key2.Fingerprint[:], IdentityName: name, ReflopdPath: exe,
-		ExpiresUnix: time.Now().Add(365 * 24 * time.Hour).Unix()})
+		SshHostKeys: hostKeys, ExpiresUnix: time.Now().Add(365 * 24 * time.Hour).Unix()})
 	if err != nil {
 		return err
 	}
@@ -275,10 +296,50 @@ func revokeCmd() *cobra.Command {
 
 func settingsPath(l paths.Layout) string { return filepath.Join(l.State, "settings.json") }
 
+// parseQuotaBytes reads a quota size. "unlimited" (or "none") clears it; 0
+// is rejected, because 0 means unset and would allow everything (L5).
+func parseQuotaBytes(flag, v string) (config.Bytes, error) {
+	if isUnlimited(v) {
+		return 0, nil
+	}
+	b, err := config.ParseBytes(v)
+	if err != nil {
+		return 0, fmt.Errorf("--%s: %w", flag, err)
+	}
+	if b == 0 {
+		return 0, fmt.Errorf("--%s 0 would mean no limit; pass --%s unlimited to remove this quota", flag, flag)
+	}
+	return b, nil
+}
+
+func parseQuotaCount(flag, v string, max uint64) (uint64, error) {
+	if isUnlimited(v) {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("--%s: %q is not a number or \"unlimited\"", flag, v)
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("--%s 0 would mean no limit; pass --%s unlimited to remove this quota", flag, flag)
+	}
+	if n > max {
+		return 0, fmt.Errorf("--%s: at most %d", flag, max)
+	}
+	return n, nil
+}
+
+func isUnlimited(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "unlimited", "none":
+		return true
+	}
+	return false
+}
+
 func quotaCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "quota", Short: "Optional per-identity quotas (none are set by default)"}
-	var q config.Quota
-	var devMem, storage, bw string
+	var devMem, storage, bw, sessions, wallMS, flops string
 	set := &cobra.Command{
 		Use:   "set <name>",
 		Short: "Set quotas for an identity",
@@ -286,7 +347,10 @@ func quotaCmd() *cobra.Command {
 usage among themselves. Only the values you pass change.
 
   reflopd quota set alice --device-memory 6GiB --max-sessions 1
-  reflopd quota set alice --execute-wall-ms 60000 --storage 50GiB --upload-bandwidth 20MiB`,
+  reflopd quota set alice --execute-wall-ms 60000 --storage 50GiB --upload-bandwidth 20MiB
+  reflopd quota set alice --storage unlimited     remove one quota
+
+0 is not accepted: use "unlimited" to remove a quota.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			l, err := layout()
@@ -302,33 +366,47 @@ usage among themselves. Only the values you pass change.
 			}
 			cur := s.Quotas[args[0]]
 			f := cmd.Flags()
-			parse := func(flag, v string, dst *config.Bytes) error {
-				if !f.Changed(flag) {
-					return nil
+			for _, b := range []struct {
+				flag string
+				v    string
+				dst  *config.Bytes
+			}{{"device-memory", devMem, &cur.DeviceMemoryBytes}, {"storage", storage, &cur.StorageBytes},
+				{"upload-bandwidth", bw, &cur.UploadBytesPerSec}} {
+				if !f.Changed(b.flag) {
+					continue
 				}
-				b, err := config.ParseBytes(v)
-				*dst = b
-				return err
-			}
-			if err := parse("device-memory", devMem, &cur.DeviceMemoryBytes); err != nil {
-				return err
-			}
-			if err := parse("storage", storage, &cur.StorageBytes); err != nil {
-				return err
-			}
-			if err := parse("upload-bandwidth", bw, &cur.UploadBytesPerSec); err != nil {
-				return err
+				v, err := parseQuotaBytes(b.flag, b.v)
+				if err != nil {
+					return exitWith(ExitUsage, err)
+				}
+				*b.dst = v
 			}
 			if f.Changed("max-sessions") {
-				cur.MaxSessions = q.MaxSessions
+				n, err := parseQuotaCount("max-sessions", sessions, 1<<16)
+				if err != nil {
+					return exitWith(ExitUsage, err)
+				}
+				cur.MaxSessions = uint32(n)
 			}
 			if f.Changed("execute-wall-ms") {
-				cur.ExecuteWallMS = q.ExecuteWallMS
+				n, err := parseQuotaCount("execute-wall-ms", wallMS, 1<<40)
+				if err != nil {
+					return exitWith(ExitUsage, err)
+				}
+				cur.ExecuteWallMS = n
 			}
 			if f.Changed("execute-flops") {
-				cur.ExecuteFLOPs = q.ExecuteFLOPs
+				n, err := parseQuotaCount("execute-flops", flops, 1<<62)
+				if err != nil {
+					return exitWith(ExitUsage, err)
+				}
+				cur.ExecuteFLOPs = n
 			}
-			s.Quotas[args[0]] = cur
+			if cur.IsZero() {
+				delete(s.Quotas, args[0])
+			} else {
+				s.Quotas[args[0]] = cur
+			}
 			if err := config.SaveSettings(settingsPath(l), s); err != nil {
 				return err
 			}
@@ -337,12 +415,12 @@ usage among themselves. Only the values you pass change.
 			return nil
 		},
 	}
-	set.Flags().StringVar(&devMem, "device-memory", "", "max device memory per graph")
-	set.Flags().Uint32Var(&q.MaxSessions, "max-sessions", 0, "max concurrent sessions")
-	set.Flags().Uint64Var(&q.ExecuteWallMS, "execute-wall-ms", 0, "wall-clock limit per execute (kills the worker)")
-	set.Flags().Uint64Var(&q.ExecuteFLOPs, "execute-flops", 0, "estimated FLOPs per execute")
-	set.Flags().StringVar(&storage, "storage", "", "dataset storage")
-	set.Flags().StringVar(&bw, "upload-bandwidth", "", "dataset upload bandwidth per second")
+	set.Flags().StringVar(&devMem, "device-memory", "", "max device memory per graph (or unlimited)")
+	set.Flags().StringVar(&sessions, "max-sessions", "", "max concurrent sessions (or unlimited)")
+	set.Flags().StringVar(&wallMS, "execute-wall-ms", "", "wall-clock limit per execute, kills the worker (or unlimited)")
+	set.Flags().StringVar(&flops, "execute-flops", "", "estimated FLOPs per execute (or unlimited)")
+	set.Flags().StringVar(&storage, "storage", "", "dataset storage (or unlimited)")
+	set.Flags().StringVar(&bw, "upload-bandwidth", "", "dataset upload bandwidth per second (or unlimited)")
 	clear := &cobra.Command{
 		Use:   "clear <name>",
 		Short: "Remove all quotas for an identity",
@@ -446,13 +524,17 @@ func railsCmd() *cobra.Command {
 	var pct uint32
 	var disk, ram string
 	var pids uint32
+	var force bool
 	set := &cobra.Command{
 		Use:   "set",
 		Short: "Change a safety rail",
-		Long: `Change safety rails. Defaults: disk max(10%, 20GiB), host RAM 4GiB.
+		Long: `Change safety rails. Defaults: disk max(10%, 20GiB), host RAM 4GiB, 4096 pids.
 
   reflopd rails set --disk-percent 15 --disk 50GiB
-  reflopd rails set --ram 8GiB`,
+  reflopd rails set --ram 8GiB
+
+The rails cannot be turned off: the minimums are 1% and 1GiB of disk, 512MiB
+of RAM and 64 pids. Going below the defaults needs --force.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			l, err := layout()
@@ -491,7 +573,10 @@ func railsCmd() *cobra.Command {
 			c := config.Defaults()
 			c.Rails = r
 			if err := c.Validate(); err != nil {
-				return err
+				return exitWith(ExitUsage, err)
+			}
+			if low := r.BelowDefaults(); len(low) > 0 && !force {
+				return exitWith(ExitUsage, fmt.Errorf("below the defaults (%s); pass --force to confirm", strings.Join(low, ", ")))
 			}
 			s.Rails = &r
 			if err := config.SaveSettings(settingsPath(l), s); err != nil {
@@ -506,6 +591,7 @@ func railsCmd() *cobra.Command {
 	set.Flags().StringVar(&disk, "disk", "20GiB", "keep at least this much disk free")
 	set.Flags().StringVar(&ram, "ram", "4GiB", "keep at least this much host RAM available")
 	set.Flags().Uint32Var(&pids, "pids", 4096, "max processes/threads per worker")
+	set.Flags().BoolVar(&force, "force", false, "allow values below the defaults (never below the minimums)")
 	cmd.AddCommand(show, set)
 	return cmd
 }

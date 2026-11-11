@@ -17,7 +17,7 @@ import threading
 from concurrent.futures import Future
 
 from ._pb import compute_pb2 as cpb
-from .errors import OutOfMemoryError, ReflopRemoteError, SessionLostError, sanitize
+from .errors import OutOfMemoryError, ReflopError, ReflopRemoteError, SessionLostError, sanitize
 
 
 def _err(e: cpb.Error) -> ReflopRemoteError:
@@ -29,12 +29,74 @@ def _err(e: cpb.Error) -> ReflopRemoteError:
     return r
 
 
+class _StreamCheck:
+    """Bounds one streamed response (SEC_SWEEP M3).
+
+    A server must not be able to grow the Guest process without limit: the
+    total is capped at max_response_bytes, and fetch chunks must match the
+    size their metadata declares (numel x itemsize), arrive in order, and
+    name only the tensors that were requested.
+    """
+
+    def __init__(self, n_tensors: int, max_bytes: int) -> None:
+        self.n = n_tensors
+        self.max = max_bytes
+        self.total = 0
+        self.expect: dict[int, int] = {}
+        self.got: dict[int, int] = {}
+
+    @staticmethod
+    def _nbytes(meta) -> int:
+        from .trace import PB_TO_DTYPE
+
+        dt = PB_TO_DTYPE.get(meta.dtype)
+        if dt is None:
+            raise ReflopError("the server sent a tensor with an unknown dtype")
+        n = 1
+        for d in meta.shape:
+            if d < 0:
+                raise ReflopError("the server sent a tensor with a negative dimension")
+            n *= d
+        return n * dt.itemsize
+
+    def add(self, env: cpb.Envelope) -> None:
+        if env.WhichOneof("body") != "fetch_chunk":
+            raise ReflopError("unexpected message in a fetch response")
+        c = env.fetch_chunk
+        if not c.HasField("meta") and c.index not in self.expect and not c.data and env.end and self.n == 0:
+            return  # the empty end marker of a fetch with nothing to send
+        if c.index >= self.n:
+            raise ReflopError("the server sent data for a tensor that was not requested")
+        if c.HasField("meta"):
+            if c.index in self.expect:
+                raise ReflopError("the server sent a tensor's metadata twice")
+            self.expect[c.index] = self._nbytes(c.meta)
+            self.got[c.index] = 0
+            if sum(self.expect.values()) > self.max:
+                raise ReflopError(f"the server's response exceeds {self.max} bytes")
+        elif c.index not in self.expect:
+            raise ReflopError("the server sent tensor data before its metadata")
+        if c.offset != self.got[c.index]:
+            raise ReflopError("the server sent tensor data out of order")
+        self.got[c.index] += len(c.data)
+        self.total += len(c.data)
+        if self.got[c.index] > self.expect[c.index]:
+            raise ReflopError("the server sent more data than the tensor's metadata declares")
+        if self.total > self.max:
+            raise ReflopError(f"the server's response exceeds {self.max} bytes")
+
+    def complete(self) -> None:
+        for i in range(self.n):
+            if i not in self.expect or self.got[i] != self.expect[i]:
+                raise ReflopError("the server's fetch response ended before every tensor arrived")
+
+
 class Connection:
     """Base class; subclasses implement _send(Envelope)."""
 
     def __init__(self, chunk_bytes: int = 4 << 20, max_response_bytes: int = 1 << 34) -> None:
         self._ids = itertools.count(1)
-        self._pending: dict[int, tuple[Future, list | None]] = {}
+        self._pending: dict[int, tuple[Future, list | None, _StreamCheck | None]] = {}
         self._lock = threading.Lock()
         self.chunk_bytes = chunk_bytes
         self.max_response_bytes = max_response_bytes
@@ -63,7 +125,7 @@ class Connection:
             entry = self._pending.get(env.request_id)
         if entry is None:
             return  # unknown or late response: ignore (never act on it)
-        fut, frames = entry
+        fut, frames, check = entry
         if env.WhichOneof("body") == "error":
             with self._lock:
                 self._pending.pop(env.request_id, None)
@@ -71,6 +133,18 @@ class Connection:
                 fut.set_exception(_err(env.error))
             return
         if frames is not None:
+            try:
+                if check is not None:
+                    check.add(env)
+                    if env.end:
+                        check.complete()
+            except ReflopError as e:
+                with self._lock:
+                    self._pending.pop(env.request_id, None)
+                frames.clear()
+                if not fut.done():
+                    fut.set_exception(e)
+                return
             frames.append(env)
             if not env.end:
                 return
@@ -82,7 +156,7 @@ class Connection:
     def _fail_all(self, exc: BaseException) -> None:
         with self._lock:
             pending, self._pending = self._pending, {}
-        for fut, _ in pending.values():
+        for fut, _, _ in pending.values():
             if not fut.done():
                 fut.set_exception(exc)
 
@@ -94,8 +168,12 @@ class Connection:
         rid = next(self._ids)
         env.request_id = rid
         fut: Future = Future()
+        check = None
+        if stream:
+            n = len(env.fetch.handles) if env.WhichOneof("body") == "fetch" else 0
+            check = _StreamCheck(n, self.max_response_bytes)
         with self._lock:
-            self._pending[rid] = (fut, [] if stream else None)
+            self._pending[rid] = (fut, [] if stream else None, check)
         try:
             self._send(env)
         except Exception as e:  # noqa: BLE001
@@ -117,7 +195,7 @@ class Connection:
         rid = next(self._ids)
         fut: Future = Future()
         with self._lock:
-            self._pending[rid] = (fut, None)
+            self._pending[rid] = (fut, None, None)
         sha = hashlib.sha256(data).digest()
         n = len(data)
         step = self.chunk_bytes

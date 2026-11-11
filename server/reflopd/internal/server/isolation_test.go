@@ -85,9 +85,9 @@ func runProbe(t *testing.T, rt runtime.Installed, wd string, l paths.Layout, pro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	w, err := supervisor.SpawnWithFilter(ctx, spec, func(pid int) []byte {
-		f, _ := sandbox.Policy{SelfPID: pid}.Filter()
-		return sandbox.Encode(f)
+	w, err := supervisor.SpawnWithFilter(ctx, spec, func(pid int) ([]byte, error) {
+		f, err := sandbox.Policy{SelfPID: pid}.Filter()
+		return sandbox.Encode(f), err
 	})
 	if err != nil {
 		t.Fatalf("spawn: %v", err)

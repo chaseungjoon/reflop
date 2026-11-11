@@ -4,7 +4,10 @@ package wire
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"io"
+	"runtime"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -68,4 +71,41 @@ func FuzzUnmarshalEnvelope(f *testing.F) {
 			_ = CheckEnums(env.ProtoReflect())
 		}
 	})
+}
+
+// SEC_SWEEP M1: a declared frame length is not allocated up front, so a
+// peer that sends only a header costs almost nothing.
+func TestLargeDeclaredFrameNotPreallocated(t *testing.T) {
+	var hdr [4]byte
+	binary.BigEndian.PutUint32(hdr[:], 512<<20)
+	r := NewReader(io.MultiReader(bytes.NewReader(hdr[:]), bytes.NewReader([]byte("short"))), 1<<30)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := r.ReadFrame()
+	runtime.ReadMemStats(&after)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("got %v, want ErrUnexpectedEOF", err)
+	}
+	if d := after.TotalAlloc - before.TotalAlloc; d > 8<<20 {
+		t.Fatalf("allocated %d bytes for a 5-byte body of a 512 MiB frame", d)
+	}
+	// Frames still round-trip across the eager-allocation threshold.
+	for _, n := range []int{0, 1, eagerAlloc, eagerAlloc + 1, 3*eagerAlloc + 7} {
+		var b bytes.Buffer
+		w := NewWriter(&b, 1<<30)
+		payload := bytes.Repeat([]byte{0xab}, n)
+		if err := w.WriteFrame(payload); err != nil {
+			t.Fatal(err)
+		}
+		got, err := NewReader(&b, 1<<30).ReadFrame()
+		if err != nil || !bytes.Equal(got, payload) {
+			t.Fatalf("n=%d: %v", n, err)
+		}
+	}
+	r2 := NewReader(bytes.NewReader([]byte{0, 0, 1, 0}), 1<<20)
+	r2.SetMax(16)
+	if _, err := r2.ReadFrame(); !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("SetMax not applied: %v", err)
+	}
 }

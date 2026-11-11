@@ -6,7 +6,7 @@ PKG     := github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo
 LDFLAGS := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(DATE)
 PYTHON  ?= $(CURDIR)/.venv/bin/python
 
-.PHONY: all build build-probes clib wheel test test-go test-python test-isolation lint codegen codegen-check fmt clean
+.PHONY: all build build-probes clib wheel test test-go test-python test-isolation lint codegen codegen-check fmt clean sign-release
 
 all: build
 
@@ -57,6 +57,10 @@ codegen-check:
 fmt:
 	gofmt -w server pkg clib
 	$(PYTHON) -m ruff check --fix client/python server/worker tests codegen spikes
+
+## sign-release: sign and publish the draft release TAG with the offline key (scripts/sign-release.sh)
+sign-release:
+	scripts/sign-release.sh $${TAG:?set TAG=vX.Y.Z}
 
 clean:
 	rm -rf bin dist clib/build

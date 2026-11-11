@@ -2,6 +2,7 @@
 # libreflop: the reFLOP C/C++ API.
 #   make            build build/libreflop.so and the examples
 #   make check      run the examples against your default paired server
+#   make test       API tests that need no server
 ROOT := ..
 BUILD := build
 CFLAGS ?= -O2 -Wall -Wextra -Iinclude
@@ -18,7 +19,7 @@ LDFLAGS += -L$(BUILD) $(RPATH) -lreflop -lm
 
 all: $(BUILD)/libreflop.so $(BUILD)/matmul $(BUILD)/mlp_forward
 
-$(BUILD)/libreflop.so: $(wildcard go/*.go) include/reflop.h
+$(BUILD)/libreflop.so: $(wildcard go/*.go go/*.c) include/reflop.h
 	@mkdir -p $(BUILD)
 	cd $(ROOT) && CGO_ENABLED=1 go build -trimpath $(GOLDFLAGS) -buildmode=c-shared -o clib/$(BUILD)/libreflop.so ./clib/go
 	rm -f $(BUILD)/libreflop.h  # the public header is include/reflop.h
@@ -29,6 +30,12 @@ $(BUILD)/matmul: examples/matmul.c $(BUILD)/libreflop.so
 $(BUILD)/mlp_forward: examples/mlp_forward.cpp include/reflop.hpp $(BUILD)/libreflop.so
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
+$(BUILD)/test_lasterror: tests/lasterror.c $(BUILD)/libreflop.so
+	$(CC) $(CFLAGS) -pthread -o $@ $< $(LDFLAGS) -lpthread
+
+test: $(BUILD)/test_lasterror
+	$(BUILD)/test_lasterror
+
 check: all
 	$(BUILD)/matmul
 	$(BUILD)/mlp_forward
@@ -36,4 +43,4 @@ check: all
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all check clean
+.PHONY: all check test clean

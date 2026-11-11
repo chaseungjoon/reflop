@@ -30,6 +30,10 @@ release's SHA-256 checksums, and atomically replace this binary. Then run
   reflopd update --check          only report whether an update is available
   reflopd update --version v0.2.0 install a specific release (also downgrades)
 
+Every release is checked against an offline signature on its checksums.txt
+before anything from it runs. Releases before 0.1.6 are unsigned and are
+refused.
+
 The installer puts reflopd in ~/.local/bin, so no sudo is needed. If reflopd
 lives in a directory you cannot write to (e.g. /usr/local/bin), run
 ` + "`sudo reflopd update`" + `, or reinstall into ~/.local/bin and remove the old copy.`,
@@ -38,7 +42,10 @@ lives in a directory you cannot write to (e.g. /usr/local/bin), run
 			out, errw := cmd.OutOrStdout(), cmd.ErrOrStderr()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
-			u := selfupdate.New()
+			u, err := selfupdate.New()
+			if err != nil {
+				return err
+			}
 			exe, err := selfupdate.Executable()
 			if err != nil {
 				return fmt.Errorf("cannot locate the reflopd binary: %w", err)

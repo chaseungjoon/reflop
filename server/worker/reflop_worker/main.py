@@ -85,11 +85,16 @@ def main() -> None:
     rep = wpb.SandboxReport(no_new_privs=sandbox.no_new_privs())
     ll, _ = sandbox.landlock_status()
     rep.landlock = ll
+    if init.require_seccomp and not init.seccomp_filter:
+        # Fail closed (SEC_SWEEP M2): required but missing is never "skip".
+        fatal("seccomp is required but reflopd sent no filter")
     if init.seccomp_filter:
         try:
             sandbox.install_seccomp(init.seccomp_filter)
             rep.seccomp = sandbox.seccomp_mode() == 2
-        except OSError as e:
+            if init.require_seccomp and not rep.seccomp:
+                fatal("seccomp is required but the filter is not active")
+        except (OSError, ValueError) as e:
             if init.require_seccomp:
                 fatal(f"seccomp could not be applied: {e}")
             rep.note = f"seccomp unavailable: {e}"

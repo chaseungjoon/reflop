@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -26,14 +27,25 @@ var ErrUnknownField = errors.New("message contains unknown fields")
 // Reader reads frames.
 type Reader struct {
 	r   *bufio.Reader
-	max uint32
+	max atomic.Uint32
 	hdr [4]byte
 }
 
 // NewReader returns a frame reader that rejects frames larger than max bytes.
 func NewReader(r io.Reader, max uint32) *Reader {
-	return &Reader{r: bufio.NewReaderSize(r, 64<<10), max: max}
+	fr := &Reader{r: bufio.NewReaderSize(r, 64<<10)}
+	fr.max.Store(max)
+	return fr
 }
+
+// SetMax changes the frame limit for the frames that follow (reflopd raises
+// it from the small pre-authentication limit once a peer has authenticated).
+func (r *Reader) SetMax(max uint32) { r.max.Store(max) }
+
+// eagerAlloc is the largest buffer allocated up front from a declared frame
+// length. Longer frames grow as their bytes arrive, so a peer that only
+// declares a large frame costs nothing (SEC_SWEEP M1).
+const eagerAlloc = 1 << 20
 
 // ReadFrame returns the next frame payload.
 func (r *Reader) ReadFrame() ([]byte, error) {
@@ -41,15 +53,51 @@ func (r *Reader) ReadFrame() ([]byte, error) {
 		return nil, err
 	}
 	n := binary.BigEndian.Uint32(r.hdr[:])
-	if n > r.max {
-		return nil, fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, n, r.max)
+	if max := r.max.Load(); n > max {
+		return nil, fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, n, max)
 	}
-	buf := make([]byte, n)
-	if _, err := io.ReadFull(r.r, buf); err != nil {
+	var buf []byte
+	var err error
+	if n <= eagerAlloc {
+		buf = make([]byte, n)
+		_, err = io.ReadFull(r.r, buf)
+	} else {
+		buf, err = readGrowing(r.r, int(n))
+	}
+	if err != nil {
 		if errors.Is(err, io.EOF) {
 			err = io.ErrUnexpectedEOF
 		}
 		return nil, err
+	}
+	return buf, nil
+}
+
+// readGrowing reads exactly n bytes, doubling the buffer only as data
+// arrives.
+func readGrowing(r io.Reader, n int) ([]byte, error) {
+	buf := make([]byte, 0, eagerAlloc)
+	for len(buf) < n {
+		if len(buf) == cap(buf) {
+			c := 2 * cap(buf)
+			if c > n {
+				c = n
+			}
+			nb := make([]byte, len(buf), c)
+			copy(nb, buf)
+			buf = nb
+		}
+		m, err := r.Read(buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+m]
+		if err != nil {
+			if len(buf) == n {
+				break
+			}
+			if errors.Is(err, io.EOF) {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return nil, err
+		}
 	}
 	return buf, nil
 }

@@ -65,4 +65,8 @@ message InviteCode {
   int64 expires_unix = 7;
   string identity_name = 8;
   string reflopd_path = 9;           // SSH only: informational
+  // SSH only: the server's sshd host keys as "type base64" lines. The client
+  // pins them in its own known_hosts file, so ssh never trusts a host key it
+  // learned elsewhere (SEC_SWEEP L6).
+  repeated string ssh_host_keys = 10;
 }

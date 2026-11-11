@@ -1,6 +1,10 @@
 name: Release
 
 # Runs only when a v* tag is pushed. Nothing is released otherwise.
+# The release is created as a DRAFT. It is published by
+# scripts/sign-release.sh, which signs checksums.txt with the offline release
+# key (never stored on GitHub) and uploads checksums.txt.sig. Installers and
+# updaters refuse releases without a valid signature.
 on:
   push:
     tags: ["v*.*.*"]
@@ -44,6 +48,7 @@ jobs:
           mkdir verify && cd verify
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY"
           sha256sum --check checksums.txt
+          test ! -e checksums.txt.sig || { echo "a signature exists before the offline signing step"; exit 1; }
           tar -xzf reflopd_${TAG#v}_linux_amd64.tar.gz
           ./reflopd version | tee /dev/stderr | grep -q "${TAG#v}"
           ls reflop-${TAG#v}-py3-none-any.whl

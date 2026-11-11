@@ -26,7 +26,7 @@ const DefaultPort = 7460
 // Bytes is a byte count that accepts "20GiB"-style strings in TOML/JSON.
 type Bytes uint64
 
-var bytesRe = regexp.MustCompile(`^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]i?B?|B)?\s*$`)
+var bytesRe = regexp.MustCompile(`^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]I?B?|B)?\s*$`) // matched upper-cased
 
 // ParseBytes parses "4GiB", "512 MiB", "1000000", "2TB".
 func ParseBytes(s string) (Bytes, error) {
@@ -111,7 +111,9 @@ type Limits struct {
 	MaxConnections       uint32 `toml:"max_connections" json:"max_connections"`
 }
 
-// Quota is an optional per-identity fairness limit. Zero means unset.
+// Quota is an optional per-identity fairness limit. Zero means unset, so
+// an explicit 0 is rejected wherever a value is given (SEC_SWEEP L5): 0
+// would read as "nothing allowed" but act as "no limit".
 type Quota struct {
 	DeviceMemoryBytes Bytes  `toml:"device_memory" json:"device_memory,omitempty"`
 	MaxSessions       uint32 `toml:"max_sessions" json:"max_sessions,omitempty"`
@@ -166,6 +168,16 @@ type Config struct {
 	} `toml:"yield"`
 	Quotas map[string]Quota `toml:"quotas"`
 }
+
+// Rail minimums: no configuration can go below these, so the rails are
+// never off (SEC_SWEEP L5). Going below DefaultRails needs
+// `reflopd rails set --force`.
+const (
+	MinDiskFreeFloorPercent = 1
+	MinDiskFreeFloorBytes   = 1 << 30
+	MinHostRAMFloorBytes    = 512 << 20
+	MinMaxPIDs              = 64
+)
 
 // DefaultRails are the user-confirmed defaults: keep max(10%, 20 GiB) of
 // the store filesystem free and 4 GiB of host RAM free.
@@ -231,6 +243,9 @@ func Load(configFile, settingsFile string) (Config, error) {
 		if und := md.Undecoded(); len(und) > 0 {
 			return c, fmt.Errorf("%s: unknown keys: %v", configFile, und)
 		}
+		if err := checkQuotaZeros(md, c.Quotas); err != nil {
+			return c, fmt.Errorf("%s: %w", configFile, err)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return c, err
 	}
@@ -253,24 +268,99 @@ func Load(configFile, settingsFile string) (Config, error) {
 	return c, c.Validate()
 }
 
-// Validate rejects nonsensical values.
-func (c Config) Validate() error {
-	if c.Rails.DiskFreeFloorPercent > 90 {
-		return errors.New("rails.disk_free_floor_percent must be ≤ 90")
-	}
-	if c.Limits.MaxFrameBytes < 1<<20 || c.Limits.MaxFrameBytes > 1<<30 {
-		return errors.New("limits.max_frame_bytes must be between 1 MiB and 1 GiB")
-	}
-	if c.Limits.UploadChunkBytes == 0 || c.Limits.UploadChunkBytes > c.Limits.MaxFrameBytes/2 {
-		return errors.New("limits.upload_chunk_bytes must be positive and at most half of max_frame_bytes")
-	}
-	if c.Limits.MaxDims == 0 || c.Limits.MaxDims > 64 {
-		return errors.New("limits.max_dims must be 1..64")
-	}
-	if c.Rails.MaxPIDs < 64 {
-		return errors.New("rails.max_pids must be ≥ 64")
+// quotaFields are the TOML keys of Quota.
+var quotaFields = []string{"device_memory", "max_sessions", "execute_wall_ms", "execute_flops", "storage", "upload_bandwidth"}
+
+// checkQuotaZeros rejects quota keys written as 0: 0 means unset, so
+// `device_memory = 0` would silently allow everything (SEC_SWEEP L5).
+func checkQuotaZeros(md toml.MetaData, qs map[string]Quota) error {
+	for name, q := range qs {
+		vals := map[string]uint64{"device_memory": uint64(q.DeviceMemoryBytes), "max_sessions": uint64(q.MaxSessions),
+			"execute_wall_ms": q.ExecuteWallMS, "execute_flops": q.ExecuteFLOPs, "storage": uint64(q.StorageBytes),
+			"upload_bandwidth": uint64(q.UploadBytesPerSec)}
+		for _, f := range quotaFields {
+			if md.IsDefined("quotas", name, f) && vals[f] == 0 {
+				return fmt.Errorf("quotas.%s.%s = 0 would mean no limit; remove the line for no limit", name, f)
+			}
+		}
 	}
 	return nil
+}
+
+// Validate rejects nonsensical values. Every rail and limit has a range,
+// and none can be 0, so no setting silently turns a protection off
+// (SEC_SWEEP L5).
+func (c Config) Validate() error {
+	r := c.Rails
+	if r.DiskFreeFloorPercent < MinDiskFreeFloorPercent || r.DiskFreeFloorPercent > 90 {
+		return fmt.Errorf("rails.disk_free_floor_percent must be %d..90", MinDiskFreeFloorPercent)
+	}
+	if r.DiskFreeFloorBytes < MinDiskFreeFloorBytes {
+		return fmt.Errorf("rails.disk_free_floor_bytes must be at least %s", Bytes(MinDiskFreeFloorBytes))
+	}
+	if r.HostRAMFloorBytes < MinHostRAMFloorBytes {
+		return fmt.Errorf("rails.host_ram_floor_bytes must be at least %s", Bytes(MinHostRAMFloorBytes))
+	}
+	if r.MaxPIDs < MinMaxPIDs || r.MaxPIDs > 1<<22 {
+		return fmt.Errorf("rails.max_pids must be %d..%d", MinMaxPIDs, 1<<22)
+	}
+	l := c.Limits
+	if l.MaxFrameBytes < 1<<20 || l.MaxFrameBytes > 1<<30 {
+		return errors.New("limits.max_frame_bytes must be between 1 MiB and 1 GiB")
+	}
+	half := uint64(l.MaxFrameBytes / 2)
+	for _, x := range []struct {
+		name     string
+		v        uint64
+		min, max uint64
+	}{
+		{"upload_chunk_bytes", uint64(l.UploadChunkBytes), 4 << 10, half},
+		{"max_inline_tensor_bytes", uint64(l.MaxInlineTensorBytes), 1, half},
+		{"max_constant_bytes", uint64(l.MaxConstantBytes), 1, half},
+		{"max_manifest_bytes", uint64(l.MaxManifestBytes), 4 << 10, half},
+		{"max_fetch_bytes", uint64(l.MaxFetchBytes), 1 << 20, 1 << 40},
+		{"max_nodes", uint64(l.MaxNodes), 1, 100_000_000},
+		{"max_graph_inputs", uint64(l.MaxGraphInputs), 1, 1 << 20},
+		{"max_dims", uint64(l.MaxDims), 1, 64},
+		{"max_tensor_numel", l.MaxTensorNumel, 1, 1 << 48},
+		{"max_list_length", uint64(l.MaxListLength), 1, 1 << 24},
+		{"max_graphs_per_session", uint64(l.MaxGraphsPerSession), 1, 1 << 24},
+		{"max_handles_per_session", uint64(l.MaxHandlesPerSession), 1, 1 << 26},
+		{"max_connections", uint64(l.MaxConnections), 1, 65_536},
+	} {
+		if x.v < x.min || x.v > x.max {
+			return fmt.Errorf("limits.%s must be %d..%d (got %d)", x.name, x.min, x.max, x.v)
+		}
+	}
+	if c.Audit.RetentionDays < 1 || c.Audit.RetentionDays > 3650 {
+		return errors.New("audit.retention_days must be 1..3650")
+	}
+	for name, q := range c.Quotas {
+		if q.MaxSessions > 1<<16 {
+			return fmt.Errorf("quotas.%s.max_sessions is too large", name)
+		}
+	}
+	return nil
+}
+
+// BelowDefaults lists the rails set below DefaultRails (allowed, but
+// `reflopd rails set` asks for --force).
+func (r Rails) BelowDefaults() []string {
+	d := DefaultRails()
+	var out []string
+	if r.DiskFreeFloorPercent < d.DiskFreeFloorPercent {
+		out = append(out, fmt.Sprintf("disk percent %d%% < default %d%%", r.DiskFreeFloorPercent, d.DiskFreeFloorPercent))
+	}
+	if r.DiskFreeFloorBytes < d.DiskFreeFloorBytes {
+		out = append(out, fmt.Sprintf("disk floor %s < default %s", r.DiskFreeFloorBytes, d.DiskFreeFloorBytes))
+	}
+	if r.HostRAMFloorBytes < d.HostRAMFloorBytes {
+		out = append(out, fmt.Sprintf("RAM floor %s < default %s", r.HostRAMFloorBytes, d.HostRAMFloorBytes))
+	}
+	if r.MaxPIDs < d.MaxPIDs {
+		out = append(out, fmt.Sprintf("max pids %d < default %d", r.MaxPIDs, d.MaxPIDs))
+	}
+	return out
 }
 
 // LoadSettings reads settings.json (missing file = empty settings).
