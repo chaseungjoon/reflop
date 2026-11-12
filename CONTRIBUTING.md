@@ -37,6 +37,20 @@ REFLOP_TEST_HOME=/tmp/rf make test-isolation
 - Commit messages, comments and docs are in English. Code is Apache-2.0; do not
   vendor GPL or AGPL code.
 
+## Branches
+
+Branch from `main` and name the branch after the kind of change:
+
+| Change | Branch |
+|---|---|
+| a security issue or hardening | `security/<branch-name>` |
+| a bug fix | `hotfix/<branch-name>` |
+| an enhancement or new feature | `enhance/<branch-name>` |
+
+Use a short kebab-case name, e.g. `hotfix/uv-lock-update`, and open a pull
+request into `main`. Do not report an exploitable vulnerability in a public
+issue or pull request; follow [SECURITY.md](SECURITY.md) first.
+
 ## Layout
 
 | Path | What |
