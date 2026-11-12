@@ -472,3 +472,28 @@ would start probes).
 other devices and has to reconnect to see the GPU later. Probe workers and
 self-test workers no longer stream their stderr to the log; a worker that
 fails carries its last lines in the error.
+
+## ADR-024: Deleting a revoked identity
+
+**Context.** `reflopd revoke` keeps the identity in `identities.json`, marked
+revoked and without keys, so its name cannot be invited again. Owners had no
+way to remove revoked Guests from `reflopd users`, and their datasets and
+snapshots stayed on disk where nobody could reach them.
+
+**Decision.** `reflopd users delete <name>` deletes a revoked identity. It
+removes the identity and its invites from the store, its directories under
+`store/` and `snapshots/` (paths built from the identity's 32-hex id, which is
+checked first), its quotas in `settings.json`, and any SSH forced-command
+lines that still name it. The name can then be invited again. An active
+identity is refused, in the CLI and in `auth.Store.Delete`, with a message to
+revoke it first. The audit log is not changed.
+
+**Alternatives.** Let `revoke --delete` do both steps at once (one typo
+deletes an active Guest's data); keep the identity but hide revoked ones in
+`reflopd users` (the data and the name stay taken); also strip the identity
+from the audit log (the audit log is append-only).
+
+**Consequences.** A new Guest invited under a deleted name gets a new
+identity id and none of the old data, but shares the old name's history in
+`reflopd audit --name` and `reflopd usage`. Quotas set for the name in
+`reflopd.toml` are not edited; the command prints a note if one remains.
