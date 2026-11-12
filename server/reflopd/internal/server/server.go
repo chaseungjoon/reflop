@@ -55,7 +55,6 @@ type Options struct {
 	Log                 *log.Logger
 	Listen              []string // overrides config
 	SkipProbe           bool     // tests: do not spawn probe workers
-	QuietWorkers        bool     // self-test: worker stderr goes only into the error of a worker that fails
 }
 
 // Server is the reflopd daemon.
@@ -74,8 +73,17 @@ type Server struct {
 	gpuInfo   gpu.Info
 	cg        *cgroup.Manager
 	userNS    bool
-	slots     []*DeviceSlot
+	slots     atomic.Pointer[[]*DeviceSlot] // probed slots only; replaced, never modified
 	logger    *log.Logger
+
+	// GPUs whose startup probe failed because their memory was full. They
+	// are not served (an unprobed slot has no operator table to filter)
+	// until retryPending probes them.
+	pendingMu sync.Mutex
+	allSlots  []*DeviceSlot // every slot, in order
+	pending   map[*DeviceSlot]bool
+	probing   atomic.Bool
+	lastRetry time.Time
 
 	mu           sync.Mutex
 	sessions     map[string]*Session
@@ -143,11 +151,11 @@ func (s *Server) cfg() config.Config {
 
 func (s *Server) logf(format string, args ...any) { s.logger.Printf(format, args...) }
 
-// workerLog is where workers' stderr lines go. A worker that fails to start
-// carries the last lines in its error, so the self-test does not also print
-// them as they arrive.
-func (s *Server) workerLog() func(string, ...any) {
-	if s.opts.QuietWorkers {
+// workerLog is where a worker's stderr lines go. Probe and self-test
+// workers are quiet: one that fails to start carries its last lines in its
+// error, and a GPU that is full would otherwise log them at every retry.
+func (s *Server) workerLog(sess *Session) func(string, ...any) {
+	if sess.quiet {
 		return nil
 	}
 	return s.logf
@@ -229,21 +237,109 @@ func (s *Server) Prepare(ctx context.Context) error {
 	if s.cfg().Sandbox.TryUserNamespaces {
 		s.userNS = supervisor.UserNSAvailable()
 	}
-	s.buildSlots(choice.Variant)
+	all := s.buildSlots(choice.Variant)
+	s.allSlots = all
 	if s.opts.SkipProbe {
+		s.slots.Store(&all)
 		return nil
 	}
-	for _, slot := range s.slots {
+	s.pending = map[*DeviceSlot]bool{}
+	s.lastRetry = time.Now()
+	for _, slot := range all {
 		if err := s.probe(ctx, slot); err != nil {
+			if gpuFull(slot, err) {
+				// The Owner's own programs hold the GPU. Serve the other
+				// devices now and this one once a probe succeeds.
+				s.logf("device %s: %s. Not serving it until its memory is free (checked every %s)",
+					slot.Name, gpuFullNote(slot, gpu.MemoryUse), probeRetryInterval)
+				s.pending[slot] = true
+				continue
+			}
 			return fmt.Errorf("probe %s: %w", slot.Name, err)
 		}
+	}
+	s.publishSlots()
+	return nil
+}
+
+// probeRetryInterval is how often a GPU that was full at startup is probed again.
+const probeRetryInterval = 30 * time.Second
+
+// devices returns the slots being served.
+func (s *Server) devices() []*DeviceSlot {
+	if p := s.slots.Load(); p != nil {
+		return *p
 	}
 	return nil
 }
 
-func (s *Server) buildSlots(variant string) {
+// publishSlots makes every slot that is not pending visible, in order. A
+// slot's fields are complete before it is published and never change after.
+func (s *Server) publishSlots() {
+	var ready []*DeviceSlot
+	for _, sl := range s.allSlots {
+		if !s.pending[sl] {
+			ready = append(ready, sl)
+		}
+	}
+	s.slots.Store(&ready)
+}
+
+// pendingDevices names the GPUs waiting for memory.
+func (s *Server) pendingDevices() []string {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	var out []string
+	for _, sl := range s.allSlots {
+		if s.pending[sl] {
+			out = append(out, sl.Name)
+		}
+	}
+	return out
+}
+
+// retryPending probes the GPUs that were full at startup, at most once per
+// probeRetryInterval and one at a time, and serves those that now work. It
+// runs from the monitor, never because of a Guest request.
+func (s *Server) retryPending(ctx context.Context) {
+	s.pendingMu.Lock()
+	due := len(s.pending) > 0 && time.Since(s.lastRetry) >= probeRetryInterval
+	if due {
+		s.lastRetry = time.Now()
+	}
+	s.pendingMu.Unlock()
+	if !due || !s.probing.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer s.probing.Store(false)
+		s.pendingMu.Lock()
+		var todo []*DeviceSlot
+		for _, sl := range s.allSlots {
+			if s.pending[sl] {
+				todo = append(todo, sl)
+			}
+		}
+		s.pendingMu.Unlock()
+		for _, sl := range todo {
+			if err := s.probe(ctx, sl); err != nil {
+				if !gpuFull(sl, err) {
+					s.logf("device %s: probe failed: %v; not serving it", sl.Name, firstLine(err.Error()))
+				}
+				continue
+			}
+			s.pendingMu.Lock()
+			delete(s.pending, sl)
+			s.publishSlots()
+			s.pendingMu.Unlock()
+			s.logf("device %s: GPU memory is free again; serving it", sl.Name)
+		}
+	}()
+}
+
+func (s *Server) buildSlots(variant string) []*DeviceSlot {
 	cfg := s.cfg()
-	s.slots = nil
+	var slots []*DeviceSlot
 	if variant != "cpu" {
 		want := map[int]bool{}
 		for _, i := range cfg.Devices.CUDA {
@@ -255,7 +351,7 @@ func (s *Server) buildSlots(variant string) {
 			if len(want) > 0 && !want[g.Index] {
 				continue
 			}
-			s.slots = append(s.slots, &DeviceSlot{
+			slots = append(slots, &DeviceSlot{
 				PB:    &pb.Device{Kind: pb.DeviceKind_DEVICE_CUDA, Index: uint32(idx)},
 				Name:  fmt.Sprintf("cuda:%d (%s)", idx, g.Name),
 				GPU:   &g,
@@ -264,13 +360,15 @@ func (s *Server) buildSlots(variant string) {
 			idx++
 		}
 	}
-	if cfg.Devices.CPU || len(s.slots) == 0 {
-		s.slots = append(s.slots, &DeviceSlot{PB: &pb.Device{Kind: pb.DeviceKind_DEVICE_CPU}, Name: "cpu"})
+	if cfg.Devices.CPU || len(slots) == 0 {
+		slots = append(slots, &DeviceSlot{PB: &pb.Device{Kind: pb.DeviceKind_DEVICE_CPU}, Name: "cpu"})
 	}
+	return slots
 }
 
 func (s *Server) slotFor(d *pb.Device) *DeviceSlot {
-	for _, sl := range s.slots {
+	slots := s.devices()
+	for _, sl := range slots {
 		if d == nil && sl.PB.Kind == pb.DeviceKind_DEVICE_CUDA {
 			return sl
 		}
@@ -278,8 +376,8 @@ func (s *Server) slotFor(d *pb.Device) *DeviceSlot {
 			return sl
 		}
 	}
-	if d == nil && len(s.slots) > 0 {
-		return s.slots[0]
+	if d == nil && len(slots) > 0 {
+		return slots[0]
 	}
 	return nil
 }
@@ -291,7 +389,7 @@ func (s *Server) enabledFor(slot *DeviceSlot) []uint32 {
 
 // probe starts one worker to learn the device's capabilities.
 func (s *Server) probe(ctx context.Context, slot *DeviceSlot) error {
-	sess := &Session{Device: slot, srv: s, seed: 0, numerics: s.allowedNumerics(nil)}
+	sess := &Session{Device: slot, srv: s, seed: 0, numerics: s.allowedNumerics(nil), quiet: true}
 	copy(sess.ID[:], []byte("probe-"+slot.PB.Kind.String()))
 	w, err := s.spawnWorker(ctx, sess)
 	if err != nil {
@@ -372,7 +470,7 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 		RequireLandlock: !cfg.Sandbox.AcceptWeakIsolation && sandbox.LandlockABI() > 0,
 		FSize:           rails.DiskBudget(cfg.Rails, s.layout.State),
 		MaxFrame:        uint32(cfg.Limits.MaxFrameBytes) + 1<<20,
-		Log:             s.workerLog(),
+		Log:             s.workerLog(sess),
 		TestProbe:       os.Getenv("REFLOP_TEST_PROBE"),
 	}
 	if spec.FSize == 0 {
@@ -443,7 +541,8 @@ func (s *Server) limits() *pb.Limits {
 func (s *Server) capabilitiesFor(id *auth.Identity) *pb.ServerCapabilities {
 	c := &pb.ServerCapabilities{ProtocolVersions: []uint32{ProtocolVersion}, OpsetVersions: []uint32{1}}
 	seen := map[string]bool{}
-	for _, slot := range s.slots {
+	slots := s.devices()
+	for _, slot := range slots {
 		if slot.Info != nil {
 			c.Devices = append(c.Devices, slot.Info)
 		} else {
@@ -457,9 +556,9 @@ func (s *Server) capabilitiesFor(id *auth.Identity) *pb.ServerCapabilities {
 		}
 	}
 	c.Capabilities = append(c.Capabilities, "usage")
-	if len(s.slots) > 0 {
-		c.EnabledOpIds = s.filterOps(s.slots[0])
-		c.RuntimeInfo = s.slots[0].Runtime
+	if len(slots) > 0 {
+		c.EnabledOpIds = s.filterOps(slots[0])
+		c.RuntimeInfo = slots[0].Runtime
 	}
 	if c.RuntimeInfo == nil {
 		c.RuntimeInfo = &pb.RuntimeInfo{}

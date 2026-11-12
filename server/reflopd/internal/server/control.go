@@ -225,8 +225,11 @@ func (s *Server) status(withStats bool) StatusView {
 	if s.layout.System {
 		v.Level = 1
 	}
-	for _, sl := range s.slots {
+	for _, sl := range s.devices() {
 		v.Devices = append(v.Devices, sl.Name)
+	}
+	for _, name := range s.pendingDevices() {
+		v.Devices = append(v.Devices, name+" (not served: no free GPU memory; retried every "+probeRetryInterval.String()+")")
 	}
 	s.mu.Lock()
 	v.Connections = len(s.conns)

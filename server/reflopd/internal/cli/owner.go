@@ -830,7 +830,7 @@ func selftestCmd() *cobra.Command {
 // runSelftest returns the devices it skipped because their GPU memory was
 // full (see Server.SelfTest).
 func runSelftest(ctx context.Context, out io.Writer, l paths.Layout, security, weak bool) ([]string, error) {
-	srv, err := server.New(server.Options{Layout: l, AcceptWeakIsolation: weak, SkipProbe: true, QuietWorkers: true})
+	srv, err := server.New(server.Options{Layout: l, AcceptWeakIsolation: weak, SkipProbe: true})
 	if err != nil {
 		return nil, err
 	}

@@ -290,7 +290,7 @@ Everything lives under your user (~/.local/share/reflop, ~/.config/reflop).`,
 			if len(skipped) > 0 {
 				// A full GPU is the Owner's own use, not a fault: serve the
 				// devices that passed, and the GPU once memory frees up.
-				fmt.Fprintln(out, "  note: starting anyway; run `reflopd selftest` once GPU memory is free")
+				fmt.Fprintln(out, "  note: starting anyway; the GPU is served once its memory is free (`reflopd status` shows it)")
 			}
 			first := false
 			if ids, err := auth.Open(l.Identities()); err == nil && len(ids.List()) == 0 {

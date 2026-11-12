@@ -441,3 +441,34 @@ code for "larger than the device" (a protocol change for the same result).
 sessions, one per failed allocation; that is the trade the eviction was made
 for. The worker's error stage is now part of the eviction decision, and a
 corpus test pins the stage of the oversized-graph error.
+
+## ADR-023: A GPU that is full at startup is served once a probe succeeds
+
+**Context.** At startup reflopd probes every device with a sandboxed worker
+to learn its operators and capabilities. When other programs held all of a
+GPU's memory (on the reference machine, a leaking login-screen
+`gnome-shell` held 11.4 of 12 GiB), the probe worker could not create a
+CUDA context, and the self-test and the probe failed. reflopd then did not
+start at all, not even for the CPU.
+
+**Decision.** A GPU whose self-test or probe worker fails only with a CUDA
+out-of-memory error is skipped, not fatal, as long as another device passes
+the self-test. Until a probe succeeds the GPU is not served or advertised:
+an unprobed slot has no operator table, and workers started without one
+would not get the Owner's operator filter. The monitor probes it again every
+30 seconds and publishes it once a probe works. The set of served slots is
+replaced as a whole (an atomic pointer), so connections never see a slot
+whose fields are still being filled in. `reflopd status` lists the GPU as
+not served, and `reflopd selftest` exits 1 when it skipped a device. Any
+other probe or self-test error is still fatal.
+
+**Alternatives.** Keep failing and ask the Owner to free the GPU first (the
+daemon would not come back on its own after a reboot with the desktop
+running); serve the unprobed GPU with the worker's default operator table
+(fails open); probe lazily when a Guest opens a session (a Guest request
+would start probes).
+
+**Consequences.** A Guest that connects while the GPU is full sees only the
+other devices and has to reconnect to see the GPU later. Probe workers and
+self-test workers no longer stream their stderr to the log; a worker that
+fails carries its last lines in the error.

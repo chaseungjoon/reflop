@@ -34,6 +34,7 @@ func (s *Server) monitor(ctx context.Context) {
 			go s.store.SweepStale(store.UploadTTL) // abandoned uploads (L4)
 		}
 		s.ramRail()
+		s.retryPending(ctx)
 		s.reapDetached()
 		s.watchdog()
 		cfg := s.cfg()

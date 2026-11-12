@@ -45,6 +45,7 @@ type Session struct {
 	numerics *pb.Numerics
 	seed     uint64
 	created  time.Time
+	quiet    bool // probe or self-test: worker stderr is not logged (see workerLog)
 
 	mu        sync.Mutex
 	conn      *clientConn

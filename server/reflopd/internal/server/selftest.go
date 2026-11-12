@@ -38,13 +38,13 @@ func f32bytes(v []float32) []byte {
 // A GPU whose memory is all in use (the worker cannot create a CUDA
 // context) is skipped and returned in skipped, as long as another device
 // passes. The GPU is not broken: the Owner's own programs or a desktop
-// session hold its memory, and Guests get OUT_OF_MEMORY on it until that is
-// freed. Every worker still applies the sandbox and fails closed on its own;
-// the device that passed shows the sandbox works on this machine.
+// session hold its memory, and the daemon serves it once that is freed
+// (Prepare, retryPending). Every worker still applies the sandbox and fails
+// closed on its own; the device that passed shows the sandbox works here.
 func (s *Server) SelfTest(ctx context.Context, out io.Writer, security bool) (skipped []string, err error) {
 	passed := 0
-	for _, slot := range s.slots {
-		sess := &Session{Device: slot, srv: s, numerics: s.allowedNumerics(nil), routes: map[uint64]*route{}}
+	for _, slot := range s.devices() {
+		sess := &Session{Device: slot, srv: s, numerics: s.allowedNumerics(nil), routes: map[uint64]*route{}, quiet: true}
 		copy(sess.ID[:], []byte(fmt.Sprintf("selftest-%d-%d", slot.PB.Kind, time.Now().UnixNano()%1e6)))
 		t0 := time.Now()
 		w, err := s.spawnWorker(ctx, sess)
@@ -90,8 +90,7 @@ func gpuFullNote(slot *DeviceSlot, use func(gpu.GPU) (uint64, uint64, bool)) str
 	if used, total, ok := use(*slot.GPU); ok {
 		held = fmt.Sprintf(" (%d of %d MiB in use)", used, total)
 	}
-	return "the GPU has no free memory for a worker" + held + ". Other programs hold it; `nvidia-smi` lists them. " +
-		"Guests get OUT_OF_MEMORY on this GPU until it is freed"
+	return "the GPU has no free memory for a worker" + held + ". Other programs hold it; `nvidia-smi` lists them"
 }
 
 func (s *Server) matmulCheck(w *supervisor.Worker, slot *DeviceSlot) error {
