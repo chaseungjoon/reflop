@@ -179,12 +179,23 @@ func (s *Store) pruneLocked() {
 // ErrInvite covers every invite failure; callers must not reveal which.
 var ErrInvite = errors.New("invalid, expired or already used invite")
 
+// InviteError is ErrInvite with the actual reason. The reason is for the
+// Owner only (daemon log, audit trail); the Guest is sent ErrInvite's text.
+type InviteError struct{ Reason string }
+
+func (e *InviteError) Error() string        { return ErrInvite.Error() + ": " + e.Reason }
+func (e *InviteError) Is(target error) bool { return target == ErrInvite }
+
+func inviteErr(format string, args ...any) error {
+	return &InviteError{Reason: fmt.Sprintf(format, args...)}
+}
+
 // Redeem verifies a Pair request and registers the key. The invite is
 // consumed on the first attempt that names it, successful or not, so a
 // guessed or stolen invite id cannot be brute-forced.
 func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) {
 	if len(req.InviteId) != 16 || len(req.PublicKey) != ed25519.PublicKeySize || len(req.Mac) != 32 || len(req.Signature) != ed25519.SignatureSize {
-		return nil, ErrInvite
+		return nil, inviteErr("malformed pair request")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -196,8 +207,15 @@ func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) 
 			inv = x
 		}
 	}
-	if inv == nil || inv.Used || time.Now().After(inv.Expires) {
-		return nil, ErrInvite
+	now := time.Now()
+	switch {
+	case inv == nil:
+		return nil, inviteErr("no such invite: not created by this server, or used or expired and since removed")
+	case inv.Used:
+		return nil, inviteErr("the invite for %q was already used (any earlier pairing attempt uses it up, even a failed one)", inv.Name)
+	case now.After(inv.Expires):
+		return nil, inviteErr("the invite for %q expired at %s, %s ago", inv.Name,
+			inv.Expires.UTC().Format(time.RFC3339), now.Sub(inv.Expires).Round(time.Second))
 	}
 	inv.Used = true
 	msg := PairMessage(nonce, serverFP, req.InviteId, req.PublicKey)
@@ -205,7 +223,7 @@ func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) 
 	mac.Write(msg)
 	if !hmac.Equal(mac.Sum(nil), req.Mac) || !ed25519.Verify(req.PublicKey, msg, req.Signature) {
 		_ = s.saveLocked()
-		return nil, ErrInvite
+		return nil, inviteErr("wrong secret or signature for the invite for %q; the invite is now used up", inv.Name)
 	}
 	if owner := s.byKeyLocked(req.PublicKey); owner != nil {
 		_ = s.saveLocked()

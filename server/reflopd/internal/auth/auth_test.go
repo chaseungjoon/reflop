@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,44 @@ func TestInviteFailuresConsumeAndExpire(t *testing.T) {
 	}
 	if _, err := s.CreateInvite("../etc", time.Hour); err == nil {
 		t.Fatal("bad name accepted")
+	}
+}
+
+// Issue #5: every invite failure is ErrInvite to the Guest, but carries the
+// actual reason for the Owner.
+func TestInviteFailureReasons(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	nonce, fp := make([]byte, 32), make([]byte, 32)
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	reason := func(req *pb.Pair) string {
+		t.Helper()
+		_, err := s.Redeem(req, nonce, fp)
+		var ie *InviteError
+		if !errors.Is(err, ErrInvite) || !errors.As(err, &ie) {
+			t.Fatalf("want an InviteError, got %v", err)
+		}
+		return ie.Reason
+	}
+	exp, _ := s.CreateInvite("carol", -90*time.Second)
+	if r := reason(pairReq(t, exp, priv, nonce, fp)); !strings.Contains(r, `"carol" expired at `+exp.Expires.Format(time.RFC3339)) ||
+		!strings.Contains(r, "ago") {
+		t.Fatalf("expired: %q", r)
+	}
+	inv, _ := s.CreateInvite("bob", time.Hour)
+	bad := pairReq(t, inv, priv, nonce, fp)
+	bad.Mac[0] ^= 1
+	if r := reason(bad); !strings.Contains(r, "wrong secret or signature") {
+		t.Fatalf("bad MAC: %q", r)
+	}
+	if r := reason(pairReq(t, inv, priv, nonce, fp)); !strings.Contains(r, `"bob" was already used`) {
+		t.Fatalf("used: %q", r)
+	}
+	unknown := pairReq(t, &Invite{ID: strings.Repeat("ab", 16), Secret: make([]byte, 32)}, priv, nonce, fp)
+	if r := reason(unknown); !strings.Contains(r, "no such invite") {
+		t.Fatalf("unknown: %q", r)
+	}
+	if r := reason(&pb.Pair{}); !strings.Contains(r, "malformed") {
+		t.Fatalf("malformed: %q", r)
 	}
 }
 

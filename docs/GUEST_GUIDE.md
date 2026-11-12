@@ -44,6 +44,12 @@ It installs into the active virtual environment if one is active. Otherwise it
 installs the `reflop` command into its own environment and prints the line to
 add the library to your project.
 
+An invite works once, until it expires (24 hours unless the Owner chose
+otherwise). If `reflop pair` says it expired, the message shows the expiry time
+and this machine's clock, both in UTC. If the Owner made the invite recently,
+this machine's date or time is probably wrong: compare `date -u` here and on
+the Owner's machine.
+
 Pairing creates an Ed25519 key for this machine (macOS: stored in the login
 Keychain; Linux: `~/.config/reflop/id_ed25519`, mode 0600) and pins the
 server's key. If the server ever presents a different key, the client stops

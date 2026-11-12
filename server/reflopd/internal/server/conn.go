@@ -153,7 +153,12 @@ func (c *clientConn) handshake() error {
 			}
 			id, err := c.srv.ids.Redeem(b.Pair, c.nonce, fp[:])
 			if err != nil {
-				c.auditFailure("pair_failed", map[string]any{"remote": c.remote})
+				fields := map[string]any{"remote": c.remote}
+				var ie *auth.InviteError
+				if errors.As(err, &ie) {
+					fields["reason"] = ie.Reason
+				}
+				c.auditFailure("pair_failed", fields)
 				msg := auth.ErrInvite.Error()
 				if !errors.Is(err, auth.ErrInvite) {
 					msg = err.Error()

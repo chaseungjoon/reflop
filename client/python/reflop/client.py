@@ -238,11 +238,28 @@ def decode_invite(code: str) -> apb.InviteCode:
     return inv
 
 
+def _expired_message(expires_unix: int, now: float) -> str:
+    """Issue #5: show both times, so a wrong clock on this machine shows."""
+    def utc(t: float) -> str:
+        return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(t))
+
+    late = int(now - expires_unix)
+    days, rest = divmod(late, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, seconds = divmod(rest, 60)
+    parts = [f"{n}{u}" for n, u in ((days, "d"), (hours, "h"), (minutes, "m")) if n] or [f"{seconds}s"]
+    return (f"this invite expired at {utc(expires_unix)}, and this machine's clock says {utc(now)} "
+            f"({' '.join(parts)} later). If the Owner made the invite recently, this machine's clock or date "
+            "is probably wrong: compare `date -u` here and on the Owner's machine. Otherwise ask the Owner "
+            "for a new invite.")
+
+
 def pair(code: str, name: str | None = None) -> ServerEntry:
     """Redeem an invite and store the server (pinned key) in the config."""
     inv = decode_invite(code)
-    if inv.expires_unix and inv.expires_unix < time.time():
-        raise ReflopError("this invite has expired; ask the Owner for a new one")
+    now = time.time()
+    if inv.expires_unix and inv.expires_unix < now:
+        raise ReflopError(_expired_message(inv.expires_unix, now))
     key = keys.load_or_create()
     fp = inv.server_key_fingerprint
     if len(fp) != 32:

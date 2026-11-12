@@ -350,5 +350,7 @@ if something is unsafe.
 | reflopd stops when you log out | `loginctl enable-linger $USER` |
 | self-test: `skipped: the GPU has no free memory for a worker`; `reflopd status` shows the GPU as `not served` | other programs hold the GPU's memory; `nvidia-smi` lists them. A `gnome-shell` holding gigabytes is usually a compositor leak: log out and back in, or if it belongs to the login screen (user `gdm`), `sudo systemctl restart gdm` while nobody is logged in to the desktop. Until then Guests see only the other devices. reflopd checks every 30 seconds and serves the GPU once memory is free |
 | a Guest gets `SESSION_LOST` | `reflopd audit --name <guest>` shows why: killed, rail, watchdog, or a worker crash |
+| a Guest's `reflop pair` fails with `invalid, expired or already used invite` | the Guest is not told which, on purpose. The daemon log (`journalctl --user -u reflopd`) and `reflopd audit` (event `pair_failed`, field `reason`) say it: expired (and when), already used (any earlier attempt uses an invite up, even a failed one), unknown to this server, or a wrong secret. Make a new invite with `reflopd invite` |
+| `reflop pair` on the Guest says the invite expired although you made it recently | the message shows the invite's expiry and the Guest's clock, both in UTC. If the Guest's clock is wrong, the Guest has to fix it; compare `date -u` on both machines |
 | `another reflopd is already running` | `reflopd status`, then `reflopd stop` |
 | CUDA errors after a driver update | `reflopd selftest`; if the variant changed, `reflopd runtime install` |

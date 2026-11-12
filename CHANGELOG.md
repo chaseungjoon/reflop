@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `reflop pair` with an expired invite now says when the invite expired and
+  what this machine's clock says, both in UTC. An invite made minutes ago that
+  shows as expired usually means the Guest's clock or date is wrong; before,
+  the message gave no way to tell (#5).
+- When pairing fails on the server, the Guest still sees only "invalid,
+  expired or already used invite", but the daemon log and the `pair_failed`
+  audit record now give the reason: expired (with the time), already used,
+  unknown to this server, a wrong secret or signature, or a malformed
+  request.
+
 ## 0.1.10 (2026-11-12)
 
 reflopd:
