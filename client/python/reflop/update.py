@@ -306,7 +306,12 @@ def update(check: bool = False, version: str | None = None) -> int:
         if on_pypi is not None and on_pypi != digest:
             raise RuntimeError(f"PyPI's {wheel} does not match the signed release; not installing it")
         if on_pypi is not None:
-            r = _run([uv, "tool", "install", "--force", f"reflop=={want}"])
+            # pypi_sha256 reads the per-version JSON API, which is fresh as
+            # soon as the upload lands. uv resolves from /simple/reflop/, which
+            # it caches for up to 10 minutes (max-age=600) and which may not
+            # list the release yet. `uv lock --upgrade-package` refreshes on
+            # its own; `uv tool install` needs to be told.
+            r = _run([uv, "tool", "install", "--force", "--refresh-package", "reflop", f"reflop=={want}"])
         else:
             data = _get(f"{_releases()}/download/{tag}/{wheel}")
             if hashlib.sha256(data).hexdigest() != digest:

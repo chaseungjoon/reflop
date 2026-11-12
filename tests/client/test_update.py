@@ -148,7 +148,10 @@ def test_uv_tool_reinstalls_from_pypi(release, monkeypatch):
     calls, state = release
     monkeypatch.setattr(sys, "prefix", "/home/u/.local/share/uv/tools/reflop")
     assert up.update() == 0
-    assert calls == [["/usr/bin/uv", "tool", "install", "--force", "reflop==9.9.9"]]
+    # --refresh-package: uv's cached /simple/reflop/ may predate the release
+    # even though the JSON API already lists it (0.1.8: "there is no version
+    # of reflop==0.1.8").
+    assert calls == [["/usr/bin/uv", "tool", "install", "--force", "--refresh-package", "reflop", "reflop==9.9.9"]]
     # Before PyPI has the release: the verified wheel from the release.
     calls.clear()
     state["pypi"] = None
