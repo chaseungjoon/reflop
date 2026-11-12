@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -227,7 +228,7 @@ func inviteSSH(cmd *cobra.Command, l paths.Layout, name, key, target, hostKeyGlo
 }
 
 func usersCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "users",
 		Short: "List paired identities",
 		Args:  cobra.NoArgs,
@@ -259,6 +260,84 @@ func usersCmd() *cobra.Command {
 				fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", id.Name, len(id.Keys), strings.Join(vs, ","), id.Created.Format("2006-01-02"), state)
 			}
 			return tw.Flush()
+		},
+	}
+	cmd.AddCommand(usersDeleteCmd())
+	return cmd
+}
+
+var identityIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+func usersDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <name>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a revoked identity, its stored datasets and snapshots, and its quotas",
+		Long: `Delete a revoked identity from reflopd. This removes it from ` + "`reflopd users`" + `,
+deletes its datasets and snapshots on disk, clears its quotas, and frees the
+name for a new invite. The audit log keeps its history.
+
+Only revoked identities can be deleted; revoke an active one first:
+
+  reflopd revoke alice
+  reflopd users delete alice`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			name := args[0]
+			l, err := layout()
+			if err != nil {
+				return err
+			}
+			ids, err := auth.Open(l.Identities())
+			if err != nil {
+				return err
+			}
+			id, ok := ids.Get(name)
+			if !ok {
+				return exitWith(ExitUsage, fmt.Errorf("no identity named %q", name))
+			}
+			if !id.Revoked {
+				return exitWith(ExitUsage, fmt.Errorf("%q is an active identity; revoke it first with `reflopd revoke %s`", name, name))
+			}
+			// The id comes from our own file, but it becomes a path to delete.
+			if !identityIDRe.MatchString(id.ID) {
+				return fmt.Errorf("identity %q has a malformed id %q; not deleting any files", name, id.ID)
+			}
+			for _, dir := range []string{l.IdentityStore(id.ID), l.IdentitySnapshots(id.ID)} {
+				if err := os.RemoveAll(dir); err != nil {
+					return fmt.Errorf("deleting %s: %w", dir, err)
+				}
+			}
+			s, err := config.LoadSettings(settingsPath(l))
+			if err != nil {
+				return err
+			}
+			if _, had := s.Quotas[name]; had {
+				delete(s.Quotas, name)
+				if err := config.SaveSettings(settingsPath(l), s); err != nil {
+					return err
+				}
+			}
+			if _, err := ids.Delete(name); err != nil {
+				if errors.Is(err, auth.ErrNotRevoked) {
+					return exitWith(ExitUsage, err)
+				}
+				return err
+			}
+			if ak, err := sshpipe.AuthorizedKeysPath(); err == nil {
+				if n, err := sshpipe.RemoveIdentity(ak, id.ID); err == nil && n > 0 {
+					fmt.Fprintf(out, "removed %d line(s) from %s\n", n, ak)
+				}
+			}
+			notifyReload()
+			fmt.Fprintf(out, "deleted %q, its stored datasets and snapshots, and its quotas\n", name)
+			if cfg, err := config.Load(l.ConfigFile(), settingsPath(l)); err == nil {
+				if _, still := cfg.Quotas[name]; still {
+					fmt.Fprintf(out, "note: %s still sets quotas for %q; a new identity with that name would get them\n", l.ConfigFile(), name)
+				}
+			}
+			return nil
 		},
 	}
 }

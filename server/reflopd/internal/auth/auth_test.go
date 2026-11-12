@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +143,44 @@ func TestInviteFailureReasons(t *testing.T) {
 	}
 	if r := reason(&pb.Pair{}); !strings.Contains(r, "malformed") {
 		t.Fatalf("malformed: %q", r)
+	}
+}
+
+func TestDeleteOnlyRevoked(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	if _, err := s.AddKey("erin", make([]byte, 32), "ssh", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Delete("erin"); !errors.Is(err, ErrNotRevoked) {
+		t.Fatalf("active identity deleted: %v", err)
+	}
+	if _, ok := s.Get("erin"); !ok {
+		t.Fatal("refused delete still removed the identity")
+	}
+	if _, err := s.Delete("nobody"); err == nil {
+		t.Fatal("deleting an unknown name succeeded")
+	}
+	if _, err := s.Revoke("erin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Delete("erin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Get("erin"); ok {
+		t.Fatal("deleted identity still listed")
+	}
+	for _, inv := range s.db.Invites {
+		if inv.Name == "erin" {
+			t.Fatal("deleted identity's invites kept")
+		}
+	}
+	// The deletion is on disk, and the name can be invited again.
+	s2, _ := Open(filepath.Dir(s.path))
+	if _, ok := s2.Get("erin"); ok {
+		t.Fatal("deletion not saved")
+	}
+	if _, err := s2.CreateInvite("erin", time.Hour); err != nil {
+		t.Fatalf("name not freed: %v", err)
 	}
 }
 

@@ -11,6 +11,11 @@
   audit record now give the reason: expired (with the time), already used,
   unknown to this server, a wrong secret or signature, or a malformed
   request.
+- New `reflopd users delete <name>` removes a revoked identity: it leaves
+  `reflopd users`, its datasets and snapshots are deleted from disk, its
+  quotas are cleared, and the name can be invited again. The audit log keeps
+  its history. It refuses an active identity and says to revoke it first
+  (ADR-024).
 
 ## 0.1.10 (2026-11-12)
 

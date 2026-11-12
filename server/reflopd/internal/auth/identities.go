@@ -335,6 +335,40 @@ func (s *Store) Revoke(name string) (*Identity, error) {
 	return &removed, s.saveLocked()
 }
 
+// ErrNotRevoked refuses to delete an identity that can still connect.
+var ErrNotRevoked = errors.New("identity is active")
+
+// Delete removes a revoked identity and its invites from the store, which
+// frees the name for a new invite. Active identities are refused with
+// ErrNotRevoked: revoke them first.
+func (s *Store) Delete(name string) (*Identity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshLocked()
+	idx := -1
+	for i, id := range s.db.Identities {
+		if id.Name == name {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return nil, fmt.Errorf("no identity named %q", name)
+	}
+	removed := *s.db.Identities[idx]
+	if !removed.Revoked {
+		return nil, fmt.Errorf("%w: %q; revoke it first with `reflopd revoke %s`", ErrNotRevoked, name, name)
+	}
+	s.db.Identities = append(s.db.Identities[:idx], s.db.Identities[idx+1:]...)
+	invites := s.db.Invites[:0]
+	for _, inv := range s.db.Invites {
+		if inv.Name != name {
+			invites = append(invites, inv)
+		}
+	}
+	s.db.Invites = invites
+	return &removed, s.saveLocked()
+}
+
 // List returns all identities sorted by name.
 func (s *Store) List() []Identity {
 	s.mu.Lock()

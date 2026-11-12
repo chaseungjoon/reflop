@@ -86,7 +86,14 @@ consumes it, so a leaked code cannot be brute-forced. To see or remove access:
 ```sh
 reflopd users
 reflopd revoke alice      # keys stop working, running sessions end now
+reflopd users delete alice
 ```
+
+A revoked identity stays in `reflopd users`, and its name cannot be invited
+again. `reflopd users delete` removes a revoked identity for good: it deletes
+the identity, its datasets and snapshots on disk, and its quotas, and frees the
+name. The audit log keeps its history. It refuses an identity that is still
+active; revoke it first.
 
 ## Network exposure
 
