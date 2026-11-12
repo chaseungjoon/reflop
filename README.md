@@ -65,11 +65,14 @@ reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 Add the client to the environment your training code runs in:
 
 ```sh
-uv add reflop          # or: pip install reflop
+# Recommended
+uv add reflop
+
+# or
+pip install reflop
 ```
 
-That installs both the library (`import reflop`) and the `reflop` command in
-that environment.
+That installs both the Python library (`import reflop`) and the `reflop` command in that environment.
 
 Or use the install script, which checks the release's signature on your
 machine before installing:
