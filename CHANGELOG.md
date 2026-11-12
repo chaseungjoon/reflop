@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9 (2026-11-12)
+
+- `reflop update` for a client installed with `uv tool` could fail right
+  after a release with "there is no version of reflop==X". It checks PyPI
+  through an API that lists a release as soon as it is uploaded, but uv
+  installs from PyPI's package index page, which it caches for up to 10
+  minutes. `reflop update` now tells uv to fetch that page again
+  (`--refresh-package reflop`). Clients in a uv project were not affected.
+  If 0.1.8 or older hits this, run
+  `uv tool install --force --refresh-package reflop reflop==0.1.9`, or wait
+  10 minutes.
+
 ## 0.1.8 (2026-11-12)
 
 Security fix for reflopd.
