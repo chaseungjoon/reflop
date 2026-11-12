@@ -67,10 +67,10 @@ func InstallFilterSelf(f []unix.SockFilter) error {
 const DaemonSandboxEnv = "REFLOP_DAEMON_SANDBOXED"
 
 // ReexecSandboxed applies Landlock and the daemon seccomp filter on a
-// locked thread and re-executes the current binary with the same arguments,
+// locked thread and re-executes the current binary with argv,
 // so that every thread of the daemon starts inside the sandbox (Landlock
 // before ABI 8 cannot restrict existing threads). It returns only on error.
-func ReexecSandboxed(rules []PathRule, bindPorts []uint16) error {
+func ReexecSandboxed(rules []PathRule, bindPorts []uint16, argv []string) error {
 	runtime.LockOSThread()
 	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 		return err
@@ -91,7 +91,7 @@ func ReexecSandboxed(rules []PathRule, bindPorts []uint16) error {
 		return err
 	}
 	env := append(os.Environ(), DaemonSandboxEnv+"=1")
-	return unix.Exec(exe, os.Args, env)
+	return unix.Exec(exe, argv, env)
 }
 
 type netPortAttr struct {

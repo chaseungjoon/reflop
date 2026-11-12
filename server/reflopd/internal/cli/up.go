@@ -61,6 +61,24 @@ service; use it directly to watch logs or in containers without systemd.
 	return cmd
 }
 
+// serveArgv is the command line that re-executes this process as
+// `reflopd serve` with the same settings. `reflopd up --foreground` (and
+// --no-service) also ends in runServe; re-executing os.Args there ran all of
+// `up` again (detection, runtime check, self-test, invite) once per re-exec.
+func serveArgv(f serveFlags) []string {
+	argv := []string{os.Args[0], "serve"}
+	for _, a := range f.listen {
+		argv = append(argv, "--listen="+a)
+	}
+	if f.weak {
+		argv = append(argv, "--accept-weak-isolation")
+	}
+	if f.noSandbox {
+		argv = append(argv, "--no-self-sandbox")
+	}
+	return argv
+}
+
 func runServe(f serveFlags) error {
 	l, err := layout()
 	if err != nil {
@@ -81,7 +99,7 @@ func runServe(f serveFlags) error {
 	// a terminal (the systemd unit already has Delegate=yes).
 	if os.Getenv("REFLOP_SCOPED") == "" && os.Getenv("REFLOP_NO_SCOPE") == "" && systemdUser() {
 		if path, err := exec.LookPath("systemd-run"); err == nil {
-			args := append([]string{path, "--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes", "--"}, os.Args...)
+			args := append([]string{path, "--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes", "--"}, serveArgv(f)...)
 			env := append(os.Environ(), "REFLOP_SCOPED=1")
 			if err := syscall.Exec(path, args, env); err != nil {
 				fmt.Fprintf(os.Stderr, "reflopd: systemd-run: %v (continuing without a delegated cgroup)\n", err)
@@ -97,7 +115,7 @@ func runServe(f serveFlags) error {
 		return fmt.Errorf("worker package: %w", err)
 	}
 	if os.Getenv(sandbox.DaemonSandboxEnv) == "" && !f.noSandbox {
-		if err := sandbox.ReexecSandboxed(daemonRules(l), listenPorts(listen)); err != nil {
+		if err := sandbox.ReexecSandboxed(daemonRules(l), listenPorts(listen), serveArgv(f)); err != nil {
 			fmt.Fprintf(os.Stderr, "reflopd: could not sandbox the daemon itself: %v\n", err)
 		}
 	}
