@@ -1,1 +1,12 @@
-../../NOTICE
+reFLOP
+Copyright 2026 The reFLOP Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Portions of server/reflopd/internal/selfupdate, server/reflopd/internal/buildinfo
+and install.sh are adapted from recom (https://github.com/chaseungjoon/recom),
+written by the same sole author and relicensed under Apache-2.0 for this
+project (see docs/DECISIONS.md, ADR-007).
+
+NVIDIA and CUDA are trademarks of NVIDIA Corporation. PyTorch is a trademark of
+The Linux Foundation. They are used here only to describe compatibility.

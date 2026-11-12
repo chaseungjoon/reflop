@@ -60,32 +60,53 @@ reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 | **Owner** installs `reflopd` | Linux x86_64 or aarch64, glibc ≥ 2.28 | nothing: no root, no Docker, no Python. NVIDIA driver ≥ 525 is optional (without a GPU, reflopd serves the CPU) |
 | **Guest** installs `reflop` | macOS (Apple Silicon or Intel) or Linux | Python ≥ 3.10, PyTorch ≥ 2.6 |
 
-### Install script (recommended)
+### Guest: `reflop`
 
-**Owner**, on the GPU workstation:
+Add the client to the environment your training code runs in:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+uv add reflop          # or: pip install reflop
 ```
 
-**Guest**, on the laptop:
+That installs both the library (`import reflop`) and the `reflop` command in
+that environment.
+
+Or use the install script, which checks the release's signature on your
+machine before installing:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
 ```
 
-`reflopd` goes to `~/.local/bin`. The client goes into the active virtual
-environment if there is one, otherwise into its own environment managed by `uv`
-(or a private venv). Both downloads are checked against the release's SHA-256 sums,
-and the sums against a signature made with the project's offline release key
-(the check uses `ssh-keygen`, OpenSSH 8.1 or newer).
+It installs into the active virtual environment if there is one, otherwise
+into an environment of its own.
 
-**Update:**
+### Owner: `reflopd`
+
+On the GPU workstation:
 
 ```sh
-reflopd update     # Owner
-reflop update      # Guest
+curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
 ```
+
+`reflopd` goes to `~/.local/bin`. The download is checked against the
+release's SHA-256 sums, and the sums against a signature made with the
+project's offline release key (the check uses `ssh-keygen`, OpenSSH 8.1 or
+newer).
+
+### Update
+
+```sh
+reflop update      # Guest
+reflopd update     # Owner
+```
+
+Each one updates only its own program to the newest release, after checking
+the release signature. In a uv project, `reflop update` upgrades `reflop` in
+`uv.lock` and syncs, so `uv run` keeps the new version. In a pip environment
+it installs the release's wheel. `pip install -U reflop` and
+`uv lock --upgrade-package reflop && uv sync` also work. The files on PyPI are
+the files of the signed GitHub release.
 
 <details>
 <summary><b>From the Releases tab</b></summary>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.7 (2026-11-12)
+
+- The client is on PyPI as `reflop`: `uv add reflop` or `pip install reflop`
+  puts the library and the `reflop` command in your project's environment.
+  Each version is uploaded from the signed GitHub release after the signature
+  and checksums are checked (ADR-021).
+- Releases include the client's sdist (`reflop-X.Y.Z.tar.gz`) next to the wheel.
+- The sdist ships real `LICENSE` and `NOTICE` files. They were symlinks, so a
+  wheel could not be built from it.
+- `install.sh` prints `uv add reflop==X.Y.Z` instead of a release URL.
+- `reflop update` follows how the client was installed. In a uv project it
+  upgrades `reflop` in `uv.lock`, checks the locked hashes against the signed
+  release, and syncs, so `uv run` no longer reinstalls the old version. A uv
+  tool installed from PyPI stays a PyPI install. Elsewhere it installs the
+  release's verified wheel, as before. It never downgrades a newer local
+  version, and checks the installed version afterwards.
+
 ## 0.1.6 (2026-11-11)
 
 Security fixes from the 2026-11-11 sweep. Every fix has a reproducer test.

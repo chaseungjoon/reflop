@@ -8,9 +8,11 @@ project_name: reflopd
 before:
   hooks:
     - go mod download
-    # The Python client wheel ships in the same release (install.sh, `reflop update`).
+    # The Python client (wheel and sdist) ships in the same release, for
+    # install.sh and `reflop update`. After signing, .github/workflows/pypi.yml
+    # uploads these same files to PyPI.
     - sh -c 'sed -i "s/^__version__ = .*/__version__ = \"{{ .Version }}\"/" client/python/reflop/__init__.py'
-    - sh -c 'cd client/python && python3 -m pip wheel --no-deps -w ../../dist-wheel .'
+    - sh -c 'rm -rf dist-python && python3 -m build --outdir dist-python client/python'
 
 builds:
   - id: reflopd
@@ -40,12 +42,14 @@ release:
   draft: true
   target_commitish: "{{ .FullCommit }}"
   extra_files:
-    - glob: ./dist-wheel/reflop-*.whl
+    - glob: ./dist-python/reflop-*
   footer: |
     ## Install
 
     ```sh
-    # Guest (macOS or Linux): the reflop client
+    # Guest (macOS or Linux): the reflop client, in your project's environment
+    uv add reflop=={{ .Version }}    # or: pip install reflop=={{ .Version }}
+    # Guest: or with the installer (verifies this release's signature)
     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
     # Owner (Linux, the machine with the GPU): reflopd
     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
@@ -57,7 +61,7 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
   extra_files:
-    - glob: ./dist-wheel/reflop-*.whl
+    - glob: ./dist-python/reflop-*
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

@@ -133,7 +133,7 @@ progress for 7 days are deleted.
 | server-initiated actions | events are fixed-schema and only printed |
 | information leaks | no environment, paths, hostnames, source or telemetry are sent |
 | key theft | macOS Keychain (written through stdin, never a command line), or a 0600 file the client refuses to use if others can read it. SSH mode always uses the file |
-| tampered releases | `checksums.txt` carries an OpenSSH signature made with an offline key that never touches GitHub; `install.sh`, `reflopd update` and `reflop update` refuse a release without a valid one |
+| tampered releases | `checksums.txt` carries an OpenSSH signature made with an offline key that never touches GitHub; `install.sh`, `reflopd update` and `reflop update` refuse a release without a valid one. The client on PyPI is uploaded from the published release by `pypi.yml`, which checks that signature and each file's SHA-256 first (ADR-021) |
 
 ## Residual risks
 
@@ -145,6 +145,7 @@ progress for 7 days are deleted.
 | A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes |
 | Escape at Level 0 lands in the Owner's account | Level 1 moves it to an empty account |
 | The Owner sees Guests' data | by design (non-goal N1) |
+| A tampered client on PyPI | `pip` and `uv` do not check the offline signature. Only `pypi.yml`, through Trusted Publishing and the `pypi` GitHub environment, can upload, and only signed files. Someone who controls the PyPI account or the repository's Actions could still upload a different file. `install.sh` and `reflop update` check the signature on the Guest's machine |
 
 ## Known limitations
 

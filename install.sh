@@ -7,6 +7,8 @@
 #
 #   Guest machine (macOS or Linux), the reflop client:
 #     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+#   (The client is also on PyPI: `uv add reflop` or `pip install reflop` in your
+#   project, `uv tool install reflop` for the command alone.)
 #
 #   Owner machine (Linux, the one with the GPU), reflopd:
 #     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
@@ -207,9 +209,8 @@ install_client() {
 		say "installed ${dir}/reflop"
 		path_hint "$dir"
 	fi
-	url="${BASE_URL}/download/${tag}/${wheel}"
 	say "to use reflop from your own training code, add it to that project's environment:"
-	say "  uv add ${url}        # or: pip install ${url}"
+	say "  uv add reflop==${version}        # or: pip install reflop==${version}"
 	say "next: reflop pair <invite-code>   (ask the GPU Owner for a code from: reflopd invite --name <you>)"
 }
 
@@ -222,7 +223,7 @@ main() {
 			--client) mode=client ;;
 			--version) shift; tag=${1:-} ;;
 			--version=*) tag=${1#--version=} ;;
-			-h | --help) sed -n '2,26p' "$0" 2>/dev/null || true; exit 0 ;;
+			-h | --help) sed -n '2,28p' "$0" 2>/dev/null || true; exit 0 ;;
 			*) die "unknown option: $1" ;;
 		esac
 		shift

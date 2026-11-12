@@ -10,7 +10,8 @@
 #   2. checks that the draft was built from the tag's commit,
 #   3. signs checksums.txt (ssh-keygen -Y sign -n reflop-release),
 #   4. verifies the signature against the key embedded in install.sh,
-#   5. uploads checksums.txt.sig and publishes the release.
+#   5. uploads checksums.txt.sig and publishes the release, which starts
+#      .github/workflows/pypi.yml (uploads the signed client to PyPI).
 #
 # Environment:
 #   REFLOP_RELEASE_KEY  private key (default ~/.config/reflop-release/release_ed25519)
@@ -62,3 +63,4 @@ case "$tag" in
 	*) gh release edit "$tag" --repo "$repo" --draft=false --latest ;;
 esac
 printf 'sign-release: published %s\n' "$tag"
+printf 'sign-release: the PyPI workflow now uploads the signed client: https://github.com/%s/actions/workflows/pypi.yml\n' "$repo"

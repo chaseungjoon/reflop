@@ -23,15 +23,26 @@ values you ask for. Your machine needs no CUDA: a MacBook works.
 ## Install and pair
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+uv add reflop                   # or: pip install reflop, in your project's environment
 reflop pair reflop1-…          # the code the Owner gave you
 reflop status
 reflop verify                   # optional: compares a few results with your CPU
 ```
 
-The installer puts the client into your active virtual environment if one is
-active. Otherwise it installs the `reflop` command into its own environment and
-prints the line to add the library to your project (`uv add …` or `pip install …`).
+`reflop` on PyPI is the library you import and the `reflop` command. Install it
+where your training code runs, so `import reflop` works there. Every version on
+PyPI is uploaded from the signed GitHub release, after its signature is checked.
+
+The install script does the same from the GitHub release and checks the
+signature on your machine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+```
+
+It installs into the active virtual environment if one is active. Otherwise it
+installs the `reflop` command into its own environment and prints the line to
+add the library to your project.
 
 Pairing creates an Ed25519 key for this machine (macOS: stored in the login
 Keychain; Linux: `~/.config/reflop/id_ed25519`, mode 0600) and pins the
@@ -342,7 +353,7 @@ convolutions by default, and some GPU kernels are not deterministic).
 | `reflop verify` | compare small results with your CPU |
 | `reflop doctor` | check torch, the key, the config and the connection |
 | `reflop key [--ssh] [--write-file]` | print your public key; `--write-file` also stores the private key for the C API on macOS |
-| `reflop update` | update the client (checks the release signature first) |
+| `reflop update` | update the client to the newest signed release. In a uv project it upgrades `uv.lock` and syncs; elsewhere it installs the release's wheel |
 
 `--server <name>` (or `REFLOP_SERVER`) selects a paired server for any command.
 

@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`reflop update`: install the latest client release from GitHub into the
-environment reflop runs in. The release's checksums.txt must carry a valid
-signature by a reflop release key before the wheel is checked against it
-(SEC_SWEEP M4)."""
+"""`reflop update`: install the latest client release into the environment
+reflop runs in. The release's checksums.txt must carry a valid signature by a
+reflop release key, and every file installed must match it (SEC_SWEEP M4).
+
+How depends on the install: a uv project upgrades uv.lock and syncs (from
+PyPI, after checking the locked hashes), a uv tool reinstalls from PyPI, and
+anything else installs the release's verified wheel."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import shutil
@@ -20,6 +24,7 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_RELEASES = "https://github.com/chaseungjoon/reflop/releases"
+DEFAULT_PYPI = "https://pypi.org"
 TAG = re.compile(r"^v\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$")
 MAX_DOWNLOAD = 256 << 20
 
@@ -144,47 +149,187 @@ def _get(url: str) -> bytes:
     return data
 
 
+def _pypi() -> str:
+    v = os.environ.get("REFLOP_PYPI_URL")
+    return check_base_url(v) if v else DEFAULT_PYPI
+
+
+def _vtuple(v: str) -> tuple[int, int, int] | None:
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", v)
+    return (int(m[1]), int(m[2]), int(m[3])) if m else None
+
+
+def signed_sums(tag: str) -> dict[str, str]:
+    """The release's checksums.txt as {file: sha256}, after its signature
+    checks out against RELEASE_KEYS."""
+    base = f"{_releases()}/download/{tag}/"
+    raw = _get(base + "checksums.txt")
+    try:
+        sig = _get(base + "checksums.txt.sig")
+    except urllib.error.HTTPError as e:
+        raise SignatureError(f"release {tag} has no checksums.txt.sig (HTTP {e.code}); "
+                             "releases before 0.1.6 are unsigned") from None
+    verify_signature(raw, sig)
+    sums = {}
+    for ln in raw.decode().splitlines():
+        f = ln.split()
+        if len(f) == 2:
+            sums[f[1].lstrip("*")] = f[0]
+    return sums
+
+
+def pypi_sha256(version: str, filename: str) -> str | None:
+    """SHA-256 of one file of reflop==version on PyPI, or None if PyPI does
+    not have it (yet: the upload follows the release by a few minutes)."""
+    try:
+        meta = json.loads(_get(f"{_pypi()}/pypi/reflop/{version}/json"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    for u in meta.get("urls", []):
+        if u.get("filename") == filename:
+            return u.get("digests", {}).get("sha256")
+    return None
+
+
+def lock_entry(text: str) -> tuple[str | None, set[str]] | None:
+    """reflop's (version, file hashes) in a uv.lock, or None."""
+    for block in re.split(r"(?m)^\[\[package\]\]\s*$", text)[1:]:
+        if re.search(r'(?m)^name = "reflop"\s*$', block):
+            v = re.search(r'(?m)^version = "([^"]+)"\s*$', block)
+            return (v[1] if v else None, set(re.findall(r"sha256:([0-9a-f]{64})", block)))
+    return None
+
+
+def install_kind(prefix: str) -> tuple[str, str | None]:
+    """How the running reflop was installed: ("uv-tool" | "pipx" | "private"
+    | "uv-project" | "venv", project dir for uv-project)."""
+    p = os.path.normpath(prefix).replace(os.sep, "/")
+    if "/uv/tools/" in p:
+        return "uv-tool", None
+    if "/pipx/venvs/" in p:
+        return "pipx", None
+    if p.endswith("/reflop/client-venv"):
+        return "private", None
+    if os.path.basename(p) == ".venv":
+        proj = os.path.dirname(os.path.normpath(prefix))
+        lock = os.path.join(proj, "uv.lock")
+        if os.path.isfile(lock) and os.path.isfile(os.path.join(proj, "pyproject.toml")):
+            with open(lock, encoding="utf-8") as f:
+                if lock_entry(f.read()):
+                    return "uv-project", proj
+    return "venv", None
+
+
+def _run(cmd: list[str]) -> int:
+    print("reflop: " + " ".join(cmd))
+    return subprocess.call(cmd)
+
+
+def _installed_version() -> str:
+    out = subprocess.run([sys.executable, "-c", "import importlib.metadata as m; print(m.version('reflop'))"],
+                         capture_output=True, text=True)
+    return out.stdout.strip()
+
+
+def _update_uv_project(uv: str, proj: str, want: str, sums: dict[str, str]) -> int:
+    """Upgrade reflop in uv.lock, check the locked files against the signed
+    release, then sync, so `uv run` and `uv sync` keep the new version."""
+    lock = os.path.join(proj, "uv.lock")
+    with open(lock, "rb") as f:
+        before = f.read()
+
+    def restore():
+        with open(lock, "wb") as f:
+            f.write(before)
+
+    r = _run([uv, "lock", "--project", proj, "--upgrade-package", "reflop"])
+    if r != 0:
+        return r
+    with open(lock, encoding="utf-8") as f:
+        got, hashes = lock_entry(f.read()) or (None, set())
+    if got != want:
+        restore()
+        print(f"reflop: {proj}/pyproject.toml keeps reflop at {got}; to allow {want}, run there:\n"
+              f"  uv add 'reflop>={want}'", file=sys.stderr)
+        return 1
+    if not hashes or not hashes <= set(sums.values()):
+        restore()
+        raise RuntimeError("uv.lock's files for reflop do not match the signed release; uv.lock was restored")
+    return _run([uv, "sync", "--project", proj, "--inexact"])
+
+
 def update(check: bool = False, version: str | None = None) -> int:
     from . import __version__
 
     tag = version if version else latest()
     if not tag.startswith("v"):
         tag = "v" + tag
+    if not TAG.match(tag):
+        raise RuntimeError(f"invalid version {tag!r} (expected e.g. v0.2.0)")
     want = tag[1:]
-    if not version and want == __version__:
-        print(f"reflop {__version__} is up to date")
+    cur, new = _vtuple(__version__), _vtuple(want)
+    if not version and cur and new and cur >= new:
+        print(f"reflop {__version__} is up to date (latest release: {want})")
         return 0
     if check:
-        print(f"update available: reflop {__version__} → {want}")
+        print(f"update available: reflop {__version__} → {want} (run `reflop update`)")
         return 0
+    sums = signed_sums(tag)
     wheel = f"reflop-{want}-py3-none-any.whl"
-    base = f"{_releases()}/download/{tag}/"
-    sums_raw = _get(base + "checksums.txt")
-    try:
-        sig = _get(base + "checksums.txt.sig")
-    except urllib.error.HTTPError as e:
-        raise SignatureError(f"release {tag} has no checksums.txt.sig (HTTP {e.code}); "
-                             "releases before 0.1.6 are unsigned") from None
-    verify_signature(sums_raw, sig)
-    sums = sums_raw.decode()
-    digest = next((ln.split()[0] for ln in sums.splitlines() if ln.split()[-1:] == [wheel]), None)
+    digest = sums.get(wheel)
     if digest is None:
         raise RuntimeError(f"release {tag} has no {wheel}")
-    data = _get(base + wheel)
-    if hashlib.sha256(data).hexdigest() != digest:
-        raise RuntimeError(f"checksum mismatch for {wheel}")
-    with tempfile.TemporaryDirectory() as d:
-        path = os.path.join(d, wheel)
-        with open(path, "wb") as f:
-            f.write(data)
-        if "/uv/tools/" in sys.prefix and shutil.which("uv"):
-            cmd = ["uv", "tool", "install", "--force", path]
-        elif shutil.which("uv") and os.environ.get("VIRTUAL_ENV") == sys.prefix:
-            cmd = ["uv", "pip", "install", "--python", sys.executable, "--upgrade", path]
+    kind, proj = install_kind(sys.prefix)
+    uv = shutil.which("uv")
+
+    if kind == "uv-project":
+        if version:
+            print(f"reflop: this environment belongs to the uv project {proj}; pin the version there:\n"
+                  f"  uv add reflop=={want}", file=sys.stderr)
+            return 1
+        if not uv:
+            raise RuntimeError(f"{proj} is a uv project, but uv is not on PATH; run there: uv add 'reflop>={want}'")
+        on_pypi = pypi_sha256(want, wheel)
+        if on_pypi is None:
+            raise RuntimeError(f"reflop {want} is not on PyPI yet (it follows the release by a few minutes); "
+                               "try again shortly")
+        if on_pypi != digest:
+            raise RuntimeError(f"PyPI's {wheel} does not match the signed release; not installing it")
+        r = _update_uv_project(uv, proj, want, sums)
+    else:
+        # A uv tool installed from PyPI stays a PyPI install, so `uv tool
+        # upgrade` keeps working. Otherwise (or before PyPI has it), install
+        # the release's verified wheel.
+        on_pypi = pypi_sha256(want, wheel) if kind == "uv-tool" and uv else None
+        if on_pypi is not None and on_pypi != digest:
+            raise RuntimeError(f"PyPI's {wheel} does not match the signed release; not installing it")
+        if on_pypi is not None:
+            r = _run([uv, "tool", "install", "--force", f"reflop=={want}"])
         else:
-            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", path]
-        print("reflop: " + " ".join(cmd[:4]) + " …")
-        r = subprocess.call(cmd)
-    if r == 0:
-        print(f"updated reflop {__version__} → {want}")
-    return r
+            data = _get(f"{_releases()}/download/{tag}/{wheel}")
+            if hashlib.sha256(data).hexdigest() != digest:
+                raise RuntimeError(f"checksum mismatch for {wheel}")
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, wheel)
+                with open(path, "wb") as f:
+                    f.write(data)
+                if kind == "uv-tool" and uv:
+                    cmd = [uv, "tool", "install", "--force", path]
+                elif uv and os.environ.get("VIRTUAL_ENV") == sys.prefix:
+                    cmd = [uv, "pip", "install", "--python", sys.executable, "--upgrade", path]
+                else:
+                    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", path]
+                r = _run(cmd)
+    if r != 0:
+        return r
+    got = _installed_version()
+    if got != want:
+        print(f"reflop: expected {want} after the update, but this environment has {got or 'no reflop'}",
+              file=sys.stderr)
+        return 1
+    print(f"updated reflop {__version__} → {want}")
+    if kind == "venv":
+        print(f"note: if a requirements file pins reflop, update it too: reflop=={want}")
+    return 0

@@ -61,8 +61,10 @@ jobs:
         run: .venv/bin/python -m ruff check client/python server/worker tests codegen spikes
       - name: tests
         run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests
-      - name: wheel
-        run: uv build --wheel client/python -o dist && ls dist
+      - name: wheel and sdist (PyPI metadata)
+        run: |
+          cmp LICENSE client/python/LICENSE && cmp NOTICE client/python/NOTICE  # copies, not symlinks: they ship in the sdist
+          uv build client/python -o dist && uvx twine check --strict dist/* && ls dist
 
   macos-client:
     name: Client on macOS (Apple Silicon)

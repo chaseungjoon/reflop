@@ -1,0 +1,69 @@
+name: PyPI
+
+# Uploads the Python client to PyPI after a release is published, which only
+# scripts/sign-release.sh does (with the offline release key). The files come
+# from the published release, not from a new build: this job checks
+# checksums.txt.sig against the release key in install.sh, checks each file's
+# SHA-256, and uploads those exact bytes. PyPI trusts this workflow through
+# Trusted Publishing (OIDC), so no PyPI token is stored on GitHub.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload, e.g. v0.1.6"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi
+  cancel-in-progress: false
+
+jobs:
+  pypi:
+    name: Upload the signed client to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/reflop
+    permissions:
+      contents: read
+      id-token: write # Trusted Publishing
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check the tag
+        run: |
+          printf '%s\n' "$TAG" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?' || { echo "bad tag: $TAG"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Download and verify the release's Python files
+        run: |
+          [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ] ||
+            { echo "$TAG is still a draft; publish it with scripts/sign-release.sh"; exit 1; }
+          mkdir rel dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir rel \
+            --pattern checksums.txt --pattern checksums.txt.sig --pattern 'reflop-*'
+          sed -n "s/^RELEASE_SIGNERS='\(.*\)'$/\1/p" install.sh > rel/allowed_signers
+          test -s rel/allowed_signers
+          ssh-keygen -Y verify -f rel/allowed_signers -I reflop-release -n reflop-release \
+            -s rel/checksums.txt.sig < rel/checksums.txt
+          v=${TAG#v}
+          for f in "reflop-$v-py3-none-any.whl" "reflop-$v.tar.gz"; do
+            if [ ! -e "rel/$f" ]; then
+              [ "$f" = "reflop-$v.tar.gz" ] && { echo "note: $TAG has no sdist"; continue; }
+              echo "$TAG has no $f"; exit 1
+            fi
+            grep -q "  $f\$" rel/checksums.txt || { echo "$f is not in checksums.txt"; exit 1; }
+            (cd rel && grep "  $f\$" checksums.txt | sha256sum --check --strict)
+            mv "rel/$f" dist/
+          done
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

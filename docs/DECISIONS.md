@@ -246,8 +246,8 @@ to a project. `--server` installs the `reflopd` binary (Linux only). Both
 verify `checksums.txt`. `reflopd update` and `reflop update` fetch and verify
 the same release assets.
 
-**Alternatives.** PyPI (planned later; not published without the Owner's
-go-ahead); auto-detecting the role (surprising on Linux laptops with GPUs).
+**Alternatives.** PyPI (adopted for the client in ADR-021); auto-detecting the
+role (surprising on Linux laptops with GPUs).
 
 **Consequences.** Nothing installs until a release is published.
 
@@ -384,3 +384,33 @@ and their memory use, which would tell one Guest about other tenants.
 
 **Decision.** Workers return only the failed allocation size and a note that
 the device is shared.
+
+## ADR-021: The client on PyPI, uploaded from the signed release
+
+**Context.** The client is a library the Guest imports from their own
+project. `install.sh` usually put it in a separate environment (a `uv` tool
+or a private venv), so the Guest needed a second install, from a release URL,
+to `import reflop`, and `reflop update` updated only one of the two copies.
+
+**Decision.** Publish the `reflop` package on PyPI, so `uv add reflop` or
+`pip install reflop` puts the library and the `reflop` command in the
+project's environment.
+The release builds a wheel and an sdist; both are in the signed
+`checksums.txt`. Publishing the draft (`scripts/sign-release.sh`) starts
+`.github/workflows/pypi.yml`, which downloads those files from the release,
+checks the signature against the key in `install.sh` and each SHA-256, and
+uploads the same bytes through PyPI Trusted Publishing (no token on GitHub),
+from the `pypi` environment. `reflopd` stays off PyPI: it is a Linux binary
+that needs no Python and updates itself.
+
+**Alternatives.** Building on upload (the PyPI file would differ from the
+signed one); a PyPI API token as a repository secret; a separate package that
+ships `reflopd` in platform wheels.
+
+**Consequences.** `pip` does not check the offline signature, so for PyPI
+installs the trust root is the PyPI project and this repository's Actions.
+`install.sh` and `reflop update` still check the signature locally. In a uv
+project `reflop update` upgrades `uv.lock` and refuses locked files whose
+hashes are not in the signed `checksums.txt`; installing a wheel there would
+be undone by the next `uv sync`. `reflopd update` replaces only the `reflopd`
+binary, so the two updaters never touch each other's files.

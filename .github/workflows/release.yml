@@ -4,7 +4,8 @@ name: Release
 # The release is created as a DRAFT. It is published by
 # scripts/sign-release.sh, which signs checksums.txt with the offline release
 # key (never stored on GitHub) and uploads checksums.txt.sig. Installers and
-# updaters refuse releases without a valid signature.
+# updaters refuse releases without a valid signature. Publishing the release
+# starts pypi.yml, which uploads the signed Python client to PyPI.
 on:
   push:
     tags: ["v*.*.*"]
@@ -28,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python3 -m pip install hatchling
+      - run: python3 -m pip install build
       - run: go test ./...
       - name: Release notes from CHANGELOG.md
         run: |
@@ -51,4 +52,4 @@ jobs:
           test ! -e checksums.txt.sig || { echo "a signature exists before the offline signing step"; exit 1; }
           tar -xzf reflopd_${TAG#v}_linux_amd64.tar.gz
           ./reflopd version | tee /dev/stderr | grep -q "${TAG#v}"
-          ls reflop-${TAG#v}-py3-none-any.whl
+          ls reflop-${TAG#v}-py3-none-any.whl reflop-${TAG#v}.tar.gz
