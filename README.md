@@ -60,9 +60,9 @@ reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 | **Owner** installs `reflopd` | Linux x86_64 or aarch64, glibc ≥ 2.28 | nothing: no root, no Docker, no Python. NVIDIA driver ≥ 525 is optional (without a GPU, reflopd serves the CPU) |
 | **Guest** installs `reflop` | macOS (Apple Silicon or Intel) or Linux | Python ≥ 3.10, PyTorch ≥ 2.6 |
 
-### Guest - `reflop`
+### `reflop` Guest
 
-Add the client to the environment your training code runs in:
+> Add the client to the environment your training code runs in
 
 - **uv or pip**
 
@@ -85,9 +85,9 @@ curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh
 The script installs into the active virtual environment if there is one, otherwise
 into an environment of its own.
 
-### Owner: `reflopd`
+### `reflopd` Owner
 
-On the GPU workstation:
+> On the GPU workstation
 
 - **Install script**
 
