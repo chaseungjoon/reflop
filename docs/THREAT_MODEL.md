@@ -142,7 +142,7 @@ progress for 7 days are deleted.
 | Bugs in whitelisted PyTorch, CUDA or driver code | reachable by design. Validation and bounds checks narrow the inputs; the sandbox limits what a successful exploit gains. Cannot be reduced to zero |
 | Meta kernels disagreeing with real kernels | outputs that later operators consume are checked against the validated shape and dtype at run time; a mismatch is an error. Unused auxiliary outputs may differ (seen with `_embedding_bag`) |
 | Timing side channels between Guests on one GPU | out of scope |
-| A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes |
+| A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes. A failed allocation while running may end the oldest detached session on that GPU; a graph rejected as larger than the device never does (ADR-022) |
 | Escape at Level 0 lands in the Owner's account | Level 1 moves it to an empty account |
 | The Owner sees Guests' data | by design (non-goal N1) |
 | A tampered client on PyPI | `pip` and `uv` do not check the offline signature. Only `pypi.yml`, through Trusted Publishing and the `pypi` GitHub environment, can upload, and only signed files. Someone who controls the PyPI account or the repository's Actions could still upload a different file. `install.sh` and `reflop update` check the signature on the Guest's machine |

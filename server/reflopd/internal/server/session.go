@@ -128,6 +128,37 @@ func isOOM(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "out of memory")
 }
 
+// freeableOOM reports whether e is a GPU allocation that failed while the
+// worker ran, the only kind of OOM that ending a detached session can help.
+// An OOM from validation (STAGE_V*, e.g. a graph larger than the whole
+// device) allocated nothing: evicting for it would let any Guest end other
+// Guests' detached sessions at no cost. Unknown stages do not evict.
+func freeableOOM(e *pb.Error) bool {
+	if e.GetCode() != pb.ErrorCode_ERROR_OUT_OF_MEMORY {
+		return false
+	}
+	switch e.GetStage() {
+	case pb.ValidationStage_STAGE_NONE, // torch.OutOfMemoryError outside a graph (uploads)
+		pb.ValidationStage_STAGE_E1_BINDINGS,
+		pb.ValidationStage_STAGE_E2_RUNTIME,
+		pb.ValidationStage_STAGE_E3_EXECUTE:
+		return true
+	}
+	return false
+}
+
+// evictionVictim returns the detached session to end so that the request
+// that failed with e may succeed on retry, or nil.
+func (s *Session) evictionVictim(e *pb.Error) *Session {
+	if s.Device.GPU == nil || !freeableOOM(e) {
+		return nil
+	}
+	if victim := s.srv.oldestDetached(s.Device); victim != s {
+		return victim
+	}
+	return nil
+}
+
 // oldestDetached returns the session on slot that has been detached longest.
 func (s *Server) oldestDetached(slot *DeviceSlot) *Session {
 	var best *Session
@@ -329,14 +360,12 @@ func (s *Session) deliver(env *pb.Envelope) {
 		return
 	}
 	if e := env.GetError(); e != nil {
-		if e.Code == pb.ErrorCode_ERROR_OUT_OF_MEMORY && s.Device.GPU != nil {
-			if victim := s.srv.oldestDetached(s.Device); victim != nil && victim != s {
-				s.srv.logf("GPU out of memory in session %s of %q: ending detached session %s of %q", s.hex()[:8], s.Identity.Name, victim.hex()[:8], victim.Identity.Name)
-				s.srv.audit.Write(audit.Record{Identity: victim.Identity.Name, ID: victim.Identity.ID, Session: victim.hex(), Event: "session_evicted",
-					Fields: map[string]any{"reason": "gpu_full", "for": s.Identity.Name}})
-				victim.close("ended while detached: the GPU was needed by another session")
-				e.Message += " (a disconnected session was holding GPU memory and has been ended; retrying may succeed)"
-			}
+		if victim := s.evictionVictim(e); victim != nil {
+			s.srv.logf("GPU out of memory in session %s of %q: ending detached session %s of %q", s.hex()[:8], s.Identity.Name, victim.hex()[:8], victim.Identity.Name)
+			s.srv.audit.Write(audit.Record{Identity: victim.Identity.Name, ID: victim.Identity.ID, Session: victim.hex(), Event: "session_evicted",
+				Fields: map[string]any{"reason": "gpu_full", "for": s.Identity.Name}})
+			victim.close("ended while detached: the GPU was needed by another session")
+			e.Message += " (a disconnected session was holding GPU memory and has been ended; retrying may succeed)"
 		}
 		s.srv.audit.Write(audit.Record{Identity: s.Identity.Name, ID: s.Identity.ID, Session: s.hex(), Event: "request_failed",
 			Fields: map[string]any{"kind": r.kind, "code": e.Code.String(), "stage": e.Stage.String(), "message": trunc(e.Message, 300)}})

@@ -406,11 +406,28 @@ def test_empty_like_is_zero(sess):
 
 
 def test_peak_larger_than_device():
+    """OUT_OF_MEMORY (so the client raises torch.OutOfMemoryError), but at a
+    validation stage. reflopd ends another Guest's detached session only for an
+    OOM raised while running (no stage or E1-E3); reported at E*, this graph
+    would let any Guest end every detached session on the GPU (fixed in 0.1.8,
+    see eviction_test.go)."""
     s = make_session("cpu")
     s.dev_info.total_memory_bytes = 1 << 20  # pretend the device has 1 MiB
     g = graph(s, [], [("aten.full.default", [INTS(1024, 1024), F(1.0), NONE, NONE, gpb.Arg(device=s.gdevice), NONE])],
               [(torch.float32, (1024, 1024))])
-    expect(register(s, g).error, E.ERROR_OUT_OF_MEMORY, E.STAGE_V5_SAFETY)
+    err = register(s, g).error
+    expect(err, E.ERROR_OUT_OF_MEMORY, E.STAGE_V5_SAFETY)
+    assert err.stage not in (E.STAGE_NONE, E.STAGE_E1_BINDINGS, E.STAGE_E2_RUNTIME, E.STAGE_E3_EXECUTE)
+
+
+def test_quota_exceeded_is_not_oom():
+    """A graph over the identity's device-memory quota is QUOTA, which never
+    evicts another Guest's session."""
+    s = make_session("cpu")
+    s.init.device_memory_quota_bytes = 1 << 20
+    g = graph(s, [], [("aten.full.default", [INTS(1024, 1024), F(1.0), NONE, NONE, gpb.Arg(device=s.gdevice), NONE])],
+              [(torch.float32, (1024, 1024))])
+    expect(register(s, g).error, E.ERROR_QUOTA, E.STAGE_V5_SAFETY)
 
 
 def test_alloc_beyond_numel_limit(sess):

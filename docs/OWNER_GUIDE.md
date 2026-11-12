@@ -188,8 +188,9 @@ on usage among yourselves. When the GPU is full, the Guest whose allocation fail
 gets an `OUT_OF_MEMORY` error and their session keeps working. Sessions whose
 client disconnected without closing are kept for `[session] ttl`, but the
 oldest of them on that GPU is ended (audit event `session_evicted`) when a new
-session cannot start or an allocation fails for lack of memory. If you need
-limits:
+session cannot start or an allocation fails for lack of memory while running.
+A graph rejected because it needs more memory than the whole GPU never ends
+another session. If you need limits:
 
 ```sh
 reflopd quota set alice --device-memory 6GiB --max-sessions 1

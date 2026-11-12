@@ -414,3 +414,30 @@ project `reflop update` upgrades `uv.lock` and refuses locked files whose
 hashes are not in the signed `checksums.txt`; installing a wheel there would
 be undone by the next `uv sync`. `reflopd update` replaces only the `reflopd`
 binary, so the two updaters never touch each other's files.
+
+## ADR-022: Only an OOM while running ends a detached session
+
+**Context.** A session whose client went away keeps its worker, and that
+worker's GPU memory, for `[session] ttl` so the Guest can resume. When a GPU
+session fails with `OUT_OF_MEMORY`, reflopd ends the oldest detached session
+on that GPU, which may belong to another Guest. Since 0.1.5 a graph larger
+than the whole device is also reported as `OUT_OF_MEMORY` (at
+`STAGE_V5_SAFETY`), so clients raise `torch.OutOfMemoryError`. That graph is
+rejected before anything is allocated, so any Guest could end every detached
+session on the GPU by registering such graphs in a loop, at no cost.
+
+**Decision.** reflopd ends a detached session only for an `OUT_OF_MEMORY`
+error raised while the worker ran: at `STAGE_E1_BINDINGS`,
+`STAGE_E2_RUNTIME`, `STAGE_E3_EXECUTE`, or with no stage (an allocation
+outside a graph, such as an upload). An OOM at a validation stage, or at a
+stage reflopd does not know, never evicts. Starting a session still evicts
+when the worker cannot get GPU memory.
+
+**Alternatives.** Report the oversized graph as `RESOURCE_LIMIT` again (breaks
+batch-size fallbacks that catch `torch.OutOfMemoryError`); a separate error
+code for "larger than the device" (a protocol change for the same result).
+
+**Consequences.** A Guest who really fills the GPU can still end detached
+sessions, one per failed allocation; that is the trade the eviction was made
+for. The worker's error stage is now part of the eviction decision, and a
+corpus test pins the stage of the oversized-graph error.
