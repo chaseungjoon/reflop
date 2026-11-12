@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.10 (2026-11-12)
+
+reflopd:
+
+- reflopd starts when a GPU's memory is full. Before, if other programs held
+  all of a GPU's memory (for example a leaking `gnome-shell`), the self-test
+  and the startup probe failed with "CUDA error: out of memory" and reflopd
+  did not start at all, not even for the CPU. Now the self-test skips that
+  GPU with one line that says how much memory is in use, and reflopd serves
+  the other devices. It checks the GPU every 30 seconds and serves it once
+  its memory is free. `reflopd status` shows it as not served until then,
+  and `reflopd selftest` exits 1 when it skipped a device (ADR-023).
+- `reflopd up --foreground` and `--no-service` ran detection, the runtime
+  check and the self-test three times, because the daemon restarted the
+  whole `up` command when moving into its systemd scope and its sandbox.
+  It now restarts as `reflopd serve` with the same flags. Plain `reflopd up`
+  (the user service) was not affected.
+- The self-test no longer prints a failing worker's output three times, and
+  workers no longer warn that NumPy is missing (the runtime leaves it out on
+  purpose).
+
 ## 0.1.9 (2026-11-12)
 
 - `reflop update` for a client installed with `uv tool` could fail right
