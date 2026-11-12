@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.8 (2026-11-12)
+
+Security fix for reflopd.
+
+- A Guest could end other Guests' disconnected sessions. A session whose
+  client drops is kept for `[session] ttl` so it can be resumed, but the
+  oldest such session on a GPU is ended when an allocation there fails for
+  lack of memory. Since 0.1.5 a graph that needs more memory than the whole
+  device also fails with `OUT_OF_MEMORY`, although it is rejected before
+  anything is allocated, so registering such graphs in a loop ended every
+  disconnected session on the GPU and lost their state. Now only an
+  allocation that fails while running ends a disconnected session
+  (ADR-022). Upgrade with `reflopd update`. The client is unchanged apart
+  from its version.
+
 ## 0.1.7 (2026-11-12)
 
 - The client is on PyPI as `reflop`: `uv add reflop` or `pip install reflop`
