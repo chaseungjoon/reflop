@@ -815,7 +815,11 @@ func selftestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runSelftest(context.Background(), cmd.OutOrStdout(), l, security, weak)
+			skipped, err := runSelftest(context.Background(), cmd.OutOrStdout(), l, security, weak)
+			if err == nil && len(skipped) > 0 {
+				err = fmt.Errorf("not every device was tested (%d skipped); run the self-test again once GPU memory is free", len(skipped))
+			}
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&security, "security", false, "also verify isolation (no_new_privs, seccomp, environment, sockets)")
@@ -823,13 +827,15 @@ func selftestCmd() *cobra.Command {
 	return cmd
 }
 
-func runSelftest(ctx context.Context, out io.Writer, l paths.Layout, security, weak bool) error {
-	srv, err := server.New(server.Options{Layout: l, AcceptWeakIsolation: weak, SkipProbe: true})
+// runSelftest returns the devices it skipped because their GPU memory was
+// full (see Server.SelfTest).
+func runSelftest(ctx context.Context, out io.Writer, l paths.Layout, security, weak bool) ([]string, error) {
+	srv, err := server.New(server.Options{Layout: l, AcceptWeakIsolation: weak, SkipProbe: true, QuietWorkers: true})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := srv.Prepare(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	return srv.SelfTest(ctx, out, security)
 }

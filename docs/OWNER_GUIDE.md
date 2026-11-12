@@ -52,7 +52,9 @@ machine can reach it.
    Guests cannot trigger, choose or change this. The download resumes if
    interrupted.
 3. Runs the self-test: one sandboxed worker per device, a matmul, a check of
-   the result.
+   the result. A GPU whose memory is all in use by other programs is skipped
+   with a note, and reflopd starts anyway as long as another device (usually
+   the CPU) passed.
 4. Installs and starts the `reflopd` systemd user service (`Delegate=yes`, so
    each worker gets its own cgroup for the memory and process rails). Without a
    systemd user manager, or with `--foreground`, it serves in the terminal.
@@ -345,6 +347,7 @@ if something is unsafe.
 | `neither Landlock nor seccomp works` | the kernel or container lacks both; fix that, or start with `--accept-weak-isolation` knowing workers then run unconfined |
 | `cgroup rails: not running in a reflopd scope or unit` | you ran `serve` without systemd; rails fall back to `RLIMIT_NPROC` and memory polling. `reflopd up` sets up the service |
 | reflopd stops when you log out | `loginctl enable-linger $USER` |
+| self-test: `skipped: the GPU has no free memory for a worker` | other programs hold the GPU's memory; `nvidia-smi` lists them. A desktop session (`gnome-shell`, `Xwayland`) holding gigabytes is usually a compositor leak that logging out and back in clears. Guests get `OUT_OF_MEMORY` on that GPU until memory is free; then `reflopd selftest` should pass |
 | a Guest gets `SESSION_LOST` | `reflopd audit --name <guest>` shows why: killed, rail, watchdog, or a worker crash |
 | `another reflopd is already running` | `reflopd status`, then `reflopd stop` |
 | CUDA errors after a driver update | `reflopd selftest`; if the variant changed, `reflopd runtime install` |

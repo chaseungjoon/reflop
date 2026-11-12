@@ -265,8 +265,14 @@ Everything lives under your user (~/.local/share/reflop, ~/.config/reflop).`,
 				return exitWith(ExitUnsafe, errors.New("neither Landlock nor seccomp is available on this kernel; reflopd will not serve Guests (see `reflopd doctor`, or --accept-weak-isolation)"))
 			}
 			fmt.Fprintln(out, "self-test:")
-			if err := runSelftest(ctx, out, l, false, weak); err != nil {
+			skipped, err := runSelftest(ctx, out, l, false, weak)
+			if err != nil {
 				return fmt.Errorf("self-test failed: %w", err)
+			}
+			if len(skipped) > 0 {
+				// A full GPU is the Owner's own use, not a fault: serve the
+				// devices that passed, and the GPU once memory frees up.
+				fmt.Fprintln(out, "  note: starting anyway; run `reflopd selftest` once GPU memory is free")
 			}
 			first := false
 			if ids, err := auth.Open(l.Identities()); err == nil && len(ids.List()) == 0 {

@@ -55,6 +55,7 @@ type Options struct {
 	Log                 *log.Logger
 	Listen              []string // overrides config
 	SkipProbe           bool     // tests: do not spawn probe workers
+	QuietWorkers        bool     // self-test: worker stderr goes only into the error of a worker that fails
 }
 
 // Server is the reflopd daemon.
@@ -141,6 +142,16 @@ func (s *Server) cfg() config.Config {
 }
 
 func (s *Server) logf(format string, args ...any) { s.logger.Printf(format, args...) }
+
+// workerLog is where workers' stderr lines go. A worker that fails to start
+// carries the last lines in its error, so the self-test does not also print
+// them as they arrive.
+func (s *Server) workerLog() func(string, ...any) {
+	if s.opts.QuietWorkers {
+		return nil
+	}
+	return s.logf
+}
 
 // Reload re-reads identities and runtime-changeable settings.
 func (s *Server) Reload() error {
@@ -361,7 +372,7 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 		RequireLandlock: !cfg.Sandbox.AcceptWeakIsolation && sandbox.LandlockABI() > 0,
 		FSize:           rails.DiskBudget(cfg.Rails, s.layout.State),
 		MaxFrame:        uint32(cfg.Limits.MaxFrameBytes) + 1<<20,
-		Log:             s.logf,
+		Log:             s.workerLog(),
 		TestProbe:       os.Getenv("REFLOP_TEST_PROBE"),
 	}
 	if spec.FSize == 0 {

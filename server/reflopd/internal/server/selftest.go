@@ -15,6 +15,7 @@ import (
 
 	"github.com/chaseungjoon/reflop/pkg/opset"
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
 )
 
@@ -33,14 +34,28 @@ func f32bytes(v []float32) []byte {
 
 // SelfTest runs a functional check (and, with security, external isolation
 // checks) on a fresh worker per device.
-func (s *Server) SelfTest(ctx context.Context, out io.Writer, security bool) error {
+//
+// A GPU whose memory is all in use (the worker cannot create a CUDA
+// context) is skipped and returned in skipped, as long as another device
+// passes. The GPU is not broken: the Owner's own programs or a desktop
+// session hold its memory, and Guests get OUT_OF_MEMORY on it until that is
+// freed. Every worker still applies the sandbox and fails closed on its own;
+// the device that passed shows the sandbox works on this machine.
+func (s *Server) SelfTest(ctx context.Context, out io.Writer, security bool) (skipped []string, err error) {
+	passed := 0
 	for _, slot := range s.slots {
 		sess := &Session{Device: slot, srv: s, numerics: s.allowedNumerics(nil), routes: map[uint64]*route{}}
 		copy(sess.ID[:], []byte(fmt.Sprintf("selftest-%d-%d", slot.PB.Kind, time.Now().UnixNano()%1e6)))
 		t0 := time.Now()
 		w, err := s.spawnWorker(ctx, sess)
 		if err != nil {
-			return fmt.Errorf("%s: %w", slot.Name, err)
+			if gpuFull(slot, err) {
+				why := gpuFullNote(slot, gpu.MemoryUse)
+				fmt.Fprintf(out, "  %s: skipped: %s\n", slot.Name, why)
+				skipped = append(skipped, slot.Name+": "+why)
+				continue
+			}
+			return skipped, fmt.Errorf("%s: %w", slot.Name, err)
 		}
 		fmt.Fprintf(out, "  %s: worker ready in %s (%s)\n", slot.Name, time.Since(t0).Truncate(time.Millisecond), describeSandbox(w))
 		err = s.matmulCheck(w, slot)
@@ -51,11 +66,32 @@ func (s *Server) SelfTest(ctx context.Context, out io.Writer, security bool) err
 		<-w.Done()
 		os.RemoveAll(s.layout.SessionScratch(sess.hex()))
 		if err != nil {
-			return fmt.Errorf("%s: %w", slot.Name, err)
+			return skipped, fmt.Errorf("%s: %w", slot.Name, err)
 		}
 		fmt.Fprintf(out, "  %s: matmul OK\n", slot.Name)
+		passed++
 	}
-	return nil
+	if passed == 0 && len(skipped) > 0 {
+		return skipped, fmt.Errorf("no device could be tested: %s", strings.Join(skipped, "; "))
+	}
+	return skipped, nil
+}
+
+// gpuFull reports whether a worker for slot failed to start only because the
+// GPU had no free memory (for example cuDevicePrimaryCtxRetain returning
+// CUDA_ERROR_OUT_OF_MEMORY).
+func gpuFull(slot *DeviceSlot, err error) bool {
+	m := strings.ToLower(err.Error())
+	return slot.GPU != nil && strings.Contains(m, "cuda") && strings.Contains(m, "out of memory")
+}
+
+func gpuFullNote(slot *DeviceSlot, use func(gpu.GPU) (uint64, uint64, bool)) string {
+	held := ""
+	if used, total, ok := use(*slot.GPU); ok {
+		held = fmt.Sprintf(" (%d of %d MiB in use)", used, total)
+	}
+	return "the GPU has no free memory for a worker" + held + ". Other programs hold it; `nvidia-smi` lists them. " +
+		"Guests get OUT_OF_MEMORY on this GPU until it is freed"
 }
 
 func (s *Server) matmulCheck(w *supervisor.Worker, slot *DeviceSlot) error {

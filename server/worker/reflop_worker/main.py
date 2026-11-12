@@ -46,6 +46,9 @@ def warm_up(device) -> None:
 
 def main() -> None:
     warnings.filterwarnings("ignore", message="The given buffer is not writable")
+    # The runtime ships without numpy on purpose (ADR-008); torch warns
+    # about it on import, on every worker start.
+    warnings.filterwarnings("ignore", message="Failed to initialize NumPy")
     probe = os.environ.get("REFLOP_TEST_PROBE") or None
 
     ctrl = socket.socket(fileno=FD_CONTROL)

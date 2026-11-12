@@ -128,6 +128,38 @@ func querySMI(smi, driver string, notes *[]string) ([]GPU, string) {
 	return gs, driver
 }
 
+// MemoryUse asks nvidia-smi how much of g's memory is in use, in MiB. Like
+// Detect, it runs only at Owner-triggered times (the self-test).
+func MemoryUse(g GPU) (usedMiB, totalMiB uint64, ok bool) {
+	smi := findSMI(false)
+	if smi == "" {
+		return 0, 0, false
+	}
+	id := g.UUID
+	if id == "" {
+		id = strconv.Itoa(g.Index)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, smi, "--id="+id, "--query-gpu=memory.used,memory.total",
+		"--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0, 0, false
+	}
+	return parseMemoryUse(string(out))
+}
+
+func parseMemoryUse(s string) (used, total uint64, ok bool) {
+	u, t, found := strings.Cut(firstLine(strings.TrimSpace(s)), ",")
+	if !found {
+		return 0, 0, false
+	}
+	var e1, e2 error
+	used, e1 = strconv.ParseUint(strings.TrimSpace(u), 10, 64)
+	total, e2 = strconv.ParseUint(strings.TrimSpace(t), 10, 64)
+	return used, total, e1 == nil && e2 == nil && total > 0
+}
+
 // minorForBus maps a PCI bus id to the /dev/nvidiaN minor number using
 // /proc/driver/nvidia/gpus/<bus>/information.
 func minorForBus(bus string) int {
