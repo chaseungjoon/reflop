@@ -12,7 +12,7 @@
 [![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white)](server/reflopd)
 
 [![Linux](https://img.shields.io/badge/server-Linux-FCC624?logo=linux&logoColor=black)](docs/OWNER_GUIDE.md)
-[![macOS](https://img.shields.io/badge/client-macOS%20%7C%20Linux-000000?logo=apple&logoColor=white)](docs/GUEST_GUIDE.md)
+[![macOS](https://img.shields.io/badge/client-macOS%20%7C%20Linux-000000?logoColor=white)](docs/GUEST_GUIDE.md)
 
 ### Lend your GPU as a calculator.
 
