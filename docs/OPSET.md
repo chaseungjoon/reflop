@@ -2,7 +2,7 @@
 
 # reFLOP opset v1
 
-Pinned PyTorch: 2.15.0. 582 operators. Flags are explained in [PLAN.md §8.3](../PLAN.md#83-security-flags).
+Pinned PyTorch: 2.15.0. 582 operators. Flags are explained in [PLAN.md §8.3](PLAN.md#83-security-flags).
 
 ## Tier 0: Core ATen (193)
 

@@ -3,7 +3,7 @@
 reFLOP lets people the Owner does not fully trust (Guests) use the Owner's GPU.
 This document states what it defends, against whom, how each defense is
 enforced, how it is tested, and what remains possible. It expands
-[PLAN.md §2–§3](../PLAN.md#2-threat-model).
+[PLAN.md §2–§3](PLAN.md#2-threat-model).
 
 ## Actors and trust
 

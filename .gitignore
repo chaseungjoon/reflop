@@ -11,7 +11,6 @@ dist/
 .hypothesis/
 
 # docs
-PLAN.md
 AGENTS.md
 LIVE_TEST.md
 RETEST.md

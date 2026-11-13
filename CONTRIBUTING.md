@@ -1,8 +1,10 @@
 # Contributing to reFLOP
 
-Read [PLAN.md](PLAN.md) first: it is the design, and its invariants (§3) are
-never weakened, not even temporarily or behind a flag. Decisions go into
-[docs/DECISIONS.md](docs/DECISIONS.md) as ADRs.
+Read [docs/PLAN.md](docs/PLAN.md) first: it is the design, and its
+[invariants (§3)](docs/PLAN.md#3-security-invariants-never-violate) are never
+weakened, not even temporarily or behind a flag. Where the code differs from
+the plan, [docs/DECISIONS.md](docs/DECISIONS.md) says why; new decisions go
+there as ADRs.
 
 ## Setup
 
@@ -25,13 +27,16 @@ REFLOP_TEST_HOME=/tmp/rf make test-isolation
 
 - Server-side Python passes `tests/security/static/check_worker.py`. Do not add
   exceptions to it.
-- Adding an operator (PLAN.md §8.8) takes, in one change: the `opset.yaml`
-  entry with a new id, a validator for any `IDX`, `ALLOC`, `RESTRICTED` or `DDS`
-  flag, a cost function, a conformance test, a security test for each flag,
-  and `python codegen/gen.py`. CI checks that generated files are current.
+- Adding an operator
+  ([PLAN.md §8.8](docs/PLAN.md#88-adding-an-operator-procedure-r5)) takes, in
+  one change: the `opset.yaml` entry with a new id, a validator for any `IDX`,
+  `ALLOC`, `RESTRICTED` or `DDS` flag, a cost function, a conformance test, a
+  security test for each flag, and `python codegen/gen.py`. CI checks that
+  generated files are current.
 - Op ids are permanent; never reuse one.
-- Never cache a per-execute check (rule R7). Caching structural validation by
-  graph hash is fine.
+- Never cache a per-execute check
+  ([rule R7](docs/PLAN.md#0-agent-working-rules)). Caching structural
+  validation by graph hash is fine.
 - Every bug fix adds a regression test; every security fix adds a case to
   `tests/security/`.
 - Commit messages, comments and docs are in English. Code is Apache-2.0; do not
@@ -62,5 +67,6 @@ issue or pull request; follow [SECURITY.md](SECURITY.md) first.
 | `client/python/reflop/` | the Python client |
 | `clib/` | the C/C++ API |
 | `pkg/` | Go packages shared by reflopd and libreflop |
+| `docs/` | the design (`PLAN.md`), ADRs, threat model, Owner and Guest guides |
 | `tests/` | conformance, security corpus, isolation, e2e, perf |
 | `spikes/` | M0 spikes |

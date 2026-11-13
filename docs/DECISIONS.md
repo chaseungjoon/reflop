@@ -1,6 +1,6 @@
 # reFLOP design decisions
 
-Architecture decision records (PLAN.md rule R3). Each record states the
+Architecture decision records ([PLAN.md](PLAN.md) rule R3). Each record states the
 context, the decision, the alternatives considered, and the consequences.
 Deviations from PLAN.md are marked **Deviation** and explain why the plan's
 reason did not hold.
