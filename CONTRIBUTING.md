@@ -6,6 +6,9 @@ weakened, not even temporarily or behind a flag. Where the code differs from
 the plan, [docs/DECISIONS.md](docs/DECISIONS.md) says why; new decisions go
 there as ADRs.
 
+Everyone taking part in the project follows the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Setup
 
 ```sh

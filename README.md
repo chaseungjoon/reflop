@@ -310,7 +310,8 @@ make test-isolation     # run the probes inside real sandboxed workers
 make clib               # libreflop and the C/C++ examples
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
