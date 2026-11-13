@@ -163,21 +163,24 @@ pip install ./client/python                 # the reflop client
 
 ## Quick Start
 
+> Owner side `reflopd`
 ```sh
-# 1) Owner: set up and start (rootless). Fetches the pinned PyTorch runtime,
-#    runs a sandboxed self-test, starts a systemd user service, prints an invite.
-reflopd up --listen 100.64.0.7:7460        # e.g. your Tailscale address
+# 1) Set up and start (rootless).
+reflopd up --listen <LAN-or-Tailscale-addr>:7460
 
-# 2) Owner: one invite per Guest
+# 2) One invite per Guest, prints the one-time pairing code
 reflopd invite --name alice
+```
 
-# 3) Guest: pair once (the server key gets pinned), then check
+> Guest side `reflop`
+```sh
+# 3) Pair once (the server key gets pinned), then check
 reflop pair reflop1-baaraai2b4…
 reflop status
 
-# 4) Guest: train
-python train.py                             # with reflop.device(), or:
-reflop run python train.py                  # unmodified CUDA code
+# 4) Train your model
+python reflop_train.py          # Embed `reflop` in code
+reflop run python train.py      # Or just add a prefix command
 ```
 
 ## How it works
