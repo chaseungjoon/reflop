@@ -29,22 +29,25 @@ Guests send tensor math. Never code execution, never shell access.
 | **Runs** | `reflopd` | their own PyTorch code, unchanged except for the device |
 | **Gets** | a GPU that stays busy, and a machine that stays theirs | the GPU's FLOPs, and nothing else |
 
+Run your PyTorch code with a simple prefix.
+
+```sh
+reflop run python train.py    # device="cuda"
+```
+
+Or embed `reflop` in your code, and simply run `python3 train.py`.
+
 ```python
 import torch, reflop
 
 dev = reflop.device()          # the GPU on the Owner's workstation
 model = MyModel().to(dev)      # weights live on the server
+
 for x, y in loader:
     loss = loss_fn(model(x.to(dev)), y.to(dev))
     loss.backward()
     opt.step(); opt.zero_grad()
     print(loss.item())         # only this number comes back
-```
-
-Already have a CUDA script? Don't touch it:
-
-```sh
-reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 ```
 
 > [!IMPORTANT]
@@ -62,7 +65,7 @@ reflop run python train.py    # .cuda() and device="cuda" go to the Owner's GPU
 
 ---
 
-### `reflop` Guest
+### Guest : `reflop`
 
 > Add the client to the environment your training code runs in
 
@@ -89,7 +92,7 @@ into an environment of its own.
 
 ---
 
-### `reflopd` Owner
+### Owner : `reflopd` 
 
 > On the GPU workstation
 
