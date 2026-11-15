@@ -157,7 +157,7 @@ def render(data, output):
             yticks=range(len(models)),
             yticklabels=models,
             xlabel="Batch size",
-            title=f"Reflop {mode} / {residency}",
+            title=f"reFLOP {mode} / {residency}",
         )
         for (i, j), value in np.ndenumerate(matrix):
             ax.text(
@@ -171,7 +171,7 @@ def render(data, output):
             )
         fig.colorbar(im, ax=ax, label="% of native eager CUDA throughput", shrink=0.8)
     fig.suptitle(
-        "Reflop throughput relative to native PyTorch on the same GPU\n100% = equal throughput; N/A = missing or nonpassing case"
+        "reFLOP throughput relative to native PyTorch on the same GPU\n100% = equal throughput; N/A = missing or nonpassing case"
     )
     for ext in ("png", "svg"):
         fig.savefig(output / f"native-cuda-comparison.{ext}", dpi=180)

@@ -1,6 +1,6 @@
 # libreflop: the reFLOP C and C++ API
 
-Build operator graphs from C or C++, run them on a reflop server, and fetch the
+Build operator graphs from C or C++, run them on a reFLOP server, and fetch the
 results. Your program runs locally; only graphs and tensors are sent.
 
 ```c

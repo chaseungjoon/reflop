@@ -1,94 +1,131 @@
-# Reflop benchmark results — 14 November 2026
+# reFLOP benchmark results — 15 November 2026 (UTC)
 
-**Reflop capture delivers substantial improvements over Reflop eager when training inputs remain on the GPU. Uploading inputs every step can overwhelm those gains.** This is evidence for capture and data residency, not a measurement of efficiency relative to native CUDA: that baseline has not been collected.
+**At batch 128 with resident inputs, reFLOP capture retains 35.6–70.1% of native eager GPU throughput for eight workloads; LSTM and GRU retain 4.0–4.6%.** Native PyTorch ran locally on the Linux Owner workstation. The Guest ran on a MacBook Pro over Tailscale TLS to the same RTX 5070. Uploading inputs every step reduces capture throughput to 0.26–10.52% of the corresponding native upload baseline.
 
-## What was measured
+These are measured timing ratios, not numerical validation. The available correctness evidence still contains unresolved ResNet-18 failures. The [14 November analysis](historical-2026-11-14.md) and the root README's same-machine 74% ResNet result are separate experiments; neither supplies this comparison's baseline.
 
-The client was macOS arm64, Python 3.12.16, PyTorch 2.15.0, Reflop 0.1.11. The remote runtime reported an NVIDIA GeForce RTX 5070 (12,322,603,008 bytes), Reflopd 0.1.11, PyTorch 2.15.0+cu132, CUDA 13.2, and cuDNN TF32 enabled. Inventory observed authenticated TLS 1.3. Network RTT, physical distance, and effective link bandwidth were not measured; do not describe this as a controlled LAN or WAN result.
+## Runs and measurement conditions
 
-Throughput run: `20261114T042619Z-throughput-e82b5864`. Ten synthetic training workloads × four batch sizes × eager/capture × resident/upload = 160 cases, plus six MLP synchronization cases. Each successful case had five warmup steps, then three windows of 30 steps. The measured region includes forward, loss, zero-grad, backward, momentum optimizer, selected input uploads, and final synchronization. Model initialization, initial weight transfer, warmup, and connection setup are excluded.
+The run IDs use UTC: these runs were collected on 15 November UTC, or 16 November in Asia/Seoul.
 
-All charts use **batch size divided by the arithmetic mean of synchronized repeat seconds/step**, equivalent to total samples / total window time because windows have equal step counts. They do not use per-step submission time or the arithmetic mean of repeat rates. Whiskers/dots show observed repeats, not confidence intervals. Each model's “sample” differs in shape and computational cost; compare modes within a workload, rather than ranking model efficiency by sample rate.
+| Evidence | Run ID | Outcome |
+| --- | --- | --- |
+| Native eager CUDA, Owner workstation | `20261115T151140Z-native_cuda-b37a7467` | 78 passed |
+| Remote throughput, MacBook Pro Guest | `20261115T152437Z-throughput-0bbfc8c4` | 162 passed: 156 workload cases + 6 synchronization cases |
+| Generated comparison | `20261115T155059Z-cuda-comparison-13d663ca` | 156 matched pairs; no failed or missing pairs |
 
-## Throughput and input residency
+Each native workload/batch/input-policy case is the baseline for both remote eager and capture. The six synchronization cases are excluded from the native comparison. ResNet-18 batch 1 is excluded from both performance matrices because training-mode BatchNorm cannot use its `[1, 512, 1, 1]` activation.
 
-![Batch 128 throughput with repeat ranges](figures/throughput-b128.png)
-
-At batch 128, resident capture improves throughput by **1.62–5.55×** over resident eager across all ten workloads. Keep training data near the GPU and replay stable training graphs.
-
-| Workload | Eager resident samples/s | Capture resident samples/s | Capture / eager | Capture upload samples/s | Resident / upload, capture |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| MLP | 65,757 | 106,288 | 1.62× | 6,363 | 16.70× |
-| CNN | 35,915 | 92,534 | 2.58× | 460 | 201.13× |
-| ResNet-18* | 6,112 | 19,511 | 3.19× | 209 | 93.54× |
-| U-Net | 10,904 | 50,165 | 4.60× | 120 | 416.53× |
-| LSTM | 2,195 | 11,225 | 5.11× | 1,977 | 5.68× |
-| GRU | 2,137 | 11,865 | 5.55× | 4,318 | 2.75× |
-| Attention classifier | 13,850 | 66,025 | 4.77× | 3,463 | 19.07× |
-| GPT | 12,405 | 62,479 | 5.04× | 11,654 | 5.36× |
-| LoRA-style | 56,640 | 153,142 | 2.70× | 7,593 | 20.17× |
-| Autoencoder | 51,162 | 163,510 | 3.20× | 2,083 | 78.49× |
-
-*ResNet-18 performance is provisional because its separate correctness checks failed.*
-
-The largest residency ratios are comparisons between different data policies, not capture speedups or GPU acceleration ratios. Resident cases reuse the same synthetic batch already on the device. They represent a favorable steady state; they do not include staging a full dataset, changing remote batches, augmentation, or a production input pipeline. Those require the dataset suite and realistic workloads.
-
-The counters support the data-movement explanation: CNN batch 128 uploads 47,216,640 bytes per 30-step window in both eager and capture, versus zero timed input-upload bytes for resident runs. Both resident modes record 30 executes per window. Capture reduces client flushes from 30 to zero, with no new timed registrations. Replay therefore does not mean all 30 steps become one server execute. These counters support reduced client graph-building work and eliminated repeated input traffic; they do not isolate every source of elapsed time.
-
-## Capture gains depend on batch and workload
-
-![Capture-to-eager speedup for every batch and data policy](figures/capture-speedup.png)
-
-Capture helps most resident cases, but not all: resident MLP batch 32 is 0.86× eager, and resident U-Net batch 8 is 0.49×. Upload results are mixed. At batch 128, capture/upload is 0.70× eager/upload for MLP and 0.68× for CNN, while GRU improves 2.33×. Capture is an optimization to measure for each workload, not a universal speedup guarantee. With only three sequential windows and no randomized case ordering, timing variation and server load cannot be separated from implementation effects.
-
-![Batch scaling for all ten workloads](figures/batch-scaling.png)
-
-Larger batches often amortize fixed per-step overhead when inputs are resident. Upload throughput frequently flattens or worsens as batches grow, consistent with increased transfer cost. The scaling plot preserves counterexamples and missing results; its panels use separate logarithmic y scales.
-
-## Synchronization matters
-
-![MLP synchronization sweep](figures/synchronization.png)
-
-For uploaded MLP batch 32, eager measures 983 samples/s with a synchronization every step, 5,061 every five steps, and 3,414 at the end of the window. Capture measures 1,435, 3,377, and 4,580 respectively. Avoiding a wait after every step can substantially improve throughput. The nonmonotonic eager results and repeat spread show that these short runs do not establish a precise optimal synchronization interval or a tail-latency guarantee.
-
-## Correctness and scope of evidence
-
-| Saved invocation | Outcome |
+| Setting | Recorded value |
 | --- | --- |
-| Catalog | 1,396 planned cases; catalog only, not execution |
-| Smoke | 12 passed |
-| Inventory | 6 passed |
-| Correctness | 36 passed, 4 failed |
-| Throughput including synchronization | 162 passed, 4 failed |
+| GPU | NVIDIA GeForce RTX 5070, 12,322,603,008 bytes; same physical GPU confirmed by the operator |
+| Native host | Linux x86_64, Python 3.12.13 |
+| Guest | MacBook Pro (operator-reported), macOS 27.2.1 arm64, Python 3.12.16, PyTorch 2.15.0 |
+| reFLOP | Client 0.1.12; `reflopd` 0.1.12 |
+| Native and Owner runtime | PyTorch 2.15.0+cu132, CUDA 13.2 |
+| Owner driver | 595.71.05; the native run did not separately record its driver |
+| Numerical policy | cuDNN TF32 enabled; matmul TF32, deterministic algorithms, and cuDNN benchmark disabled |
+| Source | Commit `2e1e02419f00ac4bfeec8c6eaab08a99da7411cd`, clean working trees; matching benchmark and training-source hashes |
+| Timing | 5 warmup steps, then 3 synchronized windows of 30 steps; synchronization at each window's end |
+| Configuration | Seed 1729, 4 CPU threads, batches 1/8/32/128, momentum optimizer |
+| Connection | Tailscale TLS, reported by the operator |
 
-The four throughput failures are all ResNet-18 batch 1. Its 32×32 inputs reach a `[1, 512, 1, 1]` activation, which is invalid for training-mode BatchNorm. No server execute was recorded. This is an invalid workload configuration, not evidence of Reflop throughput failure. The current catalog excludes this batch; the historical failures remain in the snapshot.
+RTT, effective bandwidth, physical distance, direct versus relayed Tailscale routing, GPU clocks/power limits, and competing GPU load were not recorded in the supplied evidence. This is a measured remote-use scenario, not a controlled LAN/WAN comparison or a test isolating TLS overhead. The configuration's `native_cuda_label` remains its default placeholder; the host/path description above comes from the operator.
 
-All four correctness failures are ResNet-18 (eager/capture × remote CUDA/server CPU). CUDA loss differs from the native CPU reference by roughly 1.7%, exceeding `rtol=0.002`, `atol=0.0002`. Server CPU cases reach a tensor comparison with 7/512 mismatches and maximum absolute difference about 0.000456. Possible contributors include numerical backend differences and enabled cuDNN TF32; the evidence does not establish a cause or prove harmlessness. Investigate with a matched native CUDA reference, controlled numerical settings, and intermediate comparisons before making a correctness claim. Do not relax tolerances merely to obtain a pass.
+## Retained native GPU throughput
 
-A throughput pass asserts timing completed with finite loss (and capture replay where applicable). It is not the full loss/gradient/parameter correctness check. The correctness suite uses SGD, batch 8, eight steps, and changing inputs; throughput uses momentum and repeated inputs across many more steps. Even the 36 correctness passes are evidence for those specific configurations, not validation of every performance point.
+```text
+retained throughput = remote samples/second / native samples/second × 100%
+samples/second = batch size / mean synchronized seconds/step
+```
 
-Only these saved invocations were available. The remaining catalog suites—including concurrency, transfer, soak, recovery, isolation, and WAN—have no measured results here. There are no native CPU or native CUDA throughput runs. To measure retained GPU throughput, run `native_cuda.sh` on the same owner GPU with matched model, batch, input policy, steps, numerical settings, and versions, then calculate `remote samples/s / native samples/s × 100%`. The baseline is native eager PyTorch; compare against optimized native execution separately if that is the intended claim.
+Equal-length windows make this equivalent to total samples divided by total timed window duration. The tables use unrounded values for ratios, then round for display. They do not average repeat rates or use per-step submission time. Each workload's sample has a different shape and cost, so compare modes within a workload.
 
-## Native GPU comparison still needed
+The timed region includes forward, loss, zero-grad, backward, optimizer, the selected input transfers, and final synchronization. It excludes connection setup, model initialization, initial weight transfer, and warmup. All inputs and weights are synthetic. The baseline is native eager PyTorch, not native CUDA graphs or `torch.compile`.
 
-These saved results contain no native CUDA baseline. They cannot establish the percentage of native GPU throughput retained by Reflop. The root README's 74% ResNet capture result is a separate same-machine experiment and cannot be combined with this run.
+![reFLOP throughput retained versus native eager CUDA, all batches and input policies](figures/native-cuda-comparison.png)
 
-Follow the [native comparison workflow](../README.md#compare-native-gpu-and-reflop-throughput) to collect both runs from the current source and generate percentage, samples/second, and milliseconds/step comparisons. The comparator requires matching training-source hashes, runtime versions, numerical policies, and configuration. Collect a fresh remote run alongside the native baseline after changing the harness; do not compare an old run against a different workload implementation.
+The heatmap covers all 156 comparisons. ResNet-18 batch 1 is `N/A` because it is excluded, not because a timed case failed. ResNet-18 timing remains provisional pending correctness investigation. See the [full table](comparison.md), [CSV](data/comparison.csv), or [JSON](data/comparison.json) for every point.
 
-The harness now defaults to this repository's source client and C/C++ API. The current catalog excludes ResNet-18 batch 1, reducing the default catalog from the historical 1,396 cases to 1,388. The JSON snapshots and graphs here retain the original run and all eight failures across correctness and throughput. The numerical ResNet failures remain unresolved.
+### Resident inputs, batch 128
+
+| Workload | Native samples/s | reFLOP eager samples/s | reFLOP capture samples/s | Eager / native | Capture / native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MLP | 653,913 | 74,326 | 307,320 | 11.4% | 47.0% |
+| CNN | 274,215 | 37,225 | 127,725 | 13.6% | 46.6% |
+| ResNet-18* | 31,973 | 6,938 | 22,415 | 21.7% | 70.1% |
+| U-Net | 270,670 | 44,141 | 131,318 | 16.3% | 48.5% |
+| LSTM | 237,769 | 2,233 | 10,934 | 0.9% | 4.6% |
+| GRU | 259,952 | 2,246 | 10,276 | 0.9% | 4.0% |
+| Attention classifier | 224,861 | 15,224 | 80,850 | 6.8% | 36.0% |
+| GPT | 213,965 | 14,907 | 76,068 | 7.0% | 35.6% |
+| LoRA-style | 532,143 | 62,627 | 235,443 | 11.8% | 44.2% |
+| Autoencoder | 637,164 | 55,785 | 232,463 | 8.8% | 36.5% |
+
+*ResNet-18 has unresolved failures in the historical correctness evidence; no fresh correctness artifacts were supplied with this comparison.*
+
+Capture improves resident throughput by 2.97–5.31× over eager at batch 128. That improvement does not imply near-native performance: LSTM and GRU improve 4.90× and 4.57× over remote eager yet retain only 4.6% and 4.0% of native throughput. Their captured steps take 11.707 and 12.456 ms, versus 0.538 and 0.492 ms natively. These timings do not isolate the cause of that gap.
+
+ResNet-18 resident capture takes 5.710 ms/step versus 4.003 ms natively, retaining 70.1%; remote eager takes 18.449 ms, retaining 21.7%. This does not establish that the design's LAN performance target has passed: network conditions were not controlled and correctness remains unresolved.
+
+### Uploaded inputs, batch 128
+
+The native upload baseline copies CPU inputs over the Owner's local bus. reFLOP uploads them over the Guest-to-Owner connection. This is the user-visible cost of that input policy; it is not a comparison of identical transfer paths.
+
+| Workload | Native upload samples/s | reFLOP capture upload samples/s | Capture / native upload |
+| --- | ---: | ---: | ---: |
+| MLP | 508,061 | 10,543 | 2.08% |
+| CNN | 219,562 | 901 | 0.41% |
+| ResNet-18* | 30,885 | 895 | 2.90% |
+| U-Net | 209,515 | 542 | 0.26% |
+| LSTM | 236,880 | 10,107 | 4.27% |
+| GRU | 255,138 | 9,964 | 3.91% |
+| Attention classifier | 203,552 | 5,230 | 2.57% |
+| GPT | 186,259 | 19,603 | 10.52% |
+| LoRA-style | 479,703 | 10,490 | 2.19% |
+| Autoencoder | 515,637 | 5,353 | 1.04% |
+
+For ResNet-18, remote eager and capture with uploads both take about 143 ms/step, compared with 5.710 ms for resident capture. Capture alone does little for this upload-heavy case. Resident cases reuse one batch already on the GPU; they do not measure staging a complete dataset, changing remote batches, augmentation, or a production data loader.
+
+## Correctness and limits
+
+All 78 native and 162 remote timing cases passed their timing checks. A timing pass checks finite loss and, for capture, replay; it does not establish full loss, gradient, parameter, or buffer equivalence.
+
+The supplied new artifacts contain native and remote throughput runs and their comparison, but no new inventory or correctness run. The retained [14 November run summary](data/run-summary.json) reports 36 correctness passes and 4 failures, all ResNet-18 (eager/capture × remote CUDA/server CPU). CUDA loss differed from the native CPU reference by about 1.7%, beyond `rtol=0.002`, `atol=0.0002`; CPU checks had 7/512 tensor mismatches with maximum absolute difference about 0.000456. Those checks used reFLOP 0.1.11 and cannot certify this 0.1.12 run. The new native throughput baseline does not resolve them. Investigate with matched native CUDA correctness checks and intermediate values; do not loosen tolerances merely to obtain a pass.
+
+Three sequential timing windows per case provide repeat observations, not confidence intervals. Separate native and remote runs do not control time-varying load or GPU power state. No measured concurrency, transfer, soak, recovery, isolation, or WAN suite results are supplied here. These results describe the synthetic workload matrix and this connection, not training convergence or general model compatibility.
 
 ## Files and reproduction
 
-- `figures/`: four graphs in PNG for Markdown and SVG for reuse.
-- `data/throughput.json`: selected measurement fields, repeat timings, counters, runtime metadata, effective configuration, and SHA-256 of the original `results.jsonl`. Connection history, addresses, session IDs, local paths, and logs are omitted from this snapshot of the supplied run.
-- `data/throughput.csv`: one row per throughput case, including failures and repeat timings.
-- `data/run-summary.json`: saved run counts and all nonpassing case messages, with hashes linking back to raw results.
+- [data/comparison.json](data/comparison.json) and [data/comparison.csv](data/comparison.csv): byte-for-byte copies from the generated comparison directory, including source run IDs and, in JSON, SHA-256 hashes of both raw `results.jsonl` files.
+- [data/comparison-context.json](data/comparison-context.json): selected runtime, configuration, provenance, and synchronized repeat timings from both runs; operator-reported setup is labeled separately. Connection addresses, session IDs, and local paths are omitted.
+- [comparison.md](comparison.md): the full generated table with report-relative links.
+- [figures/native-cuda-comparison.png](figures/native-cuda-comparison.png) and [SVG](figures/native-cuda-comparison.svg): the generated comparison chart, re-rendered from the same JSON with reFLOP branding.
+- [historical-2026-11-14.md](historical-2026-11-14.md): earlier analysis. Its `data/throughput.*`, `data/run-summary.json`, and four original figure pairs remain separate from this comparison.
 
-The JSON and CSV are intentionally outside ignored `results/`. Raw evidence remains unchanged. The graph script reads the bundled snapshot by default; it imports neither Reflop nor Torch and makes no GPU connections.
+Reviewed copies live outside ignored `benchmark/results/`; the original generated results are unchanged. From the repository root, reproduce the comparison using the original completed runs:
 
 ```bash
 uv pip install --python benchmark/.venv/bin/python -r benchmark/requirements-plots.txt
-benchmark/.venv/bin/python benchmark/scripts/plot_results.py
+BENCH_REMOTE_RUN="$PWD/benchmark/results/20261115T152437Z-throughput-0bbfc8c4" \
+BENCH_NATIVE_RUN="$PWD/benchmark/results/20261115T151140Z-native_cuda-b37a7467" \
+BENCH_SAME_GPU=1 ./benchmark/scripts/compare_cuda.sh
 ```
 
-To replace the snapshot from another completed throughput run, set `BENCH_PLOT_RUN` to its absolute directory before running the script. This rewrites the throughput snapshot, CSV, and figures; review exported metadata and update the written analysis and run summary before publishing a new report. The current plots expect the supplied workload matrix, including batch 128. The script does not regenerate the narrative or run summary.
+This writes a new ignored comparison directory without GPU work. To render only the chart and full table from the reviewed JSON, use a new output directory:
+
+```bash
+benchmark/.venv/bin/python - <<'PY'
+import json
+import tempfile
+from pathlib import Path
+from benchmark.bench.compare_cuda import render
+
+data = json.loads(Path("benchmark/report/data/comparison.json").read_text())
+output = Path(tempfile.mkdtemp(prefix="reflop-comparison-")) / "rendered"
+render(data, output)
+print(output)
+PY
+```
+
+The separate `benchmark/scripts/plot_results.py` still renders the historical 14 November snapshot by default. It does not regenerate this native comparison or its narrative. Follow the [benchmark guide](../README.md#compare-native-gpu-and-reflop-throughput) for fresh collection; review correctness evidence and measurement conditions before replacing this report.

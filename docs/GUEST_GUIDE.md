@@ -102,7 +102,7 @@ are reproducible.
 
 ## When work is sent
 
-Operations on reflop tensors are recorded, not executed. The recording is sent
+Operations on reFLOP tensors are recorded, not executed. The recording is sent
 as one graph when a value has to leave the server:
 
 | You call | What happens |
@@ -273,12 +273,12 @@ same step took 19 ms eagerly and 5.7 ms with capture. Keep the data on the
 server: use a [dataset](#datasets), or upload the tensors once before the loop
 and index them inside the step.
 
-`torch.compile` does not work with reflop tensors (TorchDynamo cannot trace this
+`torch.compile` does not work with reFLOP tensors (TorchDynamo cannot trace this
 kind of tensor subclass). `reflop.capture` gives the same benefit.
 
 ## Measuring throughput
 
-Use [`benchmark/`](../benchmark/README.md) to compare Reflop with native eager
+Use [`benchmark/`](../benchmark/README.md) to compare reFLOP with native eager
 PyTorch on the same Owner GPU. The Owner collects `native_cuda.sh`; the Guest
 collects `inventory.sh`, `correctness.sh`, and `throughput.sh`. Use the same
 benchmark source, timing configuration, and numerical policy on both sides.
@@ -290,7 +290,12 @@ already on the device; uploaded cases include the Guest-to-Owner transfer each
 step. Capture/eager speedup alone does not tell you how much native performance
 you retain. Check correctness failures and missing cases before selecting a
 workload, and record your connection conditions with the results. The
-[saved report](../benchmark/report/README.md) currently lacks a native CUDA run.
+[saved report](../benchmark/report/README.md) compares a MacBook Pro Guest over
+Tailscale TLS with native execution on the Owner's RTX 5070. At batch 128,
+resident capture retains 35.6–70.1% of native throughput for eight workloads
+and 4.0–4.6% for LSTM/GRU; uploading each step retains 0.26–10.52% with capture.
+These are synthetic steady-state measurements. The available ResNet-18
+correctness failures remain unresolved.
 
 ## Unmodified CUDA scripts
 
@@ -300,7 +305,7 @@ reflop run python train.py --epochs 10
 
 `reflop run` starts the command on this machine with a shim: `torch.cuda.is_available()`
 returns True, and `.cuda()`, `.to("cuda")`, `device="cuda"` and
-`torch.cuda.manual_seed` go to the reflop device. This is best effort: code
+`torch.cuda.manual_seed` go to the reFLOP device. This is best effort: code
 that calls into `torch.cuda` in other ways (streams, memory statistics, CUDA
 graphs) needs the explicit API.
 
@@ -315,9 +320,9 @@ with reflop.placement("remote-cpu"): # new tensors go to the server's CPU (see b
     ...
 ```
 
-The default, `"auto"`, runs operations on reflop tensors remotely. An operation
+The default, `"auto"`, runs operations on reFLOP tensors remotely. An operation
 the server cannot run falls back to your CPU, with a one-time warning naming the
-operation. An operation that mixes large local tensors with small reflop tensors
+operation. An operation that mixes large local tensors with small reFLOP tensors
 may run locally when a cost model (your CPU speed, the server's speed, bandwidth,
 round-trip time; measured by `reflop init`) says that is faster.
 
@@ -347,7 +352,7 @@ reflop.fetch(model.state_dict(), "ckpt.safetensors")    # download and save loca
 state = reflop.fetch(model.state_dict())                 # or just download
 ```
 
-Checkpoints are always safetensors. reflop tensors refuse to be pickled, so
+Checkpoints are always safetensors. reFLOP tensors refuse to be pickled, so
 `torch.save` on them raises; fetch them first. Loading works as usual: load on
 the CPU, then `.to(dev)`.
 
@@ -367,13 +372,13 @@ bfloat16, AdamW, Adam, SGD with momentum, autograd.
 
 Does not work:
 
-- `torch.compile` on reflop tensors (use `reflop.capture`)
+- `torch.compile` on reFLOP tensors (use `reflop.capture`)
 - custom CUDA, Triton or C++ extension kernels, and `torch.library` custom ops
 - operations whose output shape depends on data, beyond `nonzero` and boolean
   masks (`torch.unique`, for example, runs on your CPU in `"auto"` placement)
 - sparse, nested or quantized tensors
 - multi-GPU training, `torch.distributed`
-- explicit `torch.Generator` objects on reflop tensors (use `reflop.seed(n)`)
+- explicit `torch.Generator` objects on reFLOP tensors (use `reflop.seed(n)`)
 
 GPU results can differ from your CPU's in the last bits (TF32 is on for
 convolutions by default, and some GPU kernels are not deterministic).
@@ -389,7 +394,7 @@ convolutions by default, and some GPU kernels are not deterministic).
 | `reflop usage [--json]` | compute you have used on the server |
 | `reflop init` | measure round-trip time and local speed, write `.reflop.toml` |
 | `reflop data build\|push\|ls\|rm` | datasets |
-| `reflop run <command>` | run a command here with `cuda` mapped to reflop |
+| `reflop run <command>` | run a command here with `cuda` mapped to reFLOP |
 | `reflop verify` | compare small results with your CPU |
 | `reflop doctor` | check torch, the key, the config and the connection |
 | `reflop key [--ssh] [--write-file]` | print your public key; `--write-file` also stores the private key for the C API on macOS |

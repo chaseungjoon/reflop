@@ -1,4 +1,4 @@
-# reflop
+# reFLOP
 
 The client for [reFLOP](https://github.com/chaseungjoon/reflop): train with
 PyTorch on someone else's GPU from your own machine. Your Python program runs
@@ -28,7 +28,7 @@ reflop pair reflop1-…
 reflop status
 ```
 
-Then move your model to the reflop device:
+Then move your model to the reFLOP device:
 
 ```python
 import torch, reflop

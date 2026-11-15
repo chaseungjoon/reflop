@@ -2,7 +2,7 @@
 
 Measure reFLOP throughput against native PyTorch on the same GPU, then check correctness, operator support, data movement, concurrency, checkpoints, and failure behavior. The suite uses synthetic workloads and saves each case separately, including failures and missing prerequisites.
 
-The shell launchers are executable, **take no command-line arguments**, and work from any working directory. Edit `config.json` for settings. Each benchmark invocation creates a fresh directory under `benchmark/results/`. The measured launchers produce raw evidence. See the [results analysis and graphs](report/README.md) for an assessment of the saved 14 November 2026 runs and instructions to reproduce the plots.
+The shell launchers are executable, **take no command-line arguments**, and work from any working directory. Edit `config.json` for settings. Each benchmark invocation creates a fresh directory under `benchmark/results/`. The measured launchers produce raw evidence. See the [results analysis and graphs](report/README.md) for the 15 November 2026 (UTC) native GPU comparison from a MacBook Pro over Tailscale TLS, the historical 14 November analysis, and plot reproduction instructions.
 
 ## Start here
 
@@ -27,9 +27,9 @@ BENCH_PYTHON="$PWD/.venv/bin/python" ./benchmark/scripts/selfcheck.sh
 BENCH_PYTHON="$PWD/.venv/bin/python" ./benchmark/scripts/smoke.sh
 ```
 
-Bootstrap defaults to this repository's `client/python`. Set `BENCH_REFLOP_SOURCE` to another checkout's absolute root to use it for the Python client and C/C++ builds. If you supply an existing `BENCH_PYTHON`, check its installed Reflop version before measuring: launchers do not reinstall packages. Results record package versions, source hashes, and the selected checkout's Git commit and working-tree status.
+Bootstrap defaults to this repository's `client/python`. Set `BENCH_REFLOP_SOURCE` to another checkout's absolute root to use it for the Python client and C/C++ builds. If you supply an existing `BENCH_PYTHON`, check its installed reFLOP version before measuring: launchers do not reinstall packages. Results record package versions, source hashes, and the selected checkout's Git commit and working-tree status.
 
-## Compare native GPU and Reflop throughput
+## Compare native GPU and reFLOP throughput
 
 The main metric is **retained throughput**:
 
@@ -37,13 +37,13 @@ The main metric is **retained throughput**:
 remote samples/second / native samples/second × 100%
 ```
 
-100% means equal throughput. Also report absolute samples/second and milliseconds/step, model, batch size, data policy, network conditions, and correctness status. A ratio between Reflop capture and Reflop eager answers a different question.
+100% means equal throughput. Also report absolute samples/second and milliseconds/step, model, batch size, data policy, network conditions, and correctness status. A ratio between reFLOP capture and reFLOP eager answers a different question.
 
-The [saved report](report/README.md) has no native CUDA run, so it cannot provide this percentage. The root README's existing 74% ResNet capture result comes from a separate same-machine test; it is not the baseline for the saved multi-model run.
+The [saved report](report/README.md) compares 156 remote cases with 78 native eager cases on the Owner's RTX 5070. Native ran locally on the Linux Owner workstation; the Guest ran on a MacBook Pro over Tailscale TLS. At batch 128, resident capture retains 35.6–70.1% of native throughput for eight workloads and 4.0–4.6% for LSTM/GRU. ResNet-18 correctness remains unresolved in the available evidence. The root README's 74% result is a separate same-machine test, not the baseline for this comparison.
 
 ### 1. Collect the native baseline on the Owner GPU
 
-Use the same checkout and configuration on the Linux machine that serves the GPU. A native run needs local CUDA, Torch, and torchvision; it does not need a paired Reflop client or a running daemon. Set `native_cuda_label` in `config.json` to identify the GPU and location. Use `CUDA_VISIBLE_DEVICES` if needed to select the physical GPU used by Reflop; native cases use visible device 0.
+Use the same checkout and configuration on the Linux machine that serves the GPU. A native run needs local CUDA, Torch, and torchvision; it does not need a paired reFLOP client or a running daemon. Set `native_cuda_label` in `config.json` to identify the GPU and location. Use `CUDA_VISIBLE_DEVICES` if needed to select the physical GPU used by reFLOP; native cases use visible device 0.
 
 ```bash
 ./benchmark/scripts/bootstrap.sh
@@ -52,7 +52,7 @@ Use the same checkout and configuration on the Linux machine that serves the GPU
 
 Save the printed run directory. With the default batches, this runs 78 native eager cases: ten workloads × four batches × two input policies, excluding ResNet-18 batch 1. No local CUDA means `skipped`, never a CPU substitute. Stop other GPU work during measurement. Do not run native and remote benchmarks at the same time.
 
-### 2. Measure Reflop from the Guest
+### 2. Measure reFLOP from the Guest
 
 Use the same benchmark source and timing configuration. The Owner runtime's PyTorch/CUDA versions and numerical policy must match the native environment. Record the driver version, GPU identity, any clocks or power limits, and the connection's RTT and bandwidth alongside the runs.
 
@@ -63,7 +63,7 @@ Use the same benchmark source and timing configuration. The Owner runtime's PyTo
 ./benchmark/scripts/throughput.sh
 ```
 
-The default throughput selection contains 156 workload cases plus six synchronization cases. `resident` uploads one synthetic batch before timing and reuses it. `upload` includes a CPU-to-device copy each step; native CUDA copies over the Owner's local bus, while Reflop copies across the Guest-to-Owner connection. This difference is part of the user-visible overhead. Neither policy includes a real data loader or the initial model transfer.
+The default throughput selection contains 156 workload cases plus six synchronization cases. `resident` uploads one synthetic batch before timing and reuses it. `upload` includes a CPU-to-device copy each step; native CUDA copies over the Owner's local bus, while reFLOP copies across the Guest-to-Owner connection. This difference is part of the user-visible overhead. Neither policy includes a real data loader or the initial model transfer.
 
 ### 3. Generate the comparison
 
@@ -122,7 +122,7 @@ Run `operators.sh` before replaying individual operator cases so the CPU recipes
 | `capture.sh` | Changing input values/shapes/dtypes, mutated CPU inputs, changing Python scalars/branches, stale views, RNG, nested outputs, gradient accumulation, learning-rate schedules. Requires correct results or explicit refusal for dynamic Python schedules/branches. |
 | `throughput.sh` | Ten workloads × configured batch sizes × eager/capture × client upload/resident input; separate synchronization-frequency sweep. Warmups, repeated synchronized windows, samples/sec, and wire/graph counters. |
 | `native_cpu.sh` | Identical workload/batch/input-residency matrix on native CPU. A reference and overhead comparison, **not** a GPU throughput baseline. |
-| `compare_cuda.sh` | Offline native-versus-Reflop table and graphs; requires completed runs and the plot dependencies. |
+| `compare_cuda.sh` | Offline native-versus-reFLOP table and graphs; requires completed runs and the plot dependencies. |
 | `native_cuda.sh` | Identical matrix on native local CUDA. Run this on the **owner GPU** using a copy of this benchmark. Without local CUDA, cases are skipped, never silently run on CPU. |
 | `transfer.sh` | Zero-byte through 64-MiB payloads by default; upload, fetch, roundtrip; synchronized timing and content verification. |
 | `graphs.sh` | Matrix-size sweep, arithmetic intensity, tiny-op RPC/flush amplification, batched chains, graph cache reuse, shape/scalar churn, multiple outputs, dead code, alias mutation. |
@@ -138,7 +138,7 @@ Run `operators.sh` before replaying individual operator cases so the CPU recipes
 | `limits.sh` | Bounded allocations, handle churn/client RSS, concurrent-session ceiling, long graphs, invalid indexing/shapes/integer division, post-error health. Does not allocate until an unbounded OOM. |
 | `soak.sh` | **30 minutes per mode** by default: GPT eager/capture, step progress, finite loss, RSS, thread count, counters, replay count. Emits raw trends without declaring every RSS increase a leak. |
 | `wan.sh` | Matched synchronized workloads at three explicitly configured real network distances; resident/upload × eager/capture; authenticated protocol-ping RTT. Never relabels one default endpoint as three distances. |
-| `shim.sh` | Standalone CUDA-style training through `reflop run`; forward/backward, AMP, CUDA API compatibility. The child asserts tensors really use the reflop backend. |
+| `shim.sh` | Standalone CUDA-style training through `reflop run`; forward/backward, AMP, CUDA API compatibility. The child asserts tensors really use the reFLOP backend. |
 | `c_api.sh` | Builds C/C++ clients into that case's result directory, checks numerical results, records execute/fetch timing. Requires Go, C/C++ compilers, a source checkout, and a file-backed paired key. |
 | `protocol.sh` | Unknown ops, malformed graph structure, foreign/unknown handles, oversized response framing, terminal escape sanitization, wrong TLS server pin rejection. Bounded probes against your own paired server. |
 | `compatibility.sh` | `torch.compile`, export, TorchScript, activation checkpointing, custom autograd, gradient hooks/clipping, shared parameters, scheduler, single/spawn-worker DataLoaders, and GradScaler nonfinite-update skipping. Each is an isolated compatibility boundary, not a universal feature claim. |
@@ -273,6 +273,6 @@ Full training checkpoints contain model state, optimizer, scheduler, sampler/per
 
 Run `selfcheck.sh` before submitting changes to the harness. Keep routine CI offline; select live suites on a GPU runner or run them manually against a paired test server. `run_all.sh` includes long runs and any configured Owner hooks, so inspect the configuration before using it.
 
-Publish a native CUDA comparison with the remote run, effective configuration, versions, workload hashes, hardware and network description, repeat counts, and correctness outcomes. Keep failed and unavailable cases visible. The saved `plan_refs` fields are legacy identifiers from the suite's original evaluation project; they are not dependencies or acceptance criteria for Reflop.
+Publish a native CUDA comparison with the remote run, effective configuration, versions, workload hashes, hardware and network description, repeat counts, and correctness outcomes. Keep failed and unavailable cases visible. The saved `plan_refs` fields are legacy identifiers from the suite's original evaluation project; they are not dependencies or acceptance criteria for reFLOP.
 
 Before sharing raw results, review configurations, logs, addresses, identities, local paths, and hook output. Never publish keys or pairing invites. Keep full runs in CI or release artifacts; put only reviewed snapshots and figures in `report/`. Runtime probes do not replace the security corpus or establish production reliability.

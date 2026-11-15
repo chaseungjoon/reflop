@@ -53,7 +53,7 @@ for x, y in loader:
 
 > [!IMPORTANT]
 > **The server never runs Guest code.** It accepts graphs over a closed set of
-> 582 operators (571 PyTorch overloads, 11 reflop-native), validates them, and
+> 582 operators (571 PyTorch overloads, 11 reFLOP-native), validates them, and
 > runs them in a sandboxed worker. No request can say "delete a file", "open a
 > socket" or "start a process", so a Guest can't do any of those.
 
@@ -160,7 +160,7 @@ Requires Go (see `go.mod`) and, for the client, Python 3.10+:
 ```sh
 git clone https://github.com/chaseungjoon/reflop.git && cd reflop
 make build                                  # bin/reflopd, with the worker embedded
-pip install ./client/python                 # the reflop client
+pip install ./client/python                 # the reFLOP client
 ```
 
 </details>
@@ -257,7 +257,7 @@ ResNet-18, CIFAR-10 shapes, batch 128, RTX 5070, client on the same machine over
 | `reflop.capture` | **74%** |
 | eager | 19% |
 
-For the full workload matrix, correctness checks, and instructions to measure throughput against native PyTorch on the same GPU, see [`benchmark/`](benchmark/README.md); its saved multi-model report has no native CUDA baseline yet.
+See the [multi-model benchmark report](benchmark/report/README.md) for the matched native GPU comparison from a MacBook Pro over Tailscale TLS, including correctness limitations, and [`benchmark/`](benchmark/README.md) to reproduce it.
 
 Steps whose Python numbers change every step (a non-capturable Adam's bias
 correction, a Python learning-rate schedule) are detected and refused; use

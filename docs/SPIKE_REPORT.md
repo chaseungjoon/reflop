@@ -25,9 +25,9 @@ on the PrivateUse1 device renamed to `reflop`, set up with
 | forward, `backward()`, AdamW (foreach), SGD, fused AdamW, capturable AdamW | works; backward ops arrive as ordinary aten ops |
 | in-place ops on views (`a[1:3] *= 2`, `a.t()[2].add_(1)`) | works through view chains and inverse scatters |
 | in-place view ops (`transpose_`, used by `nn.LSTM(batch_first=True)`) | needed metadata updates on the wrapper itself; done the way `return_and_correct_aliasing` does it |
-| autocast | needs `AutocastPrivateUse1` kernels; reflop registers the CUDA policy |
-| factories (`torch.arange(..., device=dev)`) | their composite forms resize an `out=` tensor; reflop registers direct kernels |
-| autograd with device index > 0 | the Python device guard reports one device; all reflop tensors report `reflop:0` (ADR-015) |
+| autocast | needs `AutocastPrivateUse1` kernels; reFLOP registers the CUDA policy |
+| factories (`torch.arange(..., device=dev)`) | their composite forms resize an `out=` tensor; reFLOP registers direct kernels |
+| autograd with device index > 0 | the Python device guard reports one device; all reFLOP tensors report `reflop:0` (ADR-015) |
 
 An MLP trained with AdamW through the in-process worker on the CPU matches
 local training bit for bit.
@@ -53,10 +53,10 @@ views counted as aliases. Two findings:
 
 ## S4: operator census
 
-`spikes/s4_op_census.py` trains each model for three AdamW steps on the reflop
+`spikes/s4_op_census.py` trains each model for three AdamW steps on the reFLOP
 device and on the local CPU.
 
-| Model | Distinct ops | Local fallbacks | Loss, reflop vs local (3 steps) |
+| Model | Distinct ops | Local fallbacks | Loss, reFLOP vs local (3 steps) |
 |---|---:|---|---|
 | MLP | 28 | none | 2.3232/2.3232, 2.2881/2.2881, 2.2534/2.2534 |
 | ResNet-18 (32×32) | 38 | none | 2.4712/2.4699, 0.6903/0.5641, 0.0879/0.0917 |
@@ -100,7 +100,7 @@ Operators seen across all models: `_local_scalar_dense`, `_log_softmax`,
 | §8.4 names not tagged core | `avg_pool1d`, `adaptive_avg_pool1d`, `sym_is_contiguous`, `resize_` (kept with their §8.4 disposition) |
 | Tier 1/2 names not found | 12: the `.vec` overloads of the upsample backward ops, and `masked_fill_` |
 | Mutating overloads dropped | 39 `_foreach_*.*_out` overloads |
-| Result | 582 entries: Tier 0 193, Tier 1 360 (11 reflop-native), Tier 2 29 |
+| Result | 582 entries: Tier 0 193, Tier 1 360 (11 reFLOP-native), Tier 2 29 |
 
 ## S6: rootless sandbox
 
@@ -140,4 +140,14 @@ server on the same machine over loopback TLS.
 
 Revised targets (ADR-014): the ≥ 70% throughput target applies to steady-state
 steps under `reflop.capture`; eager mode is a convenience path. The M2 MacBook
-over Tailscale (§19) remains to be measured.
+over Tailscale (§19) had not been measured at the time of these spikes; see
+the later benchmark below.
+
+## Later benchmark evidence
+
+The [15 November 2026 report](../benchmark/report/README.md) is a separate
+experiment: native eager PyTorch on the Linux Owner workstation versus a
+MacBook Pro Guest over Tailscale TLS to the same RTX 5070. ResNet-18 batch 128
+with resident inputs retains 70.1% with capture and 21.7% eagerly. The report
+includes all ten workloads and the unresolved ResNet-18 correctness findings;
+it does not replace or share the baseline of the spike measurements above.
