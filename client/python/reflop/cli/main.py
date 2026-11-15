@@ -308,6 +308,15 @@ def cmd_data(a) -> int:
     return 0
 
 
+def _signal_name(n: int) -> str:
+    import signal
+
+    try:
+        return signal.Signals(n).name
+    except ValueError:
+        return f"signal {n}"
+
+
 def cmd_run(a) -> int:
     """Run a command locally with reflop's shim enabled (best effort, §16.2)."""
     import subprocess
@@ -323,7 +332,16 @@ def cmd_run(a) -> int:
     if a.server:
         env["REFLOP_SERVER"] = a.server
     sys.stderr.write("reflop: running on this machine; tensor math on 'cuda' goes to the reflop server\n")
-    return subprocess.call(a.command, env=env)
+    rc = subprocess.call(a.command, env=env)
+    if rc < 0:
+        # Killed by a signal. The shell only sees our own exit status, so say
+        # what happened and report 128 + n like the shell would (issue #8).
+        # Only the program name goes out: the rest of the argv may carry
+        # credentials, and unquoted arguments read ambiguously in a log line.
+        n = -rc
+        sys.stderr.write(f"reflop: {a.command[0]} was killed by {_signal_name(n)} (signal {n})\n")
+        return 128 + n
+    return rc
 
 
 def cmd_verify(a) -> int:
