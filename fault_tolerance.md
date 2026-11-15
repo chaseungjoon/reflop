@@ -239,3 +239,143 @@ Each phase adds its tests, an ADR or an ADR update, and a
    alone, losing up to one interval, enough?
 3. Is `pause --now` recoverable? Proposed: yes; `reflopd kill` stays final.
 4. One ADR for the whole design, or one per phase?
+
+## Implementation review (2026-11-15)
+
+Reviewed Issue #2 and the code at `4d85725`. This section corrects assumptions
+in the draft above and proposes the implementation order. The proposals are
+not accepted ADRs. No runtime changes have been made.
+
+### Findings that change the plan
+
+1. **Snapshot success does not yet mean durable storage.**
+   `Session.snapshot` in `server/reflopd/internal/server/session.go` ignores
+   rename errors and does not sync the file or its directory. A failed stat can
+   also leave the response marked successful. Check every publication error,
+   sync before acknowledging, and preserve the previous checkpoint on failure.
+   The disk rail is checked before writing and after the whole file is written;
+   it does not reserve the expected bytes. This path does not enforce the
+   identity's storage quota. Account for concurrent writers and the temporary
+   file alongside the previous checkpoint.
+
+2. **Snapshot I/O and restore need bounded memory and atomic failure.**
+   `safetensors.write` collects every tensor's bytes in a list, and
+   `core.Session.snapshot_read` reads the entire file. Restore allocates tensors
+   before checking aggregate handle capacity and inserts them one at a time.
+   A two-tensor restore with room for one leaves the first tensor installed
+   after returning an error. Duplicate destination handles silently keep the
+   last tensor. Validate the whole request and resource budget before device
+   allocation, then commit all handles together. Bound read/write staging and
+   apply device and host limits. Reject reserved keys, including safetensors'
+   existing `__metadata__`, and enforce writer/reader header-size agreement.
+
+3. **Automatic reconnect is not working through the public request path.**
+   `Connection.request` and `upload` reject a closed connection before
+   `RemoteConnection._send` can call `_reconnect`. The reader also fails every
+   outstanding future on disconnect. A surviving server worker is therefore
+   only part of the solution. Define a connection recovery state, coordinate
+   concurrent callers, and retain pending futures until recovery succeeds or
+   fails. Replies for a detached connection are currently dropped by the server;
+   an in-flight execute cannot safely be resent to that same worker without
+   knowing whether it already ran.
+
+4. **The graph cache is insufficient for recovery.**
+   `client/python/reflop/session.py` stores a set of hashes in `registered`,
+   not graph definitions. Keep the serialized graphs needed by the redo log,
+   including graphs registered before the checkpoint. Recheck capabilities,
+   numerics and runtime compatibility after reconnect. Dataset files survive,
+   and `ensureDatasets` opens them when an execute needs them; define failure
+   behavior if a required dataset has since been deleted.
+
+5. **A checkpoint needs a generation and an exact replay boundary.**
+   Replacing one file by name is ambiguous when the new file is published but
+   its acknowledgement is lost: the client could restore new state and replay
+   requests already included in it. Persist the checkpoint generation and the
+   last included request sequence with its state. Define how the client learns
+   that boundary after reconnect, and retain the required log until then.
+   Sequence complete logical uploads, account for partially received uploads,
+   and serialize checkpoint cuts with all state-changing operations. The draft's
+   upload claim is too broad: `forward` already holds uploads when `held` is
+   non-empty. Pause release and concurrent dispatch still need ordering tests.
+
+6. **Replay equivalence needs a narrower contract.**
+   `_apply_numerics` calls `torch.use_deterministic_algorithms` with
+   `warn_only=True`; the current setting does not enforce the draft's promise
+   of bit-identical replay. A nondeterministic replay can also change a value
+   the Guest already used to choose its next operation. Discarding the new
+   response cannot undo that choice. Decide whether transparent recovery
+   requires strict deterministic execution or offers a weaker, explicit
+   guarantee. Failed executes and the proposed OOM retry also need defined RNG
+   and handle-commit behavior before any automatic retry is safe.
+
+7. **Owner termination must remain final across disconnects and restarts.**
+   A reason attached to a live response is insufficient if the client never
+   receives it. Specify persistent recovery authorization or checkpoint
+   invalidation for Owner kill, revoke, unpair and normal close. Coordinate
+   cancellation with checkpoint completion so a late rename cannot recreate
+   recovery state. If `pause --now` is recoverable, restoring GPU allocations
+   must wait for Owner resume. Checkpointing cannot delay emergency rail or
+   watchdog kills indefinitely.
+
+8. **Background work changes the worker's concurrency assumptions.**
+   `wire.Channel.send` currently relies on a single writer. Route background
+   completion through the main loop or serialize sends. Define thread and file
+   descriptor cleanup on errors and termination. Test CUDA stream dependencies,
+   allocator lifetimes, non-contiguous tensors and retained GPU memory under
+   the real sandbox. A separate stream alone is not evidence of acceptable
+   checkpoint overhead. Also, `reflopd update` currently replaces the binary
+   and asks the Owner to restart; draining belongs in shutdown unless update
+   behavior is deliberately changed.
+
+### Proposed work packages and completion criteria
+
+| Order | Work | Completion criterion |
+|---|---|---|
+| A | Harden existing snapshot/restore storage, validation and limits; add Go and security regression tests | Failed writes never report success or destroy the previous snapshot; failed restores leave handles unchanged; concurrent writes respect rails and quotas |
+| B | Expose explicit Python save/load/list/delete APIs, flush pending traces, and define how load obtains tensor metadata | A fresh Guest session restores model and optimizer tensors and continues training; document Guest-owned scalar state, RNG and data-loader position |
+| C | Specify the recovery protocol and record approved decisions in ADRs | Checkpoint format, generation, request sequence, compatibility, lost acknowledgements, termination policy and replay guarantees are unambiguous |
+| D | Implement complete session checkpoints with bounded asynchronous I/O and RNG state | Requests continue during copying; durable completion identifies the cut; overlapping checkpoints, cancellation and resource failures behave predictably |
+| E | Implement graph retention, bounded redo logging and the recovery state machine | Restore plus replay preserves handles, resolves each pending future once, retains needed upload bytes and stops after the allowed recovery attempt |
+| F | Add detached-session spill and bounded shutdown drain | TTL, eviction, graceful restart and pause behavior follow the approved policy; emergency termination remains available |
+
+Fault injection belongs in each package. The final matrix must include worker
+death before and after execute completion; a dropped reply; checkpoint
+publication followed by a lost acknowledgement; interrupted uploads; restart;
+corrupt files; disk and memory exhaustion; and Owner kill during checkpointing
+and recovery. Test tenant isolation and forbidden recovery under
+`tests/security/`. Use CPU deterministic training first, then separately test
+CUDA RNG, stream ordering, memory peaks and throughput in sandboxed workers.
+The existing Python e2e session tests use the in-process backend, so they cannot
+alone verify daemon restart or worker-death recovery. Define behavior before
+the first successful checkpoint and for repeated failures across a recovery
+chain, not just one failed replay.
+
+### Decisions to resolve before the dependent implementation
+
+- **First delivery:** recommend A and B first, with explicit restart from a
+  named snapshot. Keep transparent recovery as a separate milestone; this
+  initial delivery does not fully resolve Issue #2.
+- **Defaults and retention:** recommend explicit Guest opt-in, subject to Owner
+  permission. Owner-side defaults, byte limits and retention remain proposals.
+- **Replay guarantee:** recommend a strict deterministic recovery mode first;
+  do not promise equivalence for arbitrary nondeterministic jobs or across
+  incompatible runtime/device changes.
+- **Owner controls:** confirm whether `pause --now` should retain recoverable
+  state and what drain delay is acceptable. Final Owner termination must never
+  trigger automatic revival.
+- **Decision records:** recommend one recovery-contract ADR and separate ADRs
+  for storage/concurrency and lifecycle policy as those choices are approved.
+
+### Checks performed for this review
+
+- Direct CPU probes reproduced partial restore on a handle-limit error,
+  acceptance of duplicate destination handles, a writer/reader mismatch for
+  `__metadata__`, and rejection before reconnect on a closed connection.
+- `tests/security/corpus/test_data.py`: 12 passed.
+- The Go server's two OOM eviction tests passed.
+
+These checks establish the findings and the existing parser/eviction baseline.
+They do not validate the proposed recovery feature. Implementation must add
+permanent regression tests, update the changelog and relevant guides and threat
+model, regenerate protocol bindings where needed, and pass the repository's
+build, test, lint and code-generation checks.
