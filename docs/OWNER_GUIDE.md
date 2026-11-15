@@ -17,6 +17,7 @@ train, and what to check when something looks wrong.
 - [Files and directories](#files-and-directories)
 - [Configuration file](#configuration-file)
 - [Updating](#updating)
+- [Benchmarking the GPU](#benchmarking-the-gpu)
 - [Troubleshooting](#troubleshooting)
 
 ## Requirements
@@ -357,6 +358,26 @@ Every release since 0.1.6 signs its `checksums.txt` with an offline key.
 before anything from the release runs, and refuse releases without one, so
 they cannot install 0.1.5 or older. `REFLOP_UPDATE_URL` must be an `https://`
 URL (plain `http://` works only for `localhost`).
+
+## Benchmarking the GPU
+
+The [benchmark guide](../benchmark/README.md) covers native GPU and remote
+throughput collection. Run `benchmark/scripts/native_cuda.sh` on this machine
+with a local CUDA-enabled PyTorch installation. It does not require pairing
+or a daemon. Select the physical GPU that Reflop uses with
+`CUDA_VISIBLE_DEVICES` when more than one GPU is installed.
+
+The Guest runs the matching correctness and throughput suites against
+`reflopd`. Run native and remote measurements separately, with other GPU work
+stopped. Match the Owner runtime's Torch/CUDA versions and numerical flags;
+record the driver, GPU identity, power or clock settings, and network conditions.
+Send the complete native result directory to the person preparing the
+comparison so `compare_cuda.sh` can check the metadata and generate the report.
+
+Fault probes are separate from throughput measurement. They run only the
+commands configured in `owner_hooks`; use a test server and keep a management
+connection available to restore service. Inspect `run_all.sh`'s configuration
+before running it because it includes those hooks and the long soak tests.
 
 ## Troubleshooting
 

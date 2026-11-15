@@ -257,6 +257,8 @@ ResNet-18, CIFAR-10 shapes, batch 128, RTX 5070, client on the same machine over
 | `reflop.capture` | **74%** |
 | eager | 19% |
 
+For the full workload matrix, correctness checks, and instructions to measure throughput against native PyTorch on the same GPU, see [`benchmark/`](benchmark/README.md); its saved multi-model report has no native CUDA baseline yet.
+
 Steps whose Python numbers change every step (a non-capturable Adam's bias
 correction, a Python learning-rate schedule) are detected and refused; use
 `capturable=True` or tensor learning rates.

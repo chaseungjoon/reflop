@@ -902,6 +902,15 @@ A **test-only build hook** (excluded from release builds) executes probes inside
 | Throughput vs running locally on the server GPU (ResNet-18/CIFAR-10, LAN) | ≥ 70% |
 | Validation time for a 10k-node graph | ≤ 1 s (once per registration) |
 
+The broader workload harness lives in [`benchmark/`](../benchmark/README.md).
+It collects native eager CUDA and remote eager/capture runs separately, retains
+failed and unavailable cases, and produces matched throughput ratios with
+`compare_cuda.sh`. Its offline `selfcheck.sh` needs no daemon. Live correctness,
+operator, transfer, concurrency, checkpoint, and fault suites supplement these
+measurements. They do not replace conformance or the security corpus. Publish
+native-relative results only with matching source, configuration, hardware,
+runtime versions, numerical settings, and the measured network conditions.
+
 Targets are revisited after M0 and recorded in an ADR (revised in [SPIKE_REPORT.md](SPIKE_REPORT.md) and ADR-014).
 
 ---

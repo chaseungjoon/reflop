@@ -1,0 +1,105 @@
+[
+  {
+    "run_id": "20261114T041802Z-catalog-ec6e5587",
+    "selection": "catalog",
+    "state": "catalog_only",
+    "counts": {},
+    "planned_cases": 1396
+  },
+  {
+    "run_id": "20261114T041848Z-smoke-499088df",
+    "selection": "smoke",
+    "state": "completed",
+    "counts": {
+      "pass": 12
+    },
+    "planned_cases": 12,
+    "source_sha256": "8050a127409121c46cfce4976282f8ba6151c3bcabc66bfa993733f3cf9b5e08",
+    "nonpassing": []
+  },
+  {
+    "run_id": "20261114T042003Z-inventory-7b5c8ab3",
+    "selection": "inventory",
+    "state": "completed",
+    "counts": {
+      "pass": 6
+    },
+    "planned_cases": 6,
+    "source_sha256": "8b0916019d7b064cf95169860c90656748d4d9a3514202c41888d259943b9fea",
+    "nonpassing": []
+  },
+  {
+    "run_id": "20261114T042026Z-correctness-f2999371",
+    "selection": "correctness",
+    "state": "completed",
+    "counts": {
+      "fail": 4,
+      "pass": 36
+    },
+    "planned_cases": 40,
+    "source_sha256": "32611312f3071778877603ef4076ab39ebcaf973950f66a8f73b7c3388c8683b",
+    "nonpassing": [
+      {
+        "status": "fail",
+        "message": "Scalars are not close!\n\nExpected 1.1366989612579346 but got 1.1170002222061157.\nAbsolute difference: 0.019698739051818848 (up to 0.0002 allowed)\nRelative difference: 0.01732977659275691 (up to 0.002 allowed)",
+        "phase": "correctness",
+        "case_id": "correctness/resnet18/eager/cuda"
+      },
+      {
+        "status": "fail",
+        "message": "Tensor-likes are not close!\n\nMismatched elements: 7 / 512 (1.4%)\nGreatest absolute difference: 0.0004556700587272644 at index (111,) (up to 0.0002 allowed)\nGreatest relative difference: 0.039232537150382996 at index (190,) (up to 0.002 allowed)",
+        "phase": "correctness",
+        "case_id": "correctness/resnet18/eager/cpu"
+      },
+      {
+        "status": "fail",
+        "message": "Scalars are not close!\n\nExpected 1.1366989612579346 but got 1.117204189300537.\nAbsolute difference: 0.01949477195739746 (up to 0.0002 allowed)\nRelative difference: 0.01715033849931864 (up to 0.002 allowed)",
+        "phase": "correctness",
+        "case_id": "correctness/resnet18/capture/cuda"
+      },
+      {
+        "status": "fail",
+        "message": "Tensor-likes are not close!\n\nMismatched elements: 7 / 512 (1.4%)\nGreatest absolute difference: 0.0004556700587272644 at index (111,) (up to 0.0002 allowed)\nGreatest relative difference: 0.039232537150382996 at index (190,) (up to 0.002 allowed)",
+        "phase": "correctness",
+        "case_id": "correctness/resnet18/capture/cpu"
+      }
+    ]
+  },
+  {
+    "run_id": "20261114T042619Z-throughput-e82b5864",
+    "selection": "throughput",
+    "state": "completed",
+    "counts": {
+      "fail": 4,
+      "pass": 162
+    },
+    "planned_cases": 166,
+    "source_sha256": "7b32cbdf72742382b798d099d5af2a11fcb1d2afc7eda757d1d84c0cf49a7f38",
+    "nonpassing": [
+      {
+        "status": "fail",
+        "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+        "phase": "remote_execute",
+        "case_id": "throughput/resnet18/b1/eager/resident"
+      },
+      {
+        "status": "fail",
+        "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+        "phase": "remote_execute",
+        "case_id": "throughput/resnet18/b1/eager/upload"
+      },
+      {
+        "status": "fail",
+        "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+        "phase": "remote_execute",
+        "case_id": "throughput/resnet18/b1/capture/resident"
+      },
+      {
+        "status": "fail",
+        "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+        "phase": "remote_execute",
+        "case_id": "throughput/resnet18/b1/capture/upload"
+      }
+    ]
+  }
+]

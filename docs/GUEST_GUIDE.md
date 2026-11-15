@@ -276,6 +276,22 @@ and index them inside the step.
 `torch.compile` does not work with reflop tensors (TorchDynamo cannot trace this
 kind of tensor subclass). `reflop.capture` gives the same benefit.
 
+## Measuring throughput
+
+Use [`benchmark/`](../benchmark/README.md) to compare Reflop with native eager
+PyTorch on the same Owner GPU. The Owner collects `native_cuda.sh`; the Guest
+collects `inventory.sh`, `correctness.sh`, and `throughput.sh`. Use the same
+benchmark source, timing configuration, and numerical policy on both sides.
+`compare_cuda.sh` then reports absolute samples/second, milliseconds/step, and
+the percentage of native throughput retained.
+
+Compare resident and uploaded inputs separately. Resident cases reuse a batch
+already on the device; uploaded cases include the Guest-to-Owner transfer each
+step. Capture/eager speedup alone does not tell you how much native performance
+you retain. Check correctness failures and missing cases before selecting a
+workload, and record your connection conditions with the results. The
+[saved report](../benchmark/report/README.md) currently lacks a native CUDA run.
+
 ## Unmodified CUDA scripts
 
 ```sh

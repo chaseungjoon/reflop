@@ -45,6 +45,28 @@ REFLOP_TEST_HOME=/tmp/rf make test-isolation
 - Commit messages, comments and docs are in English. Code is Apache-2.0; do not
   vendor GPL or AGPL code.
 
+## Benchmarks
+
+`benchmark/` contains an offline harness check and live suites for correctness,
+throughput, operators, data movement, concurrency, and recovery. Start with:
+
+```sh
+./benchmark/scripts/bootstrap.sh
+./benchmark/scripts/selfcheck.sh
+```
+
+Bootstrap installs this checkout's client into `benchmark/.venv`. Live suites
+need a separately started daemon and paired client; they are not part of
+`make test`. Read the [benchmark guide](benchmark/README.md) before running
+`run_all.sh`, which includes long runs and any configured fault hooks.
+
+For performance changes, collect `native_cuda.sh` on the Owner GPU and
+`throughput.sh` from the Guest using matching source and configuration. Generate
+native-relative percentages and absolute timings with `compare_cuda.sh`.
+Include correctness outcomes, repeat counts, versions, hardware, numerical
+settings, and network conditions in the PR. Keep raw runs, environments, caches,
+and credentials out of Git; review any report snapshot before adding it.
+
 ## Branches
 
 Branch from `main` and name the branch after the kind of change:
@@ -71,5 +93,6 @@ issue or pull request; follow [SECURITY.md](SECURITY.md) first.
 | `clib/` | the C/C++ API |
 | `pkg/` | Go packages shared by reflopd and libreflop |
 | `docs/` | the design (`PLAN.md`), ADRs, threat model, Owner and Guest guides |
+| `benchmark/` | workload suites, native CUDA comparisons, offline checks, and saved reports |
 | `tests/` | conformance, security corpus, isolation, e2e, perf |
 | `spikes/` | M0 spikes |

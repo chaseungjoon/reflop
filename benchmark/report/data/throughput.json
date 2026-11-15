@@ -1,0 +1,8190 @@
+{
+  "schema_version": 1,
+  "run_id": "20261114T042619Z-throughput-e82b5864",
+  "counts": {
+    "fail": 4,
+    "pass": 162
+  },
+  "config": {
+    "atol": 0.0002,
+    "batch_sizes": [
+      1,
+      8,
+      32,
+      128
+    ],
+    "client_home": null,
+    "concurrency": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "concurrency_rounds": 3,
+    "correctness_steps": 8,
+    "cpu_threads": 4,
+    "dataset_samples": 2048,
+    "dataset_shard_bytes": 1048576,
+    "fault_wait_seconds": 3,
+    "guest_homes": [],
+    "low_precision_atol": 0.02,
+    "low_precision_rtol": 0.05,
+    "matrix_sizes": [
+      32,
+      128,
+      512,
+      2048
+    ],
+    "max_graph_chain": 512,
+    "max_sessions": 8,
+    "measured_steps": 30,
+    "memory_budget_bytes": 268435456,
+    "memory_cycles": 100,
+    "migration_target": {
+      "client_home": null,
+      "server": null
+    },
+    "native_cuda_label": "Set to the owner GPU and region when collecting native CUDA results",
+    "network_targets": {
+      "lan": {
+        "client_home": null,
+        "description": "Fill with a paired LAN server name",
+        "server": null
+      },
+      "wan_far": {
+        "client_home": null,
+        "description": "Fill with a real distant WAN endpoint",
+        "server": null
+      },
+      "wan_near": {
+        "client_home": null,
+        "description": "Fill with a real nearby WAN endpoint",
+        "server": null
+      }
+    },
+    "owner_hooks": {
+      "kill_session": [],
+      "network_down": [],
+      "network_up": [],
+      "pause": [],
+      "quota_apply": [],
+      "quota_restore": [],
+      "resume": [],
+      "worker_kill": [],
+      "worker_restore": []
+    },
+    "recovery_deadline_seconds": 90,
+    "remote_kind": "cuda",
+    "repeats": 3,
+    "rtol": 0.002,
+    "schema_version": 1,
+    "seed": 1729,
+    "server": null,
+    "soak_sample_seconds": 10,
+    "soak_seconds": 1800,
+    "timeout_seconds": 300,
+    "transfer_bytes": [
+      0,
+      4,
+      1024,
+      65536,
+      1048576,
+      16777216,
+      67108864
+    ],
+    "warmup_steps": 5
+  },
+  "source_sha256": "7b32cbdf72742382b798d099d5af2a11fcb1d2afc7eda757d1d84c0cf49a7f38",
+  "environment": {
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "python": "3.12.16 (main, Oct 25 2026, 18:24:37) [Clang 21.0.0 (clang-2100.3.34.2)]",
+    "packages": {
+      "Jinja2": "3.1.6",
+      "MarkupSafe": "3.0.4",
+      "cffi": "2.1.1",
+      "cryptography": "50.0.2",
+      "filelock": "4.2.10",
+      "fsspec": "2026.9.0",
+      "mpmath": "1.3.0",
+      "networkx": "3.7",
+      "numpy": "2.5.4",
+      "pillow": "13.0.0",
+      "protobuf": "7.36.2",
+      "psutil": "7.2.2",
+      "pycparser": "3.12",
+      "reflop": "0.1.11",
+      "safetensors": "0.8.0",
+      "setuptools": "84.2.1",
+      "sympy": "1.14.0",
+      "torch": "2.15.0",
+      "torchvision": "0.29.2",
+      "typing_extensions": "4.16.0"
+    },
+    "benchmark_sha256": "5a3fe4a3dfa028c7ea94237f36aff631fa15908e7c14d44d58985646f8e041b2"
+  },
+  "devices": [
+    {
+      "compute_capability_major": 12,
+      "device": {
+        "kind": "DEVICE_CUDA"
+      },
+      "dtypes": [
+        "DTYPE_BOOL",
+        "DTYPE_UINT8",
+        "DTYPE_INT8",
+        "DTYPE_INT16",
+        "DTYPE_INT32",
+        "DTYPE_INT64",
+        "DTYPE_FLOAT16",
+        "DTYPE_BFLOAT16",
+        "DTYPE_FLOAT32",
+        "DTYPE_FLOAT64",
+        "DTYPE_COMPLEX64",
+        "DTYPE_COMPLEX128",
+        "DTYPE_FLOAT8_E4M3FN",
+        "DTYPE_FLOAT8_E5M2"
+      ],
+      "name": "NVIDIA GeForce RTX 5070",
+      "total_memory_bytes": "12322603008"
+    },
+    {
+      "device": {
+        "kind": "DEVICE_CPU"
+      },
+      "dtypes": [
+        "DTYPE_BOOL",
+        "DTYPE_UINT8",
+        "DTYPE_INT8",
+        "DTYPE_INT16",
+        "DTYPE_INT32",
+        "DTYPE_INT64",
+        "DTYPE_FLOAT16",
+        "DTYPE_BFLOAT16",
+        "DTYPE_FLOAT32",
+        "DTYPE_FLOAT64",
+        "DTYPE_COMPLEX64",
+        "DTYPE_COMPLEX128"
+      ],
+      "name": "CPU",
+      "total_memory_bytes": "64887021568"
+    }
+  ],
+  "runtime_info": {
+    "cuda_version": "13.2",
+    "driver_version": "595.71.05",
+    "reflopd_version": "0.1.11",
+    "runtime_variant": "cu132",
+    "torch_version": "2.15.0+cu132"
+  },
+  "numerics": {
+    "tf32_cudnn": true
+  },
+  "records": [
+    {
+      "case_id": "throughput/mlp/b1/eager/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0019822180664050395,
+        0.0017636972334003076,
+        0.0026264208330151937
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b1/eager/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0020595666666243535,
+        0.001920098599900181,
+        0.0019354805665595146
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b1/capture/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0012366319332310618,
+        0.000713797199811476,
+        0.0011919486331559406
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b1/capture/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0006860222332761623,
+        0.0007256374999997206,
+        0.0007233666663523763
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b8/eager/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0020123777668535087,
+        0.00188007640002373,
+        0.0017993153000134044
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b8/eager/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0021325847332870278,
+        0.0020080944334040394,
+        0.002420433333221202
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b8/capture/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0007683361332359103,
+        0.0006977972332000112,
+        0.0006043319333305893
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b8/capture/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0012220541665252918,
+        0.001195541666917658,
+        0.00161946110019926
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b32/eager/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.001994148633578637,
+        0.0017663347331108525,
+        0.002049641666720466
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b32/eager/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.007861472233586634,
+        0.011796676400020563,
+        0.02849503473310809
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b32/capture/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0025758722331374884,
+        0.0024614166667258058,
+        0.0017565249998976165
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b32/capture/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.005092547199941085,
+        0.006025740267068614,
+        0.004383990266554368
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b128/eager/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0020664110998040996,
+        0.001995955566720416,
+        0.0017772833331643294
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b128/eager/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.012959591666488753,
+        0.012749454166623764,
+        0.016249608333358385
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b128/capture/resident",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0010522347336518578,
+        0.001245752800120196,
+        0.0013148305666012068
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/mlp/b128/capture/upload",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.017045490300127617,
+        0.02265272776664157,
+        0.020653009700375455
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b1/eager/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.003946172200085129,
+        0.004570258333114907,
+        0.0032126999998581597
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b1/eager/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.005430526399868541,
+        0.00393223473317145,
+        0.0032629375001609635
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b1/capture/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0013519027668129032,
+        0.0017648555333532082,
+        0.0011662861332297325
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b1/capture/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0029370083332954286,
+        0.001915763900130211,
+        0.0027872208331245927
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 368880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b8/eager/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004434044433097976,
+        0.004131586100265849,
+        0.003882630566658918
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b8/eager/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.016787172233550033,
+        0.019415365266710675,
+        0.016947048600316823
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b8/capture/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0024480124998566073,
+        0.0013544875003087024,
+        0.001202715266845189
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b8/capture/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.012100076366914436,
+        0.028645843066624366,
+        0.029219272233118924
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b32/eager/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0035549124998700186,
+        0.0029831986331070462,
+        0.0029404527667793445
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b32/eager/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.04468291943339864,
+        0.04669644723326201,
+        0.04229689860027672
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b32/capture/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0009642777663733189,
+        0.0009509680666572724,
+        0.0009059180665644817
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b32/capture/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.03793429166641241,
+        0.03874618056676506,
+        0.04209014583320823
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b128/eager/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004542662500170991,
+        0.0030489124997984617,
+        0.003100297233322635
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b128/eager/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.17511580276671643,
+        0.1995759819333519,
+        0.19477252780003862
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b128/capture/resident",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0018375096997867027,
+        0.0011712277662203026,
+        0.0011411096997714291
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/cnn/b128/capture/upload",
+      "params": {
+        "model": "cnn",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.1593095083332931,
+        0.18616296803375007,
+        0.4892040500000197
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b1/eager/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "fail",
+      "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+      "seconds_per_step": [],
+      "stats_deltas": []
+    },
+    {
+      "case_id": "throughput/resnet18/b1/eager/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "fail",
+      "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+      "seconds_per_step": [],
+      "stats_deltas": []
+    },
+    {
+      "case_id": "throughput/resnet18/b1/capture/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "fail",
+      "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+      "seconds_per_step": [],
+      "stats_deltas": []
+    },
+    {
+      "case_id": "throughput/resnet18/b1/capture/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "fail",
+      "message": "Expected more than 1 value per channel when training, got input size torch.Size([1, 512, 1, 1])",
+      "seconds_per_step": [],
+      "stats_deltas": []
+    },
+    {
+      "case_id": "throughput/resnet18/b8/eager/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.021872326399898157,
+        0.0190567722330646,
+        0.020304122199983492
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b8/eager/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.04599600140015051,
+        0.028844923599778364,
+        0.030756963866588195
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b8/capture/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.005593849999907737,
+        0.004597911133411496,
+        0.0049355055671185255
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b8/capture/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.019840140299735746,
+        0.016944869466533417,
+        0.019651286133254568
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 2951040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b32/eager/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.02058428333354338,
+        0.019162940266445123,
+        0.019814544466498774
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b32/eager/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05582713889986432,
+        0.051254465300007726,
+        0.05596032360044774
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b32/capture/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.005546126366243698,
+        0.005518526366601387,
+        0.005467929166722267
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b32/capture/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05925630556691128,
+        0.05359511249989737,
+        0.05866570556681836
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 11804160,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b128/eager/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.021149330566792437,
+        0.019786730533329924,
+        0.021887736100082596
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b128/eager/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.6833439319336321,
+        0.654364870833524,
+        0.36153198333340697
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b128/capture/resident",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.007255984733637888,
+        0.005971879166706154,
+        0.006453312499797903
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/resnet18/b128/capture/upload",
+      "params": {
+        "model": "resnet18",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.5810241805336166,
+        0.7022292083333014,
+        0.5577211236333823
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 47216640,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b1/eager/resident",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0053538555667425195,
+        0.006247280566700889,
+        0.0046886624996356355
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b1/eager/upload",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.011926409733617523,
+        0.01451312223362038,
+        0.07204192363327214
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b1/capture/resident",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.007833052766606367,
+        0.0020557819666767803,
+        0.0011336513668841993
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b1/capture/upload",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004510858333378565,
+        0.006190634733259989,
+        0.008844043066589317
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 614400,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b8/eager/resident",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004737570833337183,
+        0.003008538899788012,
+        0.0032174375000370977
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b8/eager/upload",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.03959266530000605,
+        0.0471090055667446,
+        0.06999843473361883
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b8/capture/resident",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0033683486001488444,
+        0.003355691666850665,
+        0.015750154166986854
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b8/capture/upload",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.2231674069664829,
+        0.1122323236336039,
+        0.10759328056689507
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 4915200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b32/eager/resident",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010861418066876164,
+        0.013905051366600673,
+        0.006688405566577179
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b32/eager/upload",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.2018637055666962,
+        0.22358320556668332,
+        0.3652295778001038
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b32/capture/resident",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0025414361332271557,
+        0.0029847860995990535,
+        0.0014590166669222527
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b32/capture/upload",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.19037886803319756,
+        0.4721006222336049,
+        0.4393617930666854
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 19660800,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b128/eager/resident",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01103729583361807,
+        0.019632052766974085,
+        0.004548129166748064
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b128/eager/upload",
+      "params": {
+        "model": "unet",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        2.5050599680665377,
+        1.3818808097334112,
+        1.9716131374996622
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b128/capture/resident",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004466137500033559,
+        0.0015824222335747132,
+        0.0016062110997154377
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/unet/b128/capture/upload",
+      "params": {
+        "model": "unet",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.7062583958332349,
+        0.8928722305669604,
+        1.589329306933117
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 78643200,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b1/eager/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05936055833347685,
+        0.05763369583340439,
+        0.05640694723357834
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b1/eager/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.059254270833722936,
+        0.057048405566699024,
+        0.06099448056678133
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b1/capture/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010136937499919441,
+        0.010377063866568885,
+        0.009985658333365184
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b1/capture/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.012621322233462707,
+        0.010445418066713804,
+        0.01013738889984476
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b8/eager/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.06479705973373105,
+        0.05929977363315023,
+        0.058108052766571446
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b8/eager/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.061073954166689266,
+        0.058813163900049405,
+        0.06760624719997092
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b8/capture/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.011991956933343317,
+        0.011900786099916634,
+        0.01051211943316351
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b8/capture/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.015620472233179802,
+        0.014330913900145485,
+        0.01029732639969249
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b32/eager/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05951947363306923,
+        0.05901934443342422,
+        0.05687615556671517
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b32/eager/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.1155423069333968,
+        0.13021581249971254,
+        0.11436199583355726
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b32/capture/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01023049446666846,
+        0.012047402766863039,
+        0.010605938899971079
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b32/capture/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.04227169026659491,
+        0.029838726399854448,
+        0.042830266666715036
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b128/eager/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05903995556679244,
+        0.057648622199970606,
+        0.0582148972331197
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b128/eager/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.07325411946658278,
+        0.06532596530014416,
+        0.058114469433106324
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b128/capture/resident",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01271600553348738,
+        0.01102197083334128,
+        0.010470819433006302
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lstm/b128/capture/upload",
+      "params": {
+        "model": "lstm",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.07363743609991312,
+        0.06612128056634295,
+        0.05443020139985796
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b1/eager/resident",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.06930355276660218,
+        0.06387915276670052,
+        0.06911964166647522
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b1/eager/upload",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.06335973886646874,
+        0.0610498583332325,
+        0.0599955416667702
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b1/capture/resident",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.012472247233381495,
+        0.011789380566915498,
+        0.010673898599634413
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b1/capture/upload",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.012483004166764051,
+        0.013585109733200321,
+        0.010240695833150919
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b8/eager/resident",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05894210276649877,
+        0.058016225000028496,
+        0.05758218333357945
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b8/eager/upload",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.05759010833329133,
+        0.055556790300276285,
+        0.05693341110018082
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b8/capture/resident",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010682886100160735,
+        0.01256531529991965,
+        0.01032866526657017
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b8/capture/upload",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010640215299887738,
+        0.010488343067117966,
+        0.012266091666727636
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b32/eager/resident",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.058649579166376496,
+        0.059616251399954,
+        0.06199956386650835
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b32/eager/upload",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0840643416668172,
+        0.06235480833323284,
+        0.06612913473315227
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b32/capture/resident",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010689963866510273,
+        0.010295495833270251,
+        0.010551161099768554
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b32/capture/upload",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01041549446672434,
+        0.011547945833687361,
+        0.021623279166427287
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b128/eager/resident",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.06124182776644981,
+        0.059807793066526456,
+        0.05866146803358182
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b128/eager/upload",
+      "params": {
+        "model": "gru",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.06478251806644646,
+        0.06674858196687031,
+        0.07592770556705848
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b128/capture/resident",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010799594433046877,
+        0.011185270833084359,
+        0.010379524999977244
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gru/b128/capture/upload",
+      "params": {
+        "model": "gru",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.03360944859984253,
+        0.030544594433255648,
+        0.02477611806631709
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b1/eager/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009421911133298029,
+        0.008074122233180485,
+        0.008924963900062722
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b1/eager/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009310050000203773,
+        0.008304995833411037,
+        0.008934904166380875
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b1/capture/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.003132533333458317,
+        0.0018475708333426156,
+        0.004235540299850982
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b1/capture/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.006166361100137389,
+        0.0032527138998072283,
+        0.0048245805330225265
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b8/eager/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009479694433199863,
+        0.008250193066487554,
+        0.009180313899802665
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b8/eager/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.013221955566647618,
+        0.008497662499818641,
+        0.00949306803328606
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b8/capture/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0017331347000435926,
+        0.00245223193342099,
+        0.0017509152666510394
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b8/capture/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.003466066666684734,
+        0.0022907235999203596,
+        0.0028100388997700067
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 493440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b32/eager/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009221384733003409,
+        0.008203288866692067,
+        0.00944030000003598
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b32/eager/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01107699026664098,
+        0.009543991666578221,
+        0.010694195833639241
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b32/capture/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0017366235998148719,
+        0.0016892138999537564,
+        0.0017645360998964558
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b32/capture/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.013424172200029717,
+        0.01834891109998959,
+        0.010425845833378845
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1973760,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b128/eager/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009293591666695042,
+        0.009320661100112678,
+        0.009112098633583325
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b128/eager/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.034294491666757194,
+        0.042178550000244286,
+        0.044439104166425145
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b128/capture/resident",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002355649999905533,
+        0.001815894433336022,
+        0.0016444041670183652
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/transformer/b128/capture/upload",
+      "params": {
+        "model": "transformer",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0352425638998587,
+        0.037115122233323444,
+        0.03852425556639597
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7895040,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b1/eager/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009197208333353047,
+        0.007899404166285725,
+        0.010086616667103953
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b1/eager/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.00935615973333673,
+        0.008160575000025953,
+        0.009053480566944928
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b1/capture/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0020091291667389062,
+        0.0017764152667950838,
+        0.0018081221996302096
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b1/capture/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.001778423600383879,
+        0.0017328305664705112,
+        0.0016935694332156951
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 15360,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b8/eager/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010215070833510254,
+        0.008942843066567245,
+        0.009142381933149106
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b8/eager/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.009680477799944735,
+        0.00843931526663558,
+        0.00918098610030332
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b8/capture/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0017442528003205856,
+        0.0017816763667118116,
+        0.0017469346998647477
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b8/capture/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0025905472333154953,
+        0.0019336305665395533,
+        0.0029191402999761825
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 122880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b32/eager/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.013496309733212305,
+        0.009710970833354319,
+        0.009207305533345788
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b32/eager/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.00958729999983916,
+        0.009090223599923775,
+        0.009171843033497377
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b32/capture/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002587054166360758,
+        0.0029050083331336888,
+        0.002025133333033106
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b32/capture/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0021713013998426807,
+        0.003668805533379782,
+        0.004498294433384824
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b128/eager/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.011805227766550767,
+        0.009176583333464805,
+        0.0099728319667823
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b128/eager/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.010867930533519636,
+        0.012219776366934335,
+        0.01308019863354275
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b128/capture/resident",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002066343033220619,
+        0.0020365652667048077,
+        0.0020431138997082598
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/gpt/b128/capture/upload",
+      "params": {
+        "model": "gpt",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.011684434733372958,
+        0.012534412499614215,
+        0.008730943066863499
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b1/eager/resident",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.00240986666661532,
+        0.0025380930664444653,
+        0.0022733069670114975
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b1/eager/upload",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002268859699931151,
+        0.0020863430666698455,
+        0.0021569583332166076
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b1/capture/resident",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0008700930333967942,
+        0.0006801083334721624,
+        0.0006321277663422128
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b1/capture/upload",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0007030652666192812,
+        0.0009727458333751807,
+        0.0007102194669035574
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 30960,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b8/eager/resident",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0033811791668995283,
+        0.0028964375000214205,
+        0.002225531933072489
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b8/eager/upload",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004211515266312442,
+        0.004891609733264583,
+        0.004373151400068309
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b8/capture/resident",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.000650162500096485,
+        0.0006357916669609646,
+        0.0007209597334925396
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b8/capture/upload",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004829858333202234,
+        0.0025741235998187526,
+        0.002720384699932765
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 247680,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b32/eager/resident",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0031550874996658725,
+        0.002122444433431762,
+        0.0021832680664374492
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b32/eager/upload",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.004482077799912077,
+        0.003806879166707707,
+        0.005927654166589491
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b32/capture/resident",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0006889597333307999,
+        0.0007170055667908552,
+        0.0008885763997871739
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b32/capture/upload",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0038066666665448187,
+        0.003534043067096112,
+        0.003933112499847387
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b128/eager/resident",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002437587500025984,
+        0.0022316680663304095,
+        0.0021103860999573953
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b128/eager/upload",
+      "params": {
+        "model": "lora",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.016790588900039437,
+        0.018449370833210802,
+        0.014890484733041377
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b128/capture/resident",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0007273805667258178,
+        0.0008846472332758519,
+        0.0008954416669439524
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/lora/b128/capture/upload",
+      "params": {
+        "model": "lora",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.016657055567096297,
+        0.016612572233134414,
+        0.01730388886644505
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 3962880,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b1/eager/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0027005958332059284,
+        0.002723430566644917,
+        0.0024632208335485
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b1/eager/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0027759194335279366,
+        0.0023776110998975732,
+        0.0025617291670641863
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b1/capture/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002327958332898561,
+        0.0018416583334328607,
+        0.001981972233625129
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b1/capture/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 1,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0011687111002781118,
+        0.0008146305670379661,
+        0.0008928444333529721
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 61440,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b8/eager/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.002946180533520722,
+        0.0032396763999713585,
+        0.0034298361002583987
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b8/eager/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.007088618066336494,
+        0.003495122233289294,
+        0.0033980055663657065
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b8/capture/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0010610583330465792,
+        0.0009775250000529923,
+        0.001712077766812096
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b8/capture/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 8,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0033391208334554298,
+        0.002206002800085116,
+        0.002021649999854465
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 491520,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b32/eager/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0024439055666637915,
+        0.0024302972330284924,
+        0.0023056513998502243
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b32/eager/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0076732235999467475,
+        0.008388549999896593,
+        0.010851627766290525
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b32/capture/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0006366069666304005,
+        0.0006414958334062248,
+        0.0008285652666624326
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b32/capture/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.01903030696703354,
+        0.023684029166664306,
+        0.022256684733535318
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 1966080,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b128/eager/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0027825958333172213,
+        0.0023594861001280756,
+        0.002363486100027027
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b128/eager/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.04569653333310271,
+        0.04448736946651479,
+        0.0448692930333588
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b128/capture/resident",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "resident",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0006854541667659456,
+        0.0007213500003369215,
+        0.0009416708334659536
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 0,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/autoencoder/b128/capture/upload",
+      "params": {
+        "model": "autoencoder",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 128,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0409923389001051,
+        0.05290142916686212,
+        0.09042713889987984
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 7864320,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/eager/every1",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 1,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.03736711110007794,
+        0.030101598633336835,
+        0.03018590556651664
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/capture/every1",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 1,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.029130769466670852,
+        0.020070041666622275,
+        0.017719166666696158
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/eager/every5",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 5,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.006488662500244876,
+        0.006487837499783685,
+        0.005990804166261418
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/capture/every5",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 5,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.008809206933559228,
+        0.00826627223335284,
+        0.011354633333394305
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/eager/every0",
+      "params": {
+        "model": "mlp",
+        "mode": "eager",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.0068135652666872675,
+        0.00732211113354424,
+        0.013980983333506931
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 30,
+            "registers": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "throughput/sync/capture/every0",
+      "params": {
+        "model": "mlp",
+        "mode": "capture",
+        "target": "remote_cuda",
+        "check": false,
+        "batch": 32,
+        "residency": "upload",
+        "sync_every": 0,
+        "optimizer": "momentum"
+      },
+      "status": "pass",
+      "message": null,
+      "seconds_per_step": [
+        0.005634363900268605,
+        0.006438013900090785,
+        0.008887816666295597
+      ],
+      "stats_deltas": [
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        },
+        {
+          "0": {
+            "bytes_down": 0,
+            "bytes_up": 990720,
+            "executes": 30,
+            "flushes": 0,
+            "registers": 0
+          }
+        }
+      ]
+    }
+  ]
+}

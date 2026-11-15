@@ -43,7 +43,7 @@ test-isolation:
 lint:
 	test -z "$$(gofmt -l server pkg clib)"
 	go vet ./...
-	$(PYTHON) -m ruff check client/python server/worker tests codegen spikes
+	$(PYTHON) -m ruff check client/python server/worker tests codegen spikes benchmark
 	python3 tests/security/static/check_worker.py
 
 ## codegen: regenerate protobuf and opset code (needs protoc 29.x and protoc-gen-go)
@@ -56,7 +56,7 @@ codegen-check:
 
 fmt:
 	gofmt -w server pkg clib
-	$(PYTHON) -m ruff check --fix client/python server/worker tests codegen spikes
+	$(PYTHON) -m ruff check --fix client/python server/worker tests codegen spikes benchmark
 
 ## sign-release: sign and publish the draft release TAG with the offline key (scripts/sign-release.sh)
 sign-release:
