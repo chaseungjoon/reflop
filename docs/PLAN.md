@@ -499,7 +499,7 @@ These are emitted by AOTAutograd backward graphs, `torch.optim`, AMP, `F.scaled_
 | Optimizer (fused/foreach) | `_foreach_add.List`, `_foreach_add.Scalar`, `_foreach_add.ScalarList`, `_foreach_sub.*`, `_foreach_mul.*`, `_foreach_div.*`, `_foreach_addcmul.*`, `_foreach_addcdiv.*`, `_foreach_lerp.*`, `_foreach_sqrt`, `_foreach_neg`, `_foreach_maximum.*`, `_foreach_minimum.*`, `_foreach_norm.Scalar`, `_foreach_sign`, `_foreach_abs`, `_foreach_clamp_min.*`, `_foreach_clamp_max.*`, `_foreach_pow.*`, `_foreach_reciprocal`, `_foreach_exp`, `_foreach_zero` | Functional (non-`_`) forms on the wire. List lengths must match (validator). Server may run the in-place kernel on donated buffers. |
 | | `reflop::fused_adam`, `reflop::fused_adamw`, `reflop::fused_sgd`, `reflop::fused_adagrad` | Functional wrappers defined by reFLOP over PyTorch's `_fused_adam_` / `_fused_adamw_` / `_fused_sgd_` / `_fused_adagrad_` kernels. Inputs: param, grad, state lists, step, hyperparameters (scalar inputs, so changing `lr` does not change the graph hash). Outputs: updated tensors, rebound by output spec. |
 | AMP | `reflop::amp_unscale_and_check` (wraps `_amp_foreach_non_finite_check_and_unscale_`), `reflop::amp_update_scale` (wraps `_amp_update_scale_`) | Functional wrappers; GradScaler support |
-| reflop-native | `reflop::dataset_gather(dataset_ref, tensor_id, indices)`, `reflop::randperm_seeded(n, seed)`, `reflop::bounds_check(idx, size, sentinel?)`, `reflop::nonzero_count(t)`, `reflop::mask_count(mask)` | Trusted server implementations. `dataset_gather`: `IDX`, integer index dtypes only, reads only this identity's datasets (I8). `bounds_check` is inserted automatically by the validator and may also be sent explicitly. |
+| reFLOP-native | `reflop::dataset_gather(dataset_ref, tensor_id, indices)`, `reflop::randperm_seeded(n, seed)`, `reflop::bounds_check(idx, size, sentinel?)`, `reflop::nonzero_count(t)`, `reflop::mask_count(mask)` | Trusted server implementations. `dataset_gather`: `IDX`, integer index dtypes only, reads only this identity's datasets (I8). `bounds_check` is inserted automatically by the validator and may also be sent explicitly. |
 
 ### 8.6 Tier 2 — Capability-gated
 
@@ -609,7 +609,7 @@ Every stage fails closed with a structured error code. No device allocation happ
 
 - `reflopd pause [--now]` / `resume`: queue new executes. `--now` kills running workers.
 - `reflopd kill <identity|session>`.
-- `reflopd yield --auto` (optional, off by default): NVML watches non-reflop GPU processes and pauses Guest execution while the Owner is using the GPU.
+- `reflopd yield --auto` (optional, off by default): NVML watches non-reFLOP GPU processes and pauses Guest execution while the Owner is using the GPU.
 - `reflopd say "<message>"`: broadcast an informational `Event` to connected Guests (e.g. "pausing in 10 min"). Plain text, sanitized on the client.
 
 ### 9.8 `reflopd` hardening
@@ -807,7 +807,7 @@ The client never builds CUDA code, so the server's CUDA, driver and PyTorch vers
 
 - `reflopd invite --name alice --via ssh` prints the exact line for the target `authorized_keys`: `restrict,command="<abs path>/reflopd serve --stdio --identity <id>" ssh-ed25519 AAAA…`. With Owner confirmation, `reflopd` appends it atomically.
 - The client connects with `ssh -T` and speaks the same protocol over stdio, with an inner protocol-level authentication step as well (so a misconfigured `authorized_keys` line without the forced command does not silently grant access to reFLOP identities).
-- `reflopd doctor` scans `authorized_keys` for reflop-managed keys **missing** `restrict` or `command=` and reports them as critical.
+- `reflopd doctor` scans `authorized_keys` for reFLOP-managed keys **missing** `restrict` or `command=` and reports them as critical.
 
 ---
 
@@ -910,6 +910,11 @@ operator, transfer, concurrency, checkpoint, and fault suites supplement these
 measurements. They do not replace conformance or the security corpus. Publish
 native-relative results only with matching source, configuration, hardware,
 runtime versions, numerical settings, and the measured network conditions.
+The [15 November 2026 report](../benchmark/report/README.md)
+compares local native execution on the Owner's RTX 5070 with a MacBook Pro
+Guest over Tailscale TLS. Its 156 matched cases quantify retained throughput;
+unrecorded RTT/bandwidth and unresolved correctness checks limit conclusions
+about the LAN target above.
 
 Targets are revisited after M0 and recorded in an ADR (revised in [SPIKE_REPORT.md](SPIKE_REPORT.md) and ADR-014).
 
@@ -987,7 +992,7 @@ All of these are settled. New questions go here first (R4), with a default until
 
 | ID | Question | Outcome |
 |---|---|---|
-| O1 | Project name | `reflop` (written reFLOP in prose) |
+| O1 | Project name | reFLOP (packages and commands use `reflop`) |
 | O2 | Worker language long-term: Python runtime vs native C++ | Python worker; a native worker stays an M8 option |
 | O3 | License | Apache-2.0 |
 | O4 | Pinned PyTorch version for the server runtime and the minimum client PyTorch version | Server: PyTorch 2.15.0 (2.14.1 for the CUDA 12.6 variant), ADR-008. Client: `torch>=2.6` |
@@ -1001,7 +1006,7 @@ All of these are settled. New questions go here first (R4), with a default until
 | O12 | Should the Owner also use reFLOP for their own jobs (as an identity) or run PyTorch directly? | Direct use; reFLOP does not manage the Owner's own processes (`reflopd yield --auto` can pause Guests while the Owner uses the GPU) |
 
 ---|---|---|
-| O1 | ~~Project name~~ | **Resolved: `reflop`** |
+| O1 | ~~Project name~~ | **Resolved: reFLOP** |
 | O2 | Worker language long-term: Python runtime vs native C++ | Python for M2–M6; native evaluated in M8 |
 | O3 | ~~License~~ | **Resolved: Apache-2.0** |
 | O4 | Pinned PyTorch version for the server runtime and the minimum client PyTorch version | Latest stable at M0 (docs consulted at planning time were 2.15) |
@@ -1012,7 +1017,7 @@ All of these are settled. New questions go here first (R4), with a default until
 | O9 | Scope of `DDS` support in v1 | Two-phase for `nonzero`/boolean indexing in M4; client fallback in M2 |
 | O10 | Audit log retention | 30 days |
 | O11 | Ship Tier 2 enabled by default when the hardware supports it? | Yes, except `rnn_fused` (`_cudnn_rnn` validation complexity) until M4 tests exist |
-| O12 | Should the Owner also use reflop for their own jobs (as an identity) or run PyTorch directly? | Direct use is assumed; reflop does not manage the Owner's own processes |
+| O12 | Should the Owner also use reFLOP for their own jobs (as an identity) or run PyTorch directly? | Direct use is assumed; reFLOP does not manage the Owner's own processes |
 
 ---
 

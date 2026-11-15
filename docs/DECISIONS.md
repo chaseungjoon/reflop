@@ -21,7 +21,7 @@ reason did not hold.
 | [012](#adr-012-data-dependent-shapes) | Two-phase DDS via `nonzero_count` + `nonzero_static` |
 | [013](#adr-013-level-1-unit-without-memorydenywriteexecute) | No `MemoryDenyWriteExecute` on the Level 1 unit |
 | [014](#adr-014-performance-without-weakening-checks) | Meta cache, capture, proven index ranges, no per-execute sync |
-| [015](#adr-015-one-autograd-visible-device) | All reflop tensors report `reflop:0` |
+| [015](#adr-015-one-autograd-visible-device) | All reFLOP tensors report `reflop:0` |
 | [016](#adr-016-cgroups-only-in-reflopd-owned-units) | cgroups only inside a reflopd-owned scope or unit |
 | [017](#adr-017-libreflop-in-go) | The C API is a Go `c-shared` library |
 | [018](#adr-018-reflopd-sandboxes-itself-by-re-exec) | reflopd applies its own sandbox by re-exec |
@@ -99,7 +99,7 @@ its census is `docs/opset_census.json`.
   569 operators, CUDA 580.
 
 **Consequences.** 582 entries: Tier 0 193, Tier 1 360 (including 11
-reflop-native ops), Tier 2 29. `docs/OPSET.md` is generated.
+reFLOP-native ops), Tier 2 29. `docs/OPSET.md` is generated.
 
 ## ADR-004: Sandbox implementation
 

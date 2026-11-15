@@ -80,7 +80,7 @@ reflopd:
 ## 0.1.9 (2026-11-12)
 
 - `reflop update` for a client installed with `uv tool` could fail right
-  after a release with "there is no version of reflop==X". It checks PyPI
+  after a release with `there is no version of reflop==X`. It checks PyPI
   through an API that lists a release as soon as it is uploaded, but uv
   installs from PyPI's package index page, which it caches for up to 10
   minutes. `reflop update` now tells uv to fetch that page again
@@ -170,7 +170,7 @@ SSH pipe mode:
 
 - `reflopd invite --via ssh` puts the machine's sshd host keys in the invite
   (`--ssh-host-keys <glob>` for an sshd elsewhere). The client keeps them in
-  its own known_hosts file under a `HostKeyAlias` tied to the server's reflop
+  its own known_hosts file under a `HostKeyAlias` tied to the server's reFLOP
   key and runs ssh with `StrictHostKeyChecking=yes`. Servers paired before
   0.1.6 use your known_hosts, also strictly. SSH invites from 0.1.6 need a
   0.1.6 client (older clients reject the new field).

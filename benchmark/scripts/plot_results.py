@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render saved benchmark evidence; BENCH_PLOT_RUN optionally exports a new run.
 
-No Reflop imports, connections, or benchmark execution. Default: bundled snapshot.
+No reFLOP imports, connections, or benchmark execution. Default: bundled snapshot.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def main():
             0.02,
             0.015,
             note
-            + f"\nReflop {data['runtime_info']['reflopd_version']} | {data['devices'][0]['name']} | Run {data['run_id']} | No native CUDA baseline",
+            + f"\nreFLOP {data['runtime_info']['reflopd_version']} | {data['devices'][0]['name']} | Run {data['run_id']} | No native baseline for this run",
             fontsize=9,
             color="#475569",
             va="bottom",

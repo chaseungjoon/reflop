@@ -11,7 +11,7 @@ enforced, how it is tested, and what remains possible. It expands
 |---|---|---|
 | Owner | trusted | owns the GPU machine, runs `reflopd` |
 | `reflopd` and `reflop-worker` | trusted code, assumed to have bugs | defense in depth around both |
-| Guest (client) | **untrusted** | may be malicious, careless or compromised; may skip the reflop client and write raw protocol messages |
+| Guest (client) | **untrusted** | may be malicious, careless or compromised; may skip the reFLOP client and write raw protocol messages |
 | Network | untrusted | eavesdropping, tampering, replay, impersonation |
 | Server machine | compromise considered unlikely | the client defends itself anyway |
 
@@ -103,7 +103,7 @@ unless the Owner passes `--accept-weak-isolation`.
   and the key must belong to the identity in the forced command.
   `SSH_ORIGINAL_COMMAND` is ignored except for the one value the client sends.
   The invite carries sshd's host keys. The client writes them to a known_hosts
-  file of its own under a `HostKeyAlias` tied to the server's reflop key and
+  file of its own under a `HostKeyAlias` tied to the server's reFLOP key and
   runs ssh with `StrictHostKeyChecking=yes`, so neither the user's known_hosts
   nor their ssh_config can vouch for another host. Guests paired before 0.1.6
   have no recorded keys and rely on their own known_hosts, still strictly.

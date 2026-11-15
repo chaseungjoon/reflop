@@ -155,7 +155,7 @@ replace the host keys, Guests need a new invite.
 
 Inside the pipe, the client still authenticates with its key, and the key must
 belong to the identity named in the forced command. `reflopd doctor` scans
-`authorized_keys` and reports any reflop key missing `restrict` or the forced
+`authorized_keys` and reports any reFLOP key missing `restrict` or the forced
 command as critical. `reflopd revoke bob` removes the line.
 
 ## Level 1: the system install
@@ -192,7 +192,7 @@ never hit them:
 
 | Rail | Default | Effect |
 |---|---|---|
-| Disk free floor | max(10%, 20 GiB) of the filesystem holding reflop's state | dataset uploads and snapshots that would cross it are refused, partial uploads removed |
+| Disk free floor | max(10%, 20 GiB) of the filesystem holding reFLOP's state | dataset uploads and snapshots that would cross it are refused, partial uploads removed |
 | Host RAM floor | 4 GiB stays available to you | workers share a cgroup memory limit that tracks it; without a delegated cgroup, the largest worker is killed when available memory drops below the floor |
 | Worker processes/threads | 4096 | `pids.max` per worker (or `RLIMIT_NPROC`) |
 | Protocol limits | 64 MiB frames, 1M nodes per graph, 16 dims, 2^40 elements per tensor | malformed or absurd requests are rejected before any work |
@@ -240,7 +240,7 @@ reflopd pause --now      # also kills running workers (their sessions are lost)
 reflopd resume
 reflopd kill alice       # end alice's sessions (or pass a session id prefix)
 reflopd say "pausing in 10 minutes for a deadline run"
-reflopd yield --auto     # pause Guests whenever a non-reflop process uses the GPU
+reflopd yield --auto     # pause Guests whenever a non-reFLOP process uses the GPU
 reflopd yield --off
 ```
 
@@ -364,7 +364,7 @@ URL (plain `http://` works only for `localhost`).
 The [benchmark guide](../benchmark/README.md) covers native GPU and remote
 throughput collection. Run `benchmark/scripts/native_cuda.sh` on this machine
 with a local CUDA-enabled PyTorch installation. It does not require pairing
-or a daemon. Select the physical GPU that Reflop uses with
+or a daemon. Select the physical GPU that reFLOP uses with
 `CUDA_VISIBLE_DEVICES` when more than one GPU is installed.
 
 The Guest runs the matching correctness and throughput suites against
@@ -373,6 +373,12 @@ stopped. Match the Owner runtime's Torch/CUDA versions and numerical flags;
 record the driver, GPU identity, power or clock settings, and network conditions.
 Send the complete native result directory to the person preparing the
 comparison so `compare_cuda.sh` can check the metadata and generate the report.
+
+The [15 November 2026 comparison](../benchmark/report/README.md) uses native
+execution on the Linux Owner workstation and a MacBook Pro Guest over
+Tailscale TLS to the same RTX 5070. It includes 78 passing native cases and
+156 matched remote cases. Network RTT, bandwidth, clocks, and competing load
+were not recorded; it is not a controlled LAN/WAN comparison.
 
 Fault probes are separate from throughput measurement. They run only the
 commands configured in `owner_hooks`; use a test server and keep a management
