@@ -185,6 +185,9 @@ reflop status
 # 4) Train your model
 python reflop_train.py          # Embed `reflop` in code
 reflop run python train.py      # Or just add a prefix command
+
+# For macOS, OpenMP threads need to be limited.
+OMP_NUM_THREADS=1 reflop run python train.py
 ```
 
 ## How it works
