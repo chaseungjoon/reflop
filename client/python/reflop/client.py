@@ -10,10 +10,12 @@ and the server key fingerprint.
 from __future__ import annotations
 
 import base64
+import collections
 import hashlib
 import hmac
 import os
 import secrets
+import shlex
 import shutil
 import socket
 import ssl
@@ -22,7 +24,7 @@ import subprocess
 import threading
 import time
 
-from . import _sshhost, keys
+from . import _debug, _sshhost, keys
 from ._pb import auth_pb2 as apb
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
@@ -68,6 +70,13 @@ class Framer:
         self._close = close
         self.wlock = threading.Lock()
         self.max_frame = MAX_FRAME
+        self.stderr_tail: SshStderr | None = None  # SSH pipe mode only
+
+    def diagnostics(self) -> str:
+        """What ssh last wrote to stderr, as " (ssh: ...)", or "" (TLS, or
+        ssh said nothing). For error messages only."""
+        t = self.stderr_tail.text() if self.stderr_tail is not None else ""
+        return f" (ssh: {t})" if t else ""
 
     def read(self) -> cpb.Envelope:
         hdr = self._exact(4)
@@ -130,6 +139,7 @@ def dial_tls(addresses: list[str], fingerprint: bytes, timeout: float = 15.0) ->
         host, _, port = addr.rpartition(":")
         host = host.strip("[]")
         try:
+            _debug.log(f"TLS: connecting to {addr}")
             raw = socket.create_connection((host, int(port)), timeout=timeout)
             tls = ctx.wrap_socket(raw, server_hostname=None)
             der = tls.getpeercert(binary_form=True)
@@ -139,6 +149,7 @@ def dial_tls(addresses: list[str], fingerprint: bytes, timeout: float = 15.0) ->
                     f"the server at {addr} presented a different key than the one pinned at pairing. "
                     "This could be an impersonation attempt; nothing was sent. If the Owner reinstalled reflopd, "
                     "pair again with a new invite.")
+            _debug.log(f"TLS: connected to {addr}, server key matches the pinned key")
             tls.settimeout(None)
             tls.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             f = tls.makefile("rwb", buffering=1 << 20)
@@ -155,6 +166,7 @@ def dial_tls(addresses: list[str], fingerprint: bytes, timeout: float = 15.0) ->
         except ServerKeyMismatch:
             raise
         except OSError as e:
+            _debug.log(f"TLS: {addr}: {e}")
             last = e
     raise ReflopError(f"could not reach the server ({', '.join(addresses)}): {last}")
 
@@ -174,8 +186,60 @@ def ssh_command(target: str, keyfile, fingerprint_hex: str, host_keys: list[str]
     return cmd + ["--", target, "reflop-stdio"]
 
 
+class SshStderr:
+    """The last few lines ssh wrote to stderr (ADR-026).
+
+    ssh says why it failed there (host key mismatch, "Permission denied
+    (publickey)", connection refused, DNS), and reflopd's own stderr on the
+    server arrives the same way. All of it is untrusted: memory is bounded,
+    every line is sanitized and cut short, and the text is only ever shown
+    in an error message. Nothing parses it or acts on it.
+    """
+
+    LINES = 8
+    LINE_BYTES = 300
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+        self._lines: collections.deque[str] = collections.deque(maxlen=self.LINES)
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+
+    def _drain(self) -> None:
+        partial = b""
+        try:
+            while True:
+                chunk = self._stream.read(4096)
+                if not chunk:
+                    break
+                *done, partial = (partial + chunk).split(b"\n")
+                for line in done:
+                    self._add(line)
+                # Keep the start of an overlong line, drop the rest of it.
+                partial = partial[:self.LINE_BYTES]
+        except (OSError, ValueError):
+            pass
+        self._add(partial)
+
+    def _add(self, raw: bytes) -> None:
+        line = sanitize(raw[:self.LINE_BYTES].decode("utf-8", "replace"), self.LINE_BYTES).strip()
+        if line:
+            _debug.log(f"ssh: {line}")
+            with self._lock:
+                self._lines.append(line)
+
+    def text(self, wait: float = 1.0) -> str:
+        """The kept lines joined by "; ". Waits up to `wait` seconds for ssh
+        to finish writing: its stdout can close before its stderr is read."""
+        self._thread.join(wait)
+        with self._lock:
+            return "; ".join(self._lines)
+
+
 def dial_ssh(target: str, key, fingerprint_hex: str, host_keys: list[str], port: int | None = None) -> Framer:
     cmd = ssh_command(target, keys.ssh_key_file(key), fingerprint_hex, host_keys, port)
+    _debug.log(f"ssh: starting {shlex.join(cmd)}")
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
 
     def close():
@@ -185,11 +249,14 @@ def dial_ssh(target: str, key, fingerprint_hex: str, host_keys: list[str], port:
             pass
         p.terminate()
 
-    def drain():
-        for _line in p.stderr:
-            pass  # ssh diagnostics are not trusted output; ignore
-    threading.Thread(target=drain, daemon=True).start()
-    return Framer(p.stdout, p.stdin, close)
+    fr = Framer(p.stdout, p.stdin, close)
+    fr.stderr_tail = SshStderr(p.stderr)
+    return fr
+
+
+def ssh_closed(target: str, fr: Framer, hint: str = "") -> ReflopError:
+    """The error for an ssh connection that ended before the handshake did."""
+    return ReflopError(f"ssh to {target} closed before the reflop handshake{fr.diagnostics()}.{hint}")
 
 
 # ---------------------------------------------------------------- handshake
@@ -275,7 +342,14 @@ def pair(code: str, name: str | None = None) -> ServerEntry:
     else:
         fr = dial_tls(list(inv.addresses), fp)
     try:
-        hr = _hello(fr)
+        try:
+            hr = _hello(fr)
+        except (EOFError, OSError):
+            if inv.transport != apb.TRANSPORT_SSH:
+                raise
+            raise ssh_closed(inv.addresses[0], fr, " Check that the invite is for this machine's key "
+                             "(`reflop key --ssh`) and that `ssh` to that address works.") from None
+        _debug.log("handshake: server key matches the invite")
         if not hmac.compare_digest(hr.server_key_fingerprint, fp):
             raise ServerKeyMismatch("the server's key does not match the invite")
         if inv.transport == apb.TRANSPORT_TLS:
@@ -345,6 +419,7 @@ class RemoteConnection(Connection):
         threading.Thread(target=self._keepalive, daemon=True).start()
 
     def _open(self) -> None:
+        _debug.log(f"connecting to {self.entry.name} ({self.entry.transport}, {', '.join(self.entry.addresses)})")
         if self.entry.transport == "ssh":
             self.fr = dial_ssh(self.entry.addresses[0], self.key, self.entry.fingerprint, self.entry.ssh_host_keys,
                                self.entry.ssh_port)
@@ -352,24 +427,26 @@ class RemoteConnection(Connection):
             self.fr = dial_tls(self.entry.addresses, self.fp)
         try:
             hr = _hello(self.fr)
-        except EOFError:
+            if not hmac.compare_digest(hr.server_key_fingerprint, self.fp):
+                self.fr.close()
+                raise ServerKeyMismatch("the server's key does not match the pinned key")
+            _debug.log("handshake: server key matches the pinned key")
+            try:
+                self.auth = _authenticate(self.fr, self.key, hr.server_nonce, self.fp)
+            except ReflopRemoteError as e:
+                self.fr.close()
+                if e.code != cpb.ERROR_UNAUTHENTICATED:
+                    raise
+                raise NotPairedError(e.code, not_paired_message(self.entry)) from None
+        except (EOFError, OSError):
             self.fr.close()
             if self.entry.transport != "ssh":
                 raise
-            raise ReflopError(
-                f"ssh to {self.entry.addresses[0]} closed before the reflop handshake. If sshd rejected this "
-                f"machine's key, the Owner has probably unpaired you: run `reflop unpair {self.entry.name}` to "
-                "forget this server. `reflop doctor` checks the connection.") from None
-        if not hmac.compare_digest(hr.server_key_fingerprint, self.fp):
-            self.fr.close()
-            raise ServerKeyMismatch("the server's key does not match the pinned key")
-        try:
-            self.auth = _authenticate(self.fr, self.key, hr.server_nonce, self.fp)
-        except ReflopRemoteError as e:
-            self.fr.close()
-            if e.code != cpb.ERROR_UNAUTHENTICATED:
-                raise
-            raise NotPairedError(e.code, not_paired_message(self.entry)) from None
+            raise ssh_closed(
+                self.entry.addresses[0], self.fr,
+                f" If sshd rejected this machine's key, the Owner has probably unpaired you: run `reflop unpair "
+                f"{self.entry.name}` to forget this server. `reflop doctor` checks the connection.") from None
+        _debug.log(f"authenticated as {sanitize(self.auth.identity_name, 64)!r}")
         lim = self.auth.capabilities.limits
         self.fr.max_frame = frame_limit(lim.max_frame_bytes)
         if lim.max_fetch_bytes:
@@ -403,7 +480,9 @@ class RemoteConnection(Connection):
         req = cpb.OpenSession(device=self.gdevice)
         if seed is not None:
             req.has_seed, req.seed = True, seed
+        _debug.log("opening a session")
         r = self.call(cpb.Envelope(open_session=req), timeout=300)
+        _debug.log("session opened")
         self.session_id = r.session_opened.session_id
         if r.session_opened.enabled_op_ids:
             # This session's device may support fewer operators than the
@@ -417,8 +496,12 @@ class RemoteConnection(Connection):
                 self._deliver(fr.read())
         except Exception as e:  # noqa: BLE001 - connection ended
             if fr is self.fr:
-                self.closed = True
-                self._fail_all(SessionLostError(cpb.ERROR_SESSION_LOST, f"connection to the server lost: {e}"))
+                # Mark it closed first: diagnostics() may wait for ssh, and a
+                # request sent meanwhile must reconnect, not write to a dead pipe.
+                on_purpose, self.closed = self.closed, True
+                why = "" if on_purpose else fr.diagnostics()
+                _debug.log(f"connection ended: {e}{why}")
+                self._fail_all(SessionLostError(cpb.ERROR_SESSION_LOST, f"connection to the server lost: {e}{why}"))
 
     def _send(self, env: cpb.Envelope) -> None:
         if self.closed:
@@ -431,11 +514,13 @@ class RemoteConnection(Connection):
         with self._lock:
             if self._pending:
                 raise SessionLostError(cpb.ERROR_SESSION_LOST, "connection lost with requests in flight")
+        _debug.log("reconnecting to resume the session")
         self._open()
         r = self.call(cpb.Envelope(open_session=cpb.OpenSession(device=self.gdevice, resume_session_id=self.session_id)),
                       timeout=60)
         if not r.session_opened.resumed:
             raise SessionLostError(cpb.ERROR_SESSION_LOST, "the server session could not be resumed")
+        _debug.log("session resumed")
 
     def _keepalive(self) -> None:
         while not self.closed:
@@ -520,9 +605,9 @@ def _tell_unpair(entry: ServerEntry) -> tuple[str, str]:
                 return UNPAIR_ALREADY, ""
             raise ReflopRemoteError.from_pb(env.error)
         return UNPAIR_FAILED, "unexpected reply to Unpair"
-    except EOFError:
+    except (EOFError, BrokenPipeError):
         # SSH: sshd no longer lets this key in, or the connection dropped.
-        return UNPAIR_UNREACHABLE, "the connection closed"
+        return UNPAIR_UNREACHABLE, "the connection closed" + fr.diagnostics()
     except (ReflopError, OSError) as e:
         return UNPAIR_FAILED, sanitize(str(e), 300)
     finally:

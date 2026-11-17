@@ -171,6 +171,10 @@ lines after the operation that caused it, at the next value you read
 (`.item()`, `print`, `.cpu()`) or at `reflop.synchronize()`. The message then
 says which request failed ("running a graph failed: ...").
 
+If the program ends before an error like that surfaces, reFLOP prints it to
+stderr at exit ("an error was not reported before the program ended: ...").
+It first waits up to 5 seconds for requests still running on the server.
+
 Messages from the server are stripped of terminal control sequences before you
 see them.
 
@@ -309,6 +313,11 @@ returns True, and `.cuda()`, `.to("cuda")`, `device="cuda"` and
 that calls into `torch.cuda` in other ways (streams, memory statistics, CUDA
 graphs) needs the explicit API.
 
+The exit status is the command's own. If a signal kills the command, reFLOP
+says so (`reflop: python was killed by SIGSEGV (signal 11)`) and exits with
+128 + the signal number, as a shell would. See [Troubleshooting](#troubleshooting)
+when a run crashes or hangs.
+
 ## Placement
 
 ```python
@@ -383,6 +392,37 @@ Does not work:
 GPU results can differ from your CPU's in the last bits (TF32 is on for
 convolutions by default, and some GPU kernels are not deterministic).
 
+## Troubleshooting
+
+**The program crashed.** `reflop run` names the signal that killed it. Python
+programs it starts get `PYTHONFAULTHANDLER=1` (unless you set the variable
+yourself), so a crash in native code (torch, OpenMP, another C extension) also
+prints the Python stack of every thread. On macOS a crash or hang is often
+two OpenMP runtimes in one process; try `OMP_NUM_THREADS=1 reflop run ...`
+([#7](https://github.com/chaseungjoon/reflop/issues/7)).
+
+**The program hangs.** Run it with `REFLOP_DEBUG=1`. reFLOP prints the
+program's pid. `kill -USR1 <pid>` from another terminal, or `Ctrl-\` in this one,
+prints the Python stack of every thread and lets the program go on. Without
+`REFLOP_DEBUG`, SIGUSR1 is left to your program. Ctrl-C reaches the program,
+which prints its traceback before reFLOP exits.
+
+**The connection fails.** Errors in SSH pipe mode end with what ssh said, for
+example `(ssh: me@gpu: Permission denied (publickey).)`. That text comes
+from ssh and from the server, so reFLOP strips control sequences from it and
+keeps only the last few lines. `reflop doctor` checks the setup.
+
+**`REFLOP_DEBUG=1`** works for every `reflop` command and for programs started
+with `reflop run`:
+
+- `reflop` commands print the full traceback instead of one line;
+- each connection step goes to stderr: the ssh command or TLS address,
+  handshake, authentication, session open, reconnects, and the reason a
+  connection ended. These lines carry no keys, secrets or tensor data;
+- `reflop run` prints the pid and enables the stack dump above.
+
+`REFLOP_DEBUG=0` or an empty value turns it off.
+
 ## CLI reference
 
 | Command | Purpose |
@@ -401,6 +441,8 @@ convolutions by default, and some GPU kernels are not deterministic).
 | `reflop update` | update the client to the newest signed release. In a uv project it upgrades `uv.lock` and syncs; elsewhere it installs the release's wheel |
 
 `--server <name>` (or `REFLOP_SERVER`) selects a paired server for any command.
+`REFLOP_DEBUG=1` adds tracebacks and a log of each connection step
+([Troubleshooting](#troubleshooting)).
 
 ## Privacy
 

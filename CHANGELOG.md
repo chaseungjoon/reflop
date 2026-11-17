@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+`reflop run` and the client no longer fail silently (#8).
+
+Client:
+
+- When a signal kills the program `reflop run` started, reflop names the
+  signal and exits with 128 + n, as a shell would. Before, it printed nothing
+  and exited 245 for a segfault. Only the program name is printed, not its
+  arguments. On macOS a crash also points at the OpenMP workaround (#7).
+- `reflop run` sets `PYTHONFAULTHANDLER=1` for the program unless it is
+  already set, so a native crash prints the Python stack of every thread.
+- `reflop run` no longer dies on Ctrl-C or `Ctrl-\` before the program does, so
+  the program's traceback is not lost. A SIGTERM sent to reflop is passed on
+  to the program.
+- With `REFLOP_DEBUG=1`, `reflop run` prints the program's pid, and
+  `kill -USR1 <pid>` or `Ctrl-\` prints the Python stack of every thread
+  without stopping it. This finds where a hung program is stuck.
+- `REFLOP_DEBUG=1` also logs each connection step to stderr: the ssh command
+  or TLS address, handshake, authentication, session open, reconnects, and
+  why a connection ended. `REFLOP_DEBUG=0` now turns it off. It is documented
+  in the Guest guide (Troubleshooting) and in `reflop run --help`.
+- In SSH pipe mode, connection errors now end with the last lines ssh wrote
+  to stderr, such as `Permission denied (publickey)` or `Connection refused`,
+  sanitized and bounded (ADR-026). Before, they were thrown away.
+- At exit, the client waits up to 5 seconds for requests still in flight and
+  prints any error from them that was never raised. Before, a script whose last
+  steps failed on the server could end with status 0 and no message.
+
 ## 0.1.12 (2026-11-15)
 
 Unpairing (#6, ADR-025). A Guest can now pair again with a server it was

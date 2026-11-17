@@ -49,6 +49,9 @@ class FakeFramer:
     def close(self):
         self.closed = True
 
+    def diagnostics(self):
+        return ""
+
 
 def hello(fp=FP):
     return cpb.Envelope(hello_response=cpb.HelloResponse(protocol_version=1, server_nonce=b"\x07" * 32,

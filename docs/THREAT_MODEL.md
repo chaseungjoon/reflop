@@ -107,6 +107,9 @@ unless the Owner passes `--accept-weak-isolation`.
   runs ssh with `StrictHostKeyChecking=yes`, so neither the user's known_hosts
   nor their ssh_config can vouch for another host. Guests paired before 0.1.6
   have no recorded keys and rely on their own known_hosts, still strictly.
+  ssh's stderr, which also carries reflopd's stderr from the server, is
+  untrusted: the client keeps only its last 8 lines of 300 bytes, sanitizes
+  them, and shows them in connection errors without parsing them (ADR-026).
 - Revocation takes effect on the next request: keys are dropped and sessions killed.
 
 ## Safety rails

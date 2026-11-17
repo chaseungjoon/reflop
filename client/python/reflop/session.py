@@ -82,15 +82,27 @@ def _register_atexit() -> None:
         atexit.register(_close_at_exit)
 
 
+# How long the exit hook waits for requests that are still in flight.
+EXIT_WAIT_S = 5.0
+
+
 def _close_at_exit() -> None:
     """End the server sessions when the process exits. A dead process can never
     resume them, and a detached session keeps its worker (and GPU memory) for the
-    Owner's session TTL. Unflushed work is dropped: nothing can read it anymore."""
+    Owner's session TTL. Unflushed work is dropped: nothing can read it anymore.
+
+    Requests already sent get a few seconds to finish first, and an error none
+    of them reported yet goes to stderr: otherwise a script whose last steps
+    failed on the server would end with no message at all (issue #8)."""
     with _glock:
         sessions = list(_sessions.values())
         _sessions.clear()
         _default.clear()
     for s in sessions:
+        try:
+            s.report_at_exit(EXIT_WAIT_S)
+        except Exception:  # noqa: BLE001 - best effort at exit
+            pass
         try:
             s.conn.close()
         except Exception:  # noqa: BLE001 - best effort at exit
@@ -234,6 +246,7 @@ class Session:
             if e is not None and self.async_error is None:
                 self.async_error = e
                 self.async_what = what
+        fut.reflop_what = what
         fut.add_done_callback(done)
         self.inflight.append(fut)
         if len(self.inflight) > 256:
@@ -250,6 +263,32 @@ class Session:
                 what = _ASYNC_WHAT.get(self.async_what, "a request")
                 raise type(e)(e.code, f"{what} failed: {e.message}", e.stage, e.node, e.op_name) from e
             raise e
+
+    def report_at_exit(self, wait: float) -> None:
+        """At interpreter exit: wait up to `wait` seconds for requests in
+        flight, then write an error that was never raised to stderr."""
+        import concurrent.futures
+        import sys
+
+        from .errors import sanitize
+
+        pending = [f for f in self.inflight if not f.done()]
+        if pending:
+            _, still = concurrent.futures.wait(pending, timeout=wait)
+            if still:
+                sys.stderr.write(f"reflop: exiting with {len(still)} request(s) still running on the server; "
+                                 "their results are discarded\n")
+            # A future wakes its waiters before it runs the callback that
+            # sets async_error, so look at the ones waited for directly.
+            # Only those: an older failure may have been raised and caught.
+            for f in pending:
+                if self.async_error is None and f.done() and not f.cancelled() and f.exception() is not None:
+                    self.async_error, self.async_what = f.exception(), getattr(f, "reflop_what", "")
+        try:
+            self.raise_async()
+        except BaseException as e:  # noqa: BLE001 - reported, not raised, at exit
+            sys.stderr.write(f"reflop: an error was not reported before the program ended: "
+                             f"{sanitize(str(e))}\n")
 
     def synchronize(self) -> None:
         with self.lock:

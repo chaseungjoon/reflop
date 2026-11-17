@@ -549,3 +549,41 @@ line stays until the Owner deletes the identity, but the key no longer
 authenticates inside the pipe. ADR-024 rejected `revoke --delete` because one
 typo could delete an active Guest's data; `reflopd unpair` asks before it
 deletes for that reason.
+
+## ADR-026: Showing ssh's stderr in connection errors
+
+**Context.** In SSH pipe mode the client read ssh's stderr and threw every
+line away, because nothing from that stream is trusted. ssh puts the reason it
+failed there: a changed host key, `Permission denied (publickey)`, a refused
+connection, an unknown host name. reflopd's own errors on the server
+(`this key can only be used by the reflop client`, a daemon that is not
+running) arrive on the same stream. With all of it dropped, the Guest saw
+"closed before the reflop handshake" or "connection to the server lost" and
+nothing about why (issue #8).
+
+**Decision.** The client keeps the last 8 lines ssh writes to stderr, each cut
+to 300 bytes, decoded with replacement characters and passed through
+`errors.sanitize`, the same filter as every other server string (I9). Memory
+stays bounded however much the stream sends or however long a line is. The kept
+text is appended, as `(ssh: ...)`, to the error raised when the connection
+closes before the handshake, when it drops later (unless the client closed it),
+and to the detail `reflop unpair` shows when it cannot reach the server. With
+`REFLOP_DEBUG=1` each kept line is also logged as it arrives. Nothing parses the
+text, branches on it or acts on it: it is display only. TLS mode has no such
+stream and is unchanged.
+
+**Alternatives.** Keep dropping it and tell users to run `ssh` by hand (the
+failure is often intermittent or environment-specific, and users do not know
+the options reflop passes); show it only with `REFLOP_DEBUG` (the first,
+unreproduced failure is the one worth explaining); match known ssh messages
+and print our own wording (parsing untrusted text, and ssh's wording varies
+by version and locale).
+
+**Consequences.** A malicious server, or anyone on its side of the ssh
+connection, can choose up to about 2.4 KB of plain text that appears in a
+Guest's error message, after the same sanitizing as error messages the server
+already sends inside the protocol. It cannot move the cursor, rewrite earlier
+output or hide text with bidirectional overrides. The text is labelled as ssh's,
+so it does not read as reflop's own advice. A test corpus case
+(`tests/security/corpus/test_ssh_stderr.py`) checks the sanitizing and the
+bounds.
