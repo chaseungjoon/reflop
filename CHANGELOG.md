@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.14 (2026-11-17)
+
+On macOS, `reflop run` keeps OpenMP on one thread (#7, ADR-027).
+
+Client:
+
+- On macOS, `reflop run` sets `OMP_NUM_THREADS=1` for the program unless the
+  variable is already set, and says so when it starts. PyTorch on macOS ships
+  its own OpenMP runtime; a second one in the same process (scikit-learn,
+  xgboost, conda, Homebrew) can crash or hang the program. A value you set,
+  even an empty one, is kept. Linux and `import reflop` are unchanged; for
+  `python train.py` on a Mac, set the variable yourself.
+- `reflop doctor` lists the OpenMP runtimes your packages install and the
+  ones loaded with torch, and names the package each came from. On macOS two
+  loaded runtimes fail the check; a second installed one is a new `WARN` line,
+  which does not change the exit status.
+- After a crash on macOS, `reflop run` points at `reflop doctor` when OpenMP
+  was already on one thread, and at `OMP_NUM_THREADS=1` when you chose more.
+
 ## 0.1.13 (2026-11-17)
 
 `reflop run` and the client no longer fail silently (#8).
