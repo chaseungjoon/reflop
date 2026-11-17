@@ -8,6 +8,7 @@ import os
 import sys
 import time
 
+from .. import _debug
 from .._pb import compute_pb2 as cpb
 from .._pb import data_pb2 as dpb
 from ..errors import sanitize
@@ -22,6 +23,8 @@ the server, which runs whitelisted tensor operators and nothing else.
   reflop usage                      compute you have used on the server
   reflop data push ./pack --name d  upload a dataset once
   reflop run python train.py        run locally with reflop enabled
+
+Set REFLOP_DEBUG=1 for full tracebacks and a log of each connection step.
 """
 
 
@@ -317,9 +320,81 @@ def _signal_name(n: int) -> str:
         return f"signal {n}"
 
 
+RUN_HELP = """\
+Runs the command on this machine with 'cuda' mapped to the reflop device.
+The exit status is the command's; if a signal kills it, reflop names the
+signal and exits with 128 + n, as a shell would.
+
+Python children get PYTHONFAULTHANDLER=1 (unless it is already set), so a
+native crash prints the Python stack of every thread.
+
+REFLOP_DEBUG=1 reflop run ... also:
+  - logs each connection step (ssh or TLS dial, handshake, session open,
+    reconnect) to stderr;
+  - prints the child's pid; `kill -USR1 <pid>` or Ctrl-\\ then prints the
+    Python stack of every thread without stopping it, to find a hang.
+"""
+
+# Signals that mean a native crash, where the macOS OpenMP clash (#7) is the
+# usual cause on a Guest's Mac.
+_CRASH_SIGNALS = ("SIGSEGV", "SIGBUS", "SIGABRT", "SIGILL")
+OPENMP_ISSUE = "https://github.com/chaseungjoon/reflop/issues/7"
+
+
+def _run_child(command: list[str], env: dict[str, str]) -> int:
+    """Start the command and wait for it like a shell does.
+
+    Ctrl-C and Ctrl-\\ reach the whole foreground process group, so the child
+    gets them anyway: reflop ignores them while it waits instead of dying (or
+    killing the child) before the child has printed its traceback or stack
+    dump. A SIGTERM sent to reflop alone is passed on to the child. Signals
+    that were already ignored (a background job) stay as they were, and the
+    child starts with the dispositions reflop itself was given.
+    """
+    import signal
+    import subprocess
+
+    child: list[subprocess.Popen] = []
+    early: list[int] = []  # arrived before the child existed
+
+    def forward(signum, _frame) -> None:
+        if not child:
+            early.append(signum)
+        for p in child:
+            try:
+                p.send_signal(signum)
+            except OSError:
+                pass
+
+    saved = {}
+    for name, handler in (("SIGINT", lambda *_: None), ("SIGQUIT", lambda *_: None), ("SIGTERM", forward)):
+        s = getattr(signal, name, None)
+        if s is None:
+            continue
+        try:
+            if signal.getsignal(s) is signal.SIG_IGN:
+                continue
+            saved[s] = signal.signal(s, handler)
+        except (ValueError, OSError):  # not the main thread
+            pass
+    try:
+        # A Python handler is reset to the default at exec, so the child
+        # does not inherit these.
+        p = subprocess.Popen(command, env=env)
+        child.append(p)
+        for s in early:
+            p.send_signal(s)
+        if _debug.enabled():
+            sys.stderr.write(f"reflop: {command[0]} is pid {p.pid}; `kill -USR1 {p.pid}` (or Ctrl-\\) prints "
+                             "its Python stacks\n")
+        return p.wait()
+    finally:
+        for s, h in saved.items():
+            signal.signal(s, h)
+
+
 def cmd_run(a) -> int:
     """Run a command locally with reflop's shim enabled (best effort, §16.2)."""
-    import subprocess
     from pathlib import Path
 
     if not a.command:
@@ -329,17 +404,26 @@ def cmd_run(a) -> int:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(shim) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env["REFLOP_SHIM"] = "1"
+    # A native crash (torch, libomp, another C extension) then prints the
+    # Python stacks instead of nothing (issue #8). The user's setting wins.
+    env.setdefault("PYTHONFAULTHANDLER", "1")
     if a.server:
         env["REFLOP_SERVER"] = a.server
     sys.stderr.write("reflop: running on this machine; tensor math on 'cuda' goes to the reflop server\n")
-    rc = subprocess.call(a.command, env=env)
+    rc = _run_child(a.command, env)
     if rc < 0:
         # Killed by a signal. The shell only sees our own exit status, so say
         # what happened and report 128 + n like the shell would (issue #8).
         # Only the program name goes out: the rest of the argv may carry
         # credentials, and unquoted arguments read ambiguously in a log line.
+        # Like a shell, say nothing for Ctrl-C and a closed pipe.
         n = -rc
-        sys.stderr.write(f"reflop: {a.command[0]} was killed by {_signal_name(n)} (signal {n})\n")
+        name = _signal_name(n)
+        if name not in ("SIGINT", "SIGPIPE"):
+            sys.stderr.write(f"reflop: {a.command[0]} was killed by {name} (signal {n})\n")
+        if name in _CRASH_SIGNALS and sys.platform == "darwin" and "OMP_NUM_THREADS" not in os.environ:
+            sys.stderr.write("reflop: on macOS this is often two OpenMP runtimes in one process; try "
+                             f"OMP_NUM_THREADS=1 reflop run ... (see {OPENMP_ISSUE})\n")
         return 128 + n
     return rc
 
@@ -413,7 +497,8 @@ def main(argv: list[str] | None = None) -> int:
     rm = ds.add_parser("rm", help="delete a dataset")
     rm.add_argument("name")
     p.set_defaults(fn=cmd_data)
-    p = sub.add_parser("run", help="run a command locally with 'cuda' mapped to reflop")
+    p = sub.add_parser("run", help="run a command locally with 'cuda' mapped to reflop", description=RUN_HELP,
+                       formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", nargs=argparse.REMAINDER)
     p.set_defaults(fn=cmd_run)
     sub.add_parser("verify", help="cross-check small graphs against local CPU").set_defaults(fn=cmd_verify)
@@ -429,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception as e:  # noqa: BLE001 - one clean line; REFLOP_DEBUG=1 for the traceback
-        if os.environ.get("REFLOP_DEBUG"):
+        if _debug.enabled():
             raise
         sys.stderr.write(f"reflop: {sanitize(str(e))}\n")
         return 1
