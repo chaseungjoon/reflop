@@ -318,6 +318,18 @@ says so (`reflop: python was killed by SIGSEGV (signal 11)`) and exits with
 128 + the signal number, as a shell would. See [Troubleshooting](#troubleshooting)
 when a run crashes or hangs.
 
+On macOS, `reflop run` sets `OMP_NUM_THREADS=1` for the command unless you set
+the variable yourself, and says so when it starts. PyTorch on macOS ships its
+own OpenMP runtime (`libomp`). A second one in the same process, from
+scikit-learn, xgboost, LightGBM, faiss, conda or Homebrew, crashes or hangs the
+program once both start their thread pools
+([#7](https://github.com/chaseungjoon/reflop/issues/7)). With one thread
+neither does. Your math runs on the server, so only operators that fall back
+to your CPU are slower. To keep more threads, set the variable yourself
+(`OMP_NUM_THREADS=8 reflop run ...`). A program you start without `reflop run`
+(`python train.py` with `import reflop`) gets no default; on macOS run it as
+`OMP_NUM_THREADS=1 python train.py`.
+
 ## Placement
 
 ```python
@@ -397,9 +409,16 @@ convolutions by default, and some GPU kernels are not deterministic).
 **The program crashed.** `reflop run` names the signal that killed it. Python
 programs it starts get `PYTHONFAULTHANDLER=1` (unless you set the variable
 yourself), so a crash in native code (torch, OpenMP, another C extension) also
-prints the Python stack of every thread. On macOS a crash or hang is often
-two OpenMP runtimes in one process; try `OMP_NUM_THREADS=1 reflop run ...`
-([#7](https://github.com/chaseungjoon/reflop/issues/7)).
+prints the Python stack of every thread.
+
+**macOS: the program crashes or hangs, or prints `OMP: Error #15`.** This is
+usually two OpenMP runtimes in one process
+([#7](https://github.com/chaseungjoon/reflop/issues/7)). `reflop doctor` lists
+the OpenMP runtimes your packages install and the ones torch loads, and names
+the package each one came from. `reflop run` already sets `OMP_NUM_THREADS=1`;
+if you set it to more, or run without `reflop run`, try
+`OMP_NUM_THREADS=1`. If it still fails, add the output of
+`DYLD_PRINT_LIBRARIES=1 python train.py 2>&1 | grep -i omp` to the issue.
 
 **The program hangs.** Run it with `REFLOP_DEBUG=1`. reFLOP prints the
 program's pid. `kill -USR1 <pid>` from another terminal, or `Ctrl-\` in this one,
@@ -436,7 +455,7 @@ with `reflop run`:
 | `reflop data build\|push\|ls\|rm` | datasets |
 | `reflop run <command>` | run a command here with `cuda` mapped to reFLOP |
 | `reflop verify` | compare small results with your CPU |
-| `reflop doctor` | check torch, the key, the config and the connection |
+| `reflop doctor` | check torch, its OpenMP runtimes, the key, the config and the connection |
 | `reflop key [--ssh] [--write-file]` | print your public key; `--write-file` also stores the private key for the C API on macOS |
 | `reflop update` | update the client to the newest signed release. In a uv project it upgrades `uv.lock` and syncs; elsewhere it installs the release's wheel |
 

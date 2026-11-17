@@ -78,6 +78,24 @@ jobs:
           uv pip install --python .venv/bin/python torch torchvision protobuf pytest pyyaml cryptography safetensors
       - name: client tests against the in-process worker (CPU)
         run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests/conformance tests/e2e/test_models.py tests/security/corpus/test_client_protection.py
+      # Issue #7: scikit-learn ships a second libomp next to torch's. Install it
+      # so the client tests, the doctor check and the clash test see both.
+      - name: second OpenMP runtime (scikit-learn)
+        run: uv pip install --python .venv/bin/python scikit-learn
+      - name: OpenMP clash without reflop run (diagnostic, may fail)
+        continue-on-error: true
+        env:
+          PYTHONPATH: client/python:server/worker
+          REFLOP_LOCAL: cpu
+          REFLOP_NO_KEYCHAIN: "1"
+        run: |
+          rc=0
+          DYLD_PRINT_LIBRARIES=1 .venv/bin/python tests/client/openmp_clash.py 2>libs.txt || rc=$?
+          grep -iE 'omp' libs.txt || true
+          grep -viE '^dyld' libs.txt | tail -40 || true
+          exit $rc
+      - name: reflop run, doctor and the OpenMP clash
+        run: REFLOP_TEST_DEVICE=cpu .venv/bin/python -m pytest -q tests/client/test_run.py tests/client/test_openmp.py tests/client/test_openmp_clash.py
 
   install-script:
     name: install.sh
