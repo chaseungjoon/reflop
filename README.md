@@ -192,7 +192,7 @@ reflop run python train.py      # Or just add a prefix command
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.png">
-    <img alt="Conventional remote GPU execution ships your code and data to a GPU server that runs the code. With reFLOP, Python runs locally on the client and only tensor graphs are sent; the GPU server validates the operations, runs them, and sends back results." src="docs/images/how-it-works-light.png" width="720">
+    <img alt="Usually your whole program is copied to the remote machine and Python runs there. With reFLOP, Python runs on your machine and only the tensor operations cross over, to a GPU in a sandbox." src="docs/images/how-it-works-light.png" width="840">
   </picture>
 </p>
 
