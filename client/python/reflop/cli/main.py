@@ -328,6 +328,13 @@ signal and exits with 128 + n, as a shell would.
 Python children get PYTHONFAULTHANDLER=1 (unless it is already set), so a
 native crash prints the Python stack of every thread.
 
+On macOS the command gets OMP_NUM_THREADS=1 unless it is already set: a
+second OpenMP runtime next to torch's (from scikit-learn, xgboost, conda or
+Homebrew) crashes or hangs the program otherwise. The math runs on the
+server, so only operators that fall back to this machine's CPU run on one
+thread. Set OMP_NUM_THREADS yourself to choose another value;
+`reflop doctor` lists the OpenMP runtimes installed here.
+
 REFLOP_DEBUG=1 reflop run ... also:
   - logs each connection step (ssh or TLS dial, handshake, session open,
     reconnect) to stderr;
@@ -407,9 +414,17 @@ def cmd_run(a) -> int:
     # A native crash (torch, libomp, another C extension) then prints the
     # Python stacks instead of nothing (issue #8). The user's setting wins.
     env.setdefault("PYTHONFAULTHANDLER", "1")
+    # On macOS a second OpenMP runtime next to torch's libomp crashes or hangs
+    # the program unless OpenMP stays on one thread (issue #7, ADR-027). The
+    # math runs on the server, so the local pool is rarely worth the risk.
+    omp_default = sys.platform == "darwin" and "OMP_NUM_THREADS" not in env
+    if omp_default:
+        env["OMP_NUM_THREADS"] = "1"
     if a.server:
         env["REFLOP_SERVER"] = a.server
     sys.stderr.write("reflop: running on this machine; tensor math on 'cuda' goes to the reflop server\n")
+    if omp_default:
+        sys.stderr.write("reflop: OMP_NUM_THREADS=1 (macOS default, see `reflop run --help`)\n")
     rc = _run_child(a.command, env)
     if rc < 0:
         # Killed by a signal. The shell only sees our own exit status, so say
@@ -421,9 +436,13 @@ def cmd_run(a) -> int:
         name = _signal_name(n)
         if name not in ("SIGINT", "SIGPIPE"):
             sys.stderr.write(f"reflop: {a.command[0]} was killed by {name} (signal {n})\n")
-        if name in _CRASH_SIGNALS and sys.platform == "darwin" and "OMP_NUM_THREADS" not in os.environ:
-            sys.stderr.write("reflop: on macOS this is often two OpenMP runtimes in one process; try "
-                             f"OMP_NUM_THREADS=1 reflop run ... (see {OPENMP_ISSUE})\n")
+        if name in _CRASH_SIGNALS and sys.platform == "darwin":
+            if env.get("OMP_NUM_THREADS") != "1":
+                sys.stderr.write("reflop: on macOS this is often two OpenMP runtimes in one process; try "
+                                 f"OMP_NUM_THREADS=1 reflop run ... (see {OPENMP_ISSUE})\n")
+            else:
+                sys.stderr.write("reflop: `reflop doctor` lists the OpenMP runtimes installed here; a second "
+                                 f"one next to torch's is a common cause on macOS (see {OPENMP_ISSUE})\n")
         return 128 + n
     return rc
 

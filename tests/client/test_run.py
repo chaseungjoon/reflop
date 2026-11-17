@@ -90,20 +90,69 @@ def test_debug_reaches_the_child(monkeypatch):
     assert seen["env"]["REFLOP_DEBUG"] == "1"
 
 
-def test_macos_crash_points_at_the_openmp_issue(monkeypatch, capsys):
+def test_macos_child_gets_one_openmp_thread(monkeypatch, capsys):
+    """Issue #7, ADR-027: a second OpenMP runtime next to torch's libomp
+    crashes or hangs the program unless OpenMP stays on one thread."""
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    seen = _fake_child(monkeypatch, 0)
+
+    main(["run", "python", "train.py"])
+
+    assert seen["env"]["OMP_NUM_THREADS"] == "1"
+    assert "OMP_NUM_THREADS=1 (macOS default" in capsys.readouterr().err
+    assert "OMP_NUM_THREADS" not in os.environ  # reflop's own process is unchanged
+
+
+@pytest.mark.parametrize("value", ["4", "1", ""])
+def test_macos_user_openmp_setting_wins(monkeypatch, capsys, value):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setenv("OMP_NUM_THREADS", value)
+    seen = _fake_child(monkeypatch, 0)
+
+    main(["run", "python", "train.py"])
+
+    assert seen["env"]["OMP_NUM_THREADS"] == value
+    assert "macOS default" not in capsys.readouterr().err
+
+
+def test_other_platforms_keep_their_openmp_threads(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    seen = _fake_child(monkeypatch, 0)
+
+    main(["run", "python", "train.py"])
+
+    assert "OMP_NUM_THREADS" not in seen["env"]
+    assert "macOS default" not in capsys.readouterr().err
+
+
+def test_macos_crash_points_at_the_openmp_issue(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "darwin")
     _fake_child(monkeypatch, -signal.SIGSEGV)
+
+    # One thread already (reflop's default or the user's): send them to doctor.
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
     main(["run", "python", "train.py"])
     err = capsys.readouterr().err
-    assert "OMP_NUM_THREADS=1" in err and cli.OPENMP_ISSUE in err
+    assert "reflop doctor" in err and cli.OPENMP_ISSUE in err
+    assert "try OMP_NUM_THREADS=1" not in err
 
-    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    # The user chose more threads: suggest one.
+    monkeypatch.setenv("OMP_NUM_THREADS", "8")
     main(["run", "python", "train.py"])
-    assert cli.OPENMP_ISSUE not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "try OMP_NUM_THREADS=1" in err and cli.OPENMP_ISSUE in err
 
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    main(["run", "python", "train.py"])
+    assert cli.OPENMP_ISSUE not in capsys.readouterr().err
+
+
+def test_macos_clean_exit_has_no_openmp_hint(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    _fake_child(monkeypatch, 0)
     main(["run", "python", "train.py"])
     assert cli.OPENMP_ISSUE not in capsys.readouterr().err
 
@@ -113,6 +162,7 @@ def test_run_help_documents_debug(capsys):
         main(["run", "--help"])
     out = capsys.readouterr().out
     assert "REFLOP_DEBUG=1" in out and "kill -USR1" in out
+    assert "OMP_NUM_THREADS=1" in out and "reflop doctor" in out
 
 
 @posix_only

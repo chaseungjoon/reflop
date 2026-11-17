@@ -587,3 +587,50 @@ output or hide text with bidirectional overrides. The text is labelled as ssh's,
 so it does not read as reflop's own advice. A test corpus case
 (`tests/security/corpus/test_ssh_stderr.py`) checks the sanitizing and the
 bounds.
+
+## ADR-027: `reflop run` keeps OpenMP on one thread on macOS
+
+**Context.** On macOS the client crashed or hung unless the Guest set
+`OMP_NUM_THREADS=1` (issue #7). The macOS PyTorch wheel ships its own
+`libomp`. When a second OpenMP runtime is in the same process (scikit-learn,
+xgboost, LightGBM and faiss wheels bundle one; conda and Homebrew install
+their own), the runtimes fight over threads once both start a pool: `OMP:
+Error #15`, a segfault, or a hang. With one thread no pool starts, so they
+never collide. On Linux torch uses libgomp, several copies of which coexist,
+and the Owner workstation and Linux CI never saw the failure. Until now the
+workaround was documented, and a crash under `reflop run` on macOS printed the
+workaround.
+
+**Decision.** On macOS, `reflop run` sets `OMP_NUM_THREADS=1` in the
+command's environment when the variable is not set, and says so on stderr when
+it starts. A value the user set, including an empty one, is passed through.
+Other platforms are unchanged. `import reflop` does not touch the variable:
+a program started without `reflop run` keeps its threads, and the Guest guide
+tells macOS users to set the variable themselves. `reflop doctor` lists the
+OpenMP runtimes the installed packages ship (from their RECORD files) and the
+ones loaded in its own process after `import torch` (`_dyld_get_image_name` on
+macOS, `/proc/self/maps` on Linux), and names the package each came from. On
+macOS a second loaded runtime is a failure; a second installed one is a
+warning, since it is only loaded when a program imports that package. On
+other platforms the runtimes are listed but not judged. A crash under
+`reflop run` on macOS now points at `reflop doctor` when OpenMP was already on
+one thread, and at `OMP_NUM_THREADS=1` when the user chose more.
+
+**Alternatives.** Keep documenting the variable (Guests on macOS kept hitting
+the failure before reading the docs). Set it on every platform (Linux Guests
+never had the problem and would lose local threads for nothing). Set it, or
+call `torch.set_num_threads(1)`, at `import reflop` (a library that changes
+process-wide threading on import is surprising, `set_num_threads` covers only
+torch's pool and not the second runtime, and the variable is read too late
+once torch has started its pool). Set `KMP_DUPLICATE_LIB_OK=TRUE` (silences
+Error #15 but keeps two runtimes running, which Intel documents as unsafe and
+which can give wrong results).
+
+**Consequences.** On macOS, operators that run on the Guest's CPU under
+`reflop run` (local fallbacks, data loading and preprocessing in torch,
+scikit-learn) run on one OpenMP thread. The math sent to the server is not
+affected. Guests who want more threads set the variable. Embedded use without
+`reflop run` still needs the variable on a Mac with a second runtime;
+`reflop doctor` says so. The macOS CI job installs scikit-learn and runs a
+program that starts both runtimes' pools around reflop tensors under
+`reflop run` (`tests/client/test_openmp_clash.py`).
