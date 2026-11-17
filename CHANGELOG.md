@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.13 (2026-11-17)
 
 `reflop run` and the client no longer fail silently (#8).
 
