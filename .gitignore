@@ -23,6 +23,8 @@ RETEST.md
 .reflop.toml.local
 *.part
 /spikes/out/
+*.github-issues
+.vscode/
 
 # C API build output
 /clib/build/
