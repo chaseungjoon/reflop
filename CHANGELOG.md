@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-18)
 
 Session state survives more failures (#2, ADR-028, ADR-029, ADR-030).
 
