@@ -15,13 +15,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
+	"github.com/chaseungjoon/reflop/server/reflopd/internal/suspend"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
 )
 
@@ -178,6 +183,7 @@ type SessionView struct {
 	Handles     uint32 `json:"handles"`
 	Graphs      uint32 `json:"graphs"`
 	PID         int    `json:"pid"`
+	Suspended   bool   `json:"suspended,omitempty"`
 }
 
 // StatusView is `reflopd status`.
@@ -194,6 +200,7 @@ type StatusView struct {
 	Sessions    []SessionView `json:"sessions"`
 	Sandbox     []string      `json:"sandbox"`
 	Level       int           `json:"level"`
+	Checkpoints string        `json:"checkpoints"` // "off" or the interval
 }
 
 func (s *Server) sandboxLayers() []string {
@@ -221,6 +228,10 @@ func (s *Server) status(withStats bool) StatusView {
 		Version: buildinfo.Version, Uptime: time.Since(s.started).Truncate(time.Second).String(),
 		Listen: s.Addrs(), Fingerprint: hex.EncodeToString(fp[:]),
 		Runtime: s.runtime.Marker.ID, Paused: s.paused.Load(), Yielding: s.yielding.Load(), Sandbox: s.sandboxLayers(),
+		Checkpoints: "off",
+	}
+	if ck := s.cfg().Checkpoints; ck.Enabled {
+		v.Checkpoints = "every " + time.Duration(ck.Interval).String()
 	}
 	if s.layout.System {
 		v.Level = 1
@@ -238,13 +249,13 @@ func (s *Server) status(withStats bool) StatusView {
 		sess.mu.Lock()
 		sv := SessionView{ID: sess.hex(), Identity: sess.Identity.Name, Device: sess.Device.Name,
 			Attached: sess.conn != nil, Age: time.Since(sess.created).Truncate(time.Second).String(),
-			Executes: sess.executes, FLOPs: sess.flops}
+			Executes: sess.executes, FLOPs: sess.flops, Suspended: sess.suspended}
 		sess.mu.Unlock()
 		if sess.worker != nil {
 			sv.PID = sess.worker.PID()
 			sv.HostMemory = sess.worker.Memory()
 		}
-		if withStats {
+		if withStats && !sv.Suspended {
 			if st := sess.stats(500 * time.Millisecond); st != nil {
 				sv.DeviceAlloc = st.DeviceMemoryAllocated
 				sv.Handles = st.Handles
@@ -319,8 +330,7 @@ func (s *Server) control(ctx context.Context, req ControlRequest) (any, error) {
 			Now bool `json:"now"`
 		}
 		json.Unmarshal(req.Args, &a)
-		s.Pause(a.Now, "Owner")
-		return nil, nil
+		return s.Pause(a.Now, "Owner"), nil
 	case "resume":
 		s.Resume("Owner")
 		return nil, nil
@@ -345,11 +355,15 @@ func (s *Server) control(ctx context.Context, req ControlRequest) (any, error) {
 		return nil, s.Reload()
 	case "yield":
 		var a struct {
-			Auto bool `json:"auto"`
+			Auto    bool  `json:"auto"`
+			Suspend *bool `json:"suspend"`
 		}
 		json.Unmarshal(req.Args, &a)
 		s.cfgMu.Lock()
 		s.config.Yield.Auto = a.Auto
+		if a.Suspend != nil {
+			s.config.Yield.Suspend = *a.Suspend
+		}
 		s.cfgMu.Unlock()
 		return nil, nil
 	case "stop":
@@ -364,20 +378,170 @@ func (s *Server) control(ctx context.Context, req ControlRequest) (any, error) {
 	return nil, fmt.Errorf("unknown command %q", req.Cmd)
 }
 
-// Pause queues new executes; with now, running workers are killed too.
-func (s *Server) Pause(now bool, by string) {
+// Pause queues new executes. With now, GPU workers are also suspended:
+// their GPU memory moves to host RAM and comes back on Resume (ADR-030). A
+// worker that cannot be suspended (not enough free host RAM, a kernel that
+// does not finish within suspend.LockTimeout, a driver without the API, or a
+// CPU worker) is killed, as before; its last checkpoint stays recoverable.
+func (s *Server) Pause(now bool, by string) PauseResult {
 	s.paused.Store(true)
 	s.events.publish(pb.Event_KIND_PAUSED, "the Owner paused GPU sharing; queued work resumes later")
 	s.audit.Write(audit.Record{Identity: "owner", Event: "pause", Fields: map[string]any{"now": now, "by": by}})
-	if now {
-		for _, sess := range s.allSessions() {
-			go sess.close("killed by the Owner (pause --now)")
-		}
+	if !now {
+		return PauseResult{}
 	}
+	return s.suspendAll(true, "the Owner paused GPU sharing now (pause --now)")
 }
 
-// Resume releases queued work.
+// PauseResult is what `reflopd pause --now` reports.
+type PauseResult struct {
+	Suspended int      `json:"suspended"`
+	Killed    int      `json:"killed"`
+	Notes     []string `json:"notes,omitempty"`
+}
+
+// suspendAll suspends every running GPU session. With kill, a session that
+// cannot be suspended is ended (pause --now); without, it keeps running
+// paused (auto-yield).
+func (s *Server) suspendAll(kill bool, why string) PauseResult {
+	var res PauseResult
+	sessions := s.allSessions()
+	procMem, smiOK := gpu.ProcessMemory()
+	headroom := uint64(0)
+	if m, err := rails.Memory(); err == nil {
+		using := s.workersMemory()
+		if b := rails.WorkerBudget(s.cfg().Rails, m, using); b > using {
+			headroom = b - using
+		}
+	}
+	type job struct {
+		sess *Session
+		pid  int
+	}
+	var jobs []job
+	end := func(sess *Session, reason string) {
+		if !kill {
+			return
+		}
+		res.Killed++
+		res.Notes = append(res.Notes, fmt.Sprintf("session %s of %q: killed (%s)", sess.hex()[:8], sess.Identity.Name, reason))
+		s.audit.Write(audit.Record{Identity: sess.Identity.Name, ID: sess.Identity.ID, Session: sess.hex(), Event: "killed",
+			Fields: map[string]any{"reason": why + ": " + reason}})
+		go sess.close("killed by the Owner (pause --now): " + reason)
+	}
+	for _, sess := range sessions {
+		sess.mu.Lock()
+		done := sess.suspended || sess.closed
+		sess.mu.Unlock()
+		if done || sess.worker == nil {
+			continue
+		}
+		if sess.Device.GPU == nil {
+			end(sess, "a CPU session cannot be suspended")
+			continue
+		}
+		pid := sess.worker.PID()
+		need := procMem[pid]
+		switch {
+		case !smiOK:
+			end(sess, "nvidia-smi could not report its GPU memory")
+		case need+need/8 > headroom:
+			end(sess, fmt.Sprintf("suspending needs %s of host RAM; %s is free above the RAM floor",
+				config.Bytes(need), config.Bytes(headroom)))
+		default:
+			headroom -= need + need/8
+			jobs = append(jobs, job{sess, pid})
+		}
+	}
+	type outcome struct {
+		sess *Session
+		err  error
+	}
+	results := make(chan outcome, len(jobs))
+	for _, j := range jobs {
+		go func(j job) {
+			sess := j.sess
+			// Mark first: the watchdog must not count the time the lock
+			// waits for a kernel, and no request should start meanwhile.
+			sess.mu.Lock()
+			sess.suspended = true
+			sess.mu.Unlock()
+			err := s.suspendHelper(sess).Suspend(j.pid)
+			results <- outcome{sess, err}
+		}(j)
+	}
+	for range jobs {
+		o := <-results
+		if o.err == nil {
+			res.Suspended++
+			s.audit.Write(audit.Record{Identity: o.sess.Identity.Name, ID: o.sess.Identity.ID, Session: o.sess.hex(),
+				Event: "suspended", Fields: map[string]any{"by": why}})
+			s.logf("session %s of %q suspended: its GPU memory is in host RAM until resume", o.sess.hex()[:8], o.sess.Identity.Name)
+			continue
+		}
+		o.sess.mu.Lock()
+		o.sess.suspended = false
+		o.sess.mu.Unlock()
+		s.logf("session %s: suspend failed: %v", o.sess.hex()[:8], o.err)
+		if errors.Is(o.err, suspend.ErrLockTimeout) || errors.Is(o.err, suspend.ErrUnsupported) {
+			end(o.sess, o.err.Error())
+			continue
+		}
+		// Unknown driver state: the worker may be locked. End it either way.
+		res.Killed++
+		res.Notes = append(res.Notes, fmt.Sprintf("session %s of %q: killed (suspend failed: %v)", o.sess.hex()[:8], o.sess.Identity.Name, o.err))
+		go o.sess.close("suspend failed: " + firstLine(o.err.Error()))
+	}
+	if res.Suspended > 0 {
+		s.events.publish(pb.Event_KIND_SUSPENDED, "the Owner needs the GPU now: your session's GPU memory was moved to "+
+			"host RAM and comes back when sharing resumes")
+	}
+	return res
+}
+
+func (s *Server) suspendHelper(sess *Session) suspend.Helper {
+	h := suspend.Helper{Python: s.runtime.PythonBin()}
+	if sess.Device.GPU != nil {
+		h.GPUUUID = sess.Device.GPU.UUID
+	}
+	return h
+}
+
+// resumeSuspended brings suspended workers back before held work is released.
+func (s *Server) resumeSuspended() {
+	var wg sync.WaitGroup
+	for _, sess := range s.allSessions() {
+		sess.mu.Lock()
+		sus := sess.suspended && !sess.closed
+		sess.mu.Unlock()
+		if !sus {
+			continue
+		}
+		wg.Add(1)
+		go func(sess *Session) {
+			defer wg.Done()
+			err := s.suspendHelper(sess).Resume(sess.worker.PID())
+			sess.mu.Lock()
+			sess.suspended = false
+			now := time.Now()
+			for _, r := range sess.routes {
+				r.start = now // the watchdog does not count the suspension
+			}
+			sess.mu.Unlock()
+			if err != nil {
+				s.logf("session %s: resume failed: %v", sess.hex()[:8], err)
+				sess.close("could not resume after a suspend: " + firstLine(err.Error()))
+				return
+			}
+			s.audit.Write(audit.Record{Identity: sess.Identity.Name, ID: sess.Identity.ID, Session: sess.hex(), Event: "resumed"})
+		}(sess)
+	}
+	wg.Wait()
+}
+
+// Resume brings suspended workers back and releases queued work.
 func (s *Server) Resume(by string) {
+	s.resumeSuspended()
 	s.paused.Store(false)
 	s.events.publish(pb.Event_KIND_RESUMED, "GPU sharing resumed")
 	s.audit.Write(audit.Record{Identity: "owner", Event: "resume", Fields: map[string]any{"by": by}})
@@ -393,7 +557,7 @@ func (s *Server) Kill(target, why string) int {
 		if target != "" && (sess.Identity.Name == target || strings.HasPrefix(sess.hex(), target)) {
 			s.audit.Write(audit.Record{Identity: sess.Identity.Name, ID: sess.Identity.ID, Session: sess.hex(), Event: "killed",
 				Fields: map[string]any{"reason": why}})
-			go sess.close(why)
+			go sess.closeFinal(why)
 			n++
 		}
 	}

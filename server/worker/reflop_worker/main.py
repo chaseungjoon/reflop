@@ -114,6 +114,9 @@ def main() -> None:
     def send_client(env: cpb.Envelope) -> None:
         ch.send(wpb.WorkerEnvelope(client=env))
 
+    def snapshot_cut(rid: int, nbytes: int) -> None:
+        ch.send(wpb.WorkerEnvelope(snapshot_cut=wpb.SnapshotCut(request_id=rid, bytes=nbytes)))
+
     def recv_fds(n: int) -> tuple[bytes, list[int]]:
         msg, fds, _flags, _addr = socket.recv_fds(fdpass, 256, max(n, 1))
         return msg, list(fds)
@@ -147,19 +150,24 @@ def main() -> None:
                 rid = m.request_id
                 try:
                     if len(fds) != 1:
+                        for fd in fds:
+                            os.close(fd)
                         raise ReflopError(cpb.ERROR_INTERNAL, "missing snapshot descriptor")
                     if which == "snapshot_write":
-                        n = session.snapshot_write(m, fds[0])
-                        send_client(cpb.Envelope(request_id=rid, end=True,
-                                                 snapshot_saved=cpb.SnapshotSaved(bytes=n)))
+                        # Asynchronous: the writer thread answers (ADR-029).
+                        session.snapshot_write(m, fds[0], snapshot_cut, send_client)
                     else:
                         session.snapshot_read(m, fds[0])
                         send_client(cpb.Envelope(request_id=rid, end=True, restored=cpb.Restored()))
                 except ReflopError as e:
                     send_client(cpb.Envelope(request_id=rid, end=True, error=e.to_pb()))
+                except FatalError:
+                    raise
                 except Exception as e:  # noqa: BLE001
                     send_client(cpb.Envelope(request_id=rid, end=True, error=ReflopError(
-                        cpb.ERROR_INTERNAL, f"snapshot failed: {e}").to_pb()))
+                        cpb.ERROR_INTERNAL, f"snapshot failed: {type(e).__name__}").to_pb()))
+            elif which == "snapshot_go":
+                session.writer.on_go(env.snapshot_go)
             elif which == "stats_request":
                 ch.send(wpb.WorkerEnvelope(stats=session.stats()))
             else:

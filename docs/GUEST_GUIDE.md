@@ -163,7 +163,7 @@ under one name add up). This needs reflopd 0.1.4 or newer.
 |---|---|
 | `reflop.UnsupportedOperatorError` | an operation has no form the server accepts; the message names it |
 | `reflop.OutOfMemoryError` | the GPU is full (other people use it too), or one graph needs more memory than the GPU has. It is also a `torch.OutOfMemoryError`, so code that catches that to shrink the batch works as is. Your session still works |
-| `reflop.SessionLostError` | the worker ended: the Owner paused with `--now` or killed it, a rail was hit, or it crashed. State on the server is gone |
+| `reflop.SessionLostError` | the worker ended: the Owner killed it, a rail was hit, or it crashed. State on the server is gone, unless you use checkpoints: then `reflop.recover()` continues from the last one (see [Saving state](#saving-state)) |
 | `reflop.ReflopRemoteError` | the server rejected a request; the message names the validation stage and the operator |
 
 Requests are sent without waiting for the answer, so an error can surface a few
@@ -366,16 +366,99 @@ b = (a @ a).to(gpu)                    # moving between sessions goes through yo
 operation mixing tensors from two sessions raises an error asking you to move
 one.
 
-## Saving checkpoints
+## Saving state
+
+### On your machine
 
 ```python
 reflop.fetch(model.state_dict(), "ckpt.safetensors")    # download and save locally
 state = reflop.fetch(model.state_dict())                 # or just download
 ```
 
-Checkpoints are always safetensors. reFLOP tensors refuse to be pickled, so
+Files are always safetensors. reFLOP tensors refuse to be pickled, so
 `torch.save` on them raises; fetch them first. Loading works as usual: load on
 the CPU, then `.to(dev)`.
+
+### On the server
+
+Snapshots keep tensors on the Owner's machine, so nothing is downloaded:
+
+```python
+reflop.save("run1", model.state_dict())        # a dict of reflop tensors; nested dicts are fine
+model.load_state_dict(reflop.load("run1"))     # later, also from a new process
+reflop.snapshots()                             # [{"name", "bytes", "created"}]
+reflop.delete_snapshot("run1")
+```
+
+Only tensors are stored. Keep step counts and other Python values on your
+machine. A save replaces an older snapshot of the same name only once the new
+one is fully written. Snapshots count against your storage quota, if the Owner
+set one. This needs a reflopd with the `snapshots` capability.
+
+### Automatic checkpoints
+
+If the Owner has turned checkpoints on (`reflopd checkpoints on`), the server
+can save your whole session at a step boundary: every server tensor and the
+server's random number generator state.
+
+```python
+dev = reflop.device(checkpoint=True)                    # the Owner's interval
+dev = reflop.device(checkpoint=True, checkpoint_interval=1800)   # or longer, in seconds
+```
+
+The interval defaults to the Owner's, which is at least 5 minutes. You can
+make it longer, never shorter: a shorter one raises `ReflopError` and names
+the Owner's interval. Checkpoints are taken at `reflop.step_boundary()` and
+after each call of a `reflop.capture` step. They run in the background on the
+server and did not slow training measurably in our tests.
+
+> [!WARNING]
+> **During a checkpoint, the GPU memory for your session's state doubles.**
+> Turning checkpoints on prints this in yellow. A tensor that your next steps
+> change keeps its old version until the checkpoint has copied it, so for a
+> moment parameters, optimizer state and buffers can need twice their
+> memory. Leave that much GPU memory free when you pick a batch size. If it
+> is not free, the checkpoint is skipped: reflop prints why and tries again
+> later, and training goes on.
+
+When the worker is lost, the next request raises `reflop.SessionLostError`.
+`reflop.recover()` then opens a new session from the last checkpoint, in the
+same process:
+
+```python
+dev = reflop.device(checkpoint=True)
+step = 0
+while step < total_steps:
+    try:
+        train_step(next_batch(step))
+        step += 1
+        reflop.checkpoint_tag({"step": step})   # saved with the next checkpoint
+        reflop.step_boundary()
+    except reflop.SessionLostError:
+        step = reflop.recover()["step"]          # values and RNG as at that checkpoint
+```
+
+After `recover()`:
+
+- every tensor that existed at the checkpoint has its value from then, and
+  your model and optimizer objects keep working;
+- tensors created after the checkpoint raise `SessionLostError` when used;
+  create them again;
+- the server's RNG is back where it was, so dropout repeats exactly;
+- whatever your program keeps on your machine is not rewound: Python
+  variables, the data loader's position, the CPU RNG. A plain Adam or AdamW
+  also counts its steps on your machine; use `capturable=True` (or
+  `fused=True`) so the step count is on the server and in the checkpoint;
+- `reflop.recover()` returns the `checkpoint_tag` value of that checkpoint,
+  and raises `ReflopError` if there is none.
+
+A session the Owner ended on purpose (`reflopd kill`, revoke, unpair) cannot
+be recovered: that deletes its checkpoint. Closing the session yourself does
+too. When your process ends, use `reflop.save` for what you want to keep.
+
+If the Owner runs `reflopd pause --now`, your session is usually suspended
+rather than ended: your program waits until the Owner resumes, and nothing is
+lost.
 
 ## Mixed precision
 

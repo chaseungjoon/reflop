@@ -9,7 +9,23 @@ Your program runs on this machine. Only tensor math (as operator graphs)
 and tensor data go to the server.
 """
 
-from .api import close, device, fetch, placement, seed, stats, step_boundary, synchronize, usage
+from .api import (
+    checkpoint_tag,
+    close,
+    delete_snapshot,
+    device,
+    fetch,
+    load,
+    placement,
+    recover,
+    save,
+    seed,
+    snapshots,
+    stats,
+    step_boundary,
+    synchronize,
+    usage,
+)
 from .capture import CaptureError, capture
 from .errors import OutOfMemoryError, ReflopError, ReflopRemoteError, SessionLostError
 from .trace import UnsupportedOperatorError
@@ -18,6 +34,7 @@ __version__ = "0.1.14"
 
 __all__ = [
     "device", "capture", "CaptureError", "fetch", "placement", "seed", "step_boundary", "synchronize", "close", "stats", "usage",
+    "save", "load", "snapshots", "delete_snapshot", "checkpoint_tag", "recover",
     "ReflopError", "ReflopRemoteError", "OutOfMemoryError", "SessionLostError", "UnsupportedOperatorError",
     "dataset", "__version__",
 ]

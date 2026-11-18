@@ -490,6 +490,12 @@ class RemoteConnection(Connection):
             del self.caps.enabled_op_ids[:]
             self.caps.enabled_op_ids.extend(r.session_opened.enabled_op_ids)
 
+    def new_session(self) -> None:
+        """Open a fresh server session after the old one was lost (reflop.recover)."""
+        if self.closed:
+            self._open()
+        self.open_session()
+
     def _read_loop(self, fr: Framer) -> None:
         try:
             while True:

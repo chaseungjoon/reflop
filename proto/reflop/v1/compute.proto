@@ -222,6 +222,9 @@ message HandleMeta {
 
 // ---------------------------------------------------------------- snapshots
 
+// Snapshot saves the named tensors under `name` (ADR-028). Keys are
+// non-empty, at most 256 bytes, and never "__metadata__" or start with
+// "__reflop__/" (reserved for checkpoint state).
 message Snapshot {
   string name = 1;           // [a-z0-9_-]{1,64}; server-side file name is server-chosen
   repeated bytes handles = 2;
@@ -239,7 +242,22 @@ message Restore {
   repeated bytes handles = 3;  // new handles to create, same length as keys
 }
 
+// Restored answers Restore (and RecoverSession): all handles were created,
+// or none were.
 message Restored {}
+
+// DescribeSnapshot returns the keys and metas of a named snapshot, so that
+// a client can choose handles for Restore (servers with "snapshots").
+message DescribeSnapshot {
+  string name = 1;
+}
+
+message SnapshotDescription {
+  string name = 1;
+  repeated string keys = 2;
+  repeated TensorMeta metas = 3;  // same order as keys
+  uint64 bytes = 4;
+}
 
 message ListSnapshots {}
 
@@ -257,6 +275,41 @@ message DeleteSnapshot {
   string name = 1;
 }
 
+// ---------------------------------------------------------------- checkpoints
+
+// Checkpoint saves every live handle of the session, and the session's RNG
+// state, in the background (servers with "checkpoints", ADR-029). The cut is
+// exact: requests sent before it are included, later ones are not. The
+// server allows one per ServerCapabilities.checkpoint_interval_s and only
+// when the Owner enabled checkpoints.
+message Checkpoint {
+  bytes tag = 1;  // opaque to the server, at most 4096 bytes; returned by RecoverSession
+}
+
+message CheckpointSaved {
+  uint64 bytes = 1;
+  uint64 generation = 2;  // 1, 2, ... within the session that took it
+  bool skipped = 3;       // nothing was written (reason says why); the previous checkpoint stays
+  string reason = 4;
+}
+
+// RecoverSession restores, into this new and still empty session, the last
+// checkpoint of an earlier session of the same identity: every handle under
+// its old id, and the RNG state. It is refused while the earlier session
+// still runs, and after the Owner or the Guest ended it on purpose (kill,
+// revoke, unpair, CloseSession): those delete its checkpoint.
+message RecoverSession {
+  bytes from_session_id = 1;  // 16 bytes
+}
+
+message SessionRecovered {
+  repeated bytes handles = 1;
+  repeated TensorMeta metas = 2;  // same order as handles
+  bytes tag = 3;
+  uint64 generation = 4;
+  int64 created_unix = 5;
+}
+
 // ---------------------------------------------------------------- events
 
 message SubscribeEvents {}
@@ -271,6 +324,7 @@ message Event {
     KIND_YIELDING = 5;      // auto-yield: Owner is using the GPU
     KIND_SHUTDOWN = 6;
     KIND_PROGRESS = 7;
+    KIND_SUSPENDED = 8;     // the Owner paused now; the session's GPU memory was moved to host RAM
   }
   Kind kind = 1;
   string text = 2;          // informational; clients sanitize before printing
@@ -350,6 +404,9 @@ message Envelope {
     Reseed reseed = 31;
     GetUsage get_usage = 32;
     Unpair unpair = 33;
+    Checkpoint checkpoint = 34;
+    RecoverSession recover_session = 35;
+    DescribeSnapshot describe_snapshot = 36;
 
     // server → client
     Error error = 100;
@@ -375,5 +432,8 @@ message Envelope {
     Reseeded reseeded = 120;
     UsageReport usage_report = 121;
     Unpaired unpaired = 122;
+    CheckpointSaved checkpoint_saved = 123;
+    SessionRecovered session_recovered = 124;
+    SnapshotDescription snapshot_description = 125;
   }
 }

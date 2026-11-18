@@ -27,6 +27,16 @@ reason did not hold.
 | [018](#adr-018-reflopd-sandboxes-itself-by-re-exec) | reflopd applies its own sandbox by re-exec |
 | [019](#adr-019-file-backed-state-with-change-detection) | File-backed identity state, reloaded on change |
 | [020](#adr-020-oom-messages-are-trimmed) | OOM messages are trimmed |
+| [021](#adr-021-the-client-on-pypi-uploaded-from-the-signed-release) | The client on PyPI, uploaded from the signed release |
+| [022](#adr-022-only-an-oom-while-running-ends-a-detached-session) | Only an OOM while running ends a detached session |
+| [023](#adr-023-a-gpu-that-is-full-at-startup-is-served-once-a-probe-succeeds) | A GPU that is full at startup is served once a probe succeeds |
+| [024](#adr-024-deleting-a-revoked-identity) | Deleting a revoked identity |
+| [025](#adr-025-unpairing-on-both-sides) | Unpairing on both sides |
+| [026](#adr-026-showing-sshs-stderr-in-connection-errors) | Showing ssh's stderr in connection errors |
+| [027](#adr-027-reflop-run-keeps-openmp-on-one-thread-on-macos) | `reflop run` keeps OpenMP on one thread on macOS |
+| [028](#adr-028-snapshots-are-written-durably-and-restored-all-or-nothing) | Snapshots are written durably and restored all or nothing |
+| [029](#adr-029-guest-checkpoints-owner-opt-in-a-5-minute-floor-recovery-without-a-redo-log) | Guest checkpoints: Owner opt-in, a 5-minute floor, recovery without a redo log |
+| [030](#adr-030-pause---now-suspends-gpu-workers) | `pause --now` suspends GPU workers |
 
 ## ADR-001: FlopIR as the wire format
 
@@ -634,3 +644,150 @@ affected. Guests who want more threads set the variable. Embedded use without
 `reflop doctor` says so. The macOS CI job installs scikit-learn and runs a
 program that starts both runtimes' pools around reflop tensors under
 `reflop run` (`tests/client/test_openmp_clash.py`).
+
+## ADR-028: Snapshots are written durably and restored all or nothing
+
+**Context.** The Snapshot and Restore requests existed but no client used them
+and no test covered them (Issue #2 review). A snapshot was reported as saved
+without syncing the file or its directory, a failed rename was ignored, and
+the disk rail was checked only after the whole file was written; the storage
+quota was not checked at all. The worker built the whole file in memory to
+write it and read the whole file to restore it. A restore created its tensors
+one at a time, so a failure halfway left some of them behind; two equal
+destination handles silently kept the last tensor; the writer accepted a key
+named `__metadata__` that the readers then skipped.
+
+**Decision.** A write has two phases. The worker takes references to the
+tensors (the cut), computes the exact file size and sends it to reflopd
+(`SnapshotCut`). reflopd reserves that size against the disk rail and the
+identity's storage quota, counting every other write in progress, and answers
+`SnapshotGo`, or refuses with the reason. The worker writes in a background
+thread through two 64 MiB staging buffers. reflopd then syncs the file,
+checks its size, renames it into place and syncs the directory; only then
+does the client hear that it is saved, and any failure keeps the previous
+file. A restore validates everything first: lengths, distinct handles and
+keys, handle capacity, every key present, the free GPU memory. It allocates
+and fills all tensors from bounded reads, and only then adds all handles at
+once. Writer and readers (Go and Python) share one key rule: 1 to 256 bytes,
+not `__metadata__`, not starting with `__reflop__/`, and `__metadata__` in a
+file must map strings to strings. `DescribeSnapshot` returns a snapshot's keys
+and metas, parsed by reflopd, so that `reflop.load` can choose handles. The
+client gains `reflop.save`, `reflop.load`, `reflop.snapshots` and
+`reflop.delete_snapshot`, behind the `snapshots` capability.
+
+**Alternatives.** Keep the synchronous write (it blocks the worker for about
+1.3 ms per MiB of state: 4.4 seconds for 3.3 GiB). Reserve an estimate before
+the cut (the size is only known at the cut; an overestimate refuses a write
+that fits). Let the worker sync the file (reflopd owns publication and the
+directory, so it syncs both).
+
+**Consequences.** A saved snapshot survives a crash or power loss, and a
+failed write or restore leaves nothing behind. One write runs per session at
+a time. The tensors of a snapshot need free GPU memory twice for a moment
+while they are copied (ADR-029). The header limit (1 MiB, about 10,000
+tensors) applies to the writer too. Tests: `TestPublishKeepsPreviousOnFailure`,
+`TestReserveWriteQuota`, `TestSnapshotKeyRules`, and
+`tests/security/corpus/test_snapshots.py`.
+
+## ADR-029: Guest checkpoints: Owner opt-in, a 5-minute floor, recovery without a redo log
+
+**Context.** Issue #2: a session's state lives only in its worker, so a crash,
+the watchdog, a rail, a restart or `pause --now` loses all of it. The issue
+suggested asynchronous checkpoints or replicated state. Measurements on an
+RTX 5070 (`docs/fault_tolerance.md`) showed that a background checkpoint does
+not slow training measurably (under 5% even back to back), that it holds up
+to one extra copy of the state in GPU memory while it runs, and that its real
+cost is disk writes: a Guest whose state fills a 12 GiB GPU writes 72 GiB per
+hour at a 10-minute interval. A client redo log replayed after a restore gave
+bit-identical parameters in every test, but only with deterministic numerics,
+and it needs a client recovery state machine that reconnect does not have yet.
+
+**Decision.** Checkpoints are off until the Owner runs `reflopd checkpoints on`.
+The interval defaults to 10 minutes and has a hard floor of 5 minutes: config
+validation, the CLI and the server's per-session rate check all enforce it.
+Turning them on prints a red warning with the worst case for the machine's
+GPUs. A Guest opts in with `reflop.device(checkpoint=True)`, gets the Owner's
+interval or a longer one (a shorter one raises), and is warned in yellow that
+the state's GPU memory doubles during a checkpoint. The client sends
+`Checkpoint` at step boundaries when due; the server writes every live handle
+under its hex id, the CPU and CUDA RNG state, and a small metadata entry (a
+Guest tag of at most 4 KiB, a generation number, the time) under reserved
+`__reflop__/` keys. The cut is exact because the worker serves requests in
+order. The worker refuses the cut, with a "skipped" answer, when the GPU lacks
+free memory for another copy of the state, and drops each reference as soon as
+its tensor is copied. Each session keeps one checkpoint, replaced atomically.
+`reflop.recover()` opens a new session and sends `RecoverSession`: the server
+restores every handle under its old id and the RNG state, all or nothing, and
+the client marks tensors created after the checkpoint as lost and registers
+its graphs again on use. Ending a session on purpose (`reflopd kill`, revoke,
+unpair, `CloseSession`) deletes its checkpoint, and a write that finishes
+after that is never published, so such a session cannot come back; other ends
+keep the checkpoint for 24 hours.
+
+**Alternatives.** Replicated state: a standby worker doubles GPU memory and
+compute and covers only a crash; streaming the state to the Guest breaks the
+few-KB-per-step design; keeping it in reflopd puts Guest tensors in the daemon.
+A client redo log in this release: deferred until deterministic numerics are
+strict (`warn_only` today) and the client can reconnect with requests in
+flight; without it a Guest loses at most one interval. Checkpoints on by
+default: they write to the Owner's disk without the Owner choosing it. A
+configurable checkpoint directory, for example on a hard disk: dropped, it adds
+a path outside reflopd's own directories to its sandbox and slows checkpoints,
+which then hold the extra GPU memory longer.
+
+**Consequences.** A Guest that uses checkpoints loses at most one interval of
+server-side work, in the same process. What it keeps on its own machine (a
+plain Adam's step count, the data loader position, Python variables) is not
+rewound; `capturable=True` optimizers keep their step count on the server.
+Checkpoints count against the disk rail and the storage quota. The worker
+needs its 128 MiB of pinned staging memory once it writes, and its write
+channel takes a lock because the writer thread answers from the background.
+Tests: `TestCheckpointNeedsTheOwner`, `TestCheckpointIntervalEnforced`,
+`TestEndedOnPurposeIsNeverRevived`, `TestRecoverIsIdentityScoped`,
+`TestCheckpointIntervalFloor`, `TestCheckpointsIntervalFloor`,
+`tests/client/test_checkpoints.py` (including a recovery that is bit-identical
+to an uninterrupted run) and the corpus cases.
+
+## ADR-030: `pause --now` suspends GPU workers
+
+**Context.** `pause --now` killed every worker, losing every Guest's session,
+and auto-yield paused Guests without freeing their GPU memory. NVIDIA drivers
+from 550 have a process checkpoint API (`cuCheckpointProcessLock`,
+`cuCheckpointProcessCheckpoint`, `cuCheckpointProcessRestore`,
+`cuCheckpointProcessUnlock`) that moves a process's GPU memory into its own
+host memory and back. Tested on an RTX 5070 with driver 595: a fully
+sandboxed worker (Landlock, seccomp, user and network namespaces), driven by a
+helper inside reflopd's own sandbox, gave the GPU back in 0.31 s for 1.3 GiB
+and resumed in 0.25 s with its data intact; an unsandboxed 8 GiB process took
+1.4 s and 0.7 s.
+
+**Decision.** `pause --now` suspends each GPU worker through a small helper:
+an embedded Python script that reflopd runs with the pinned runtime's
+interpreter, as a child that inherits reflopd's sandbox. It takes only an
+operation and a pid, calls the four driver functions with a 10-second lock
+timeout, and refuses any process whose parent is not its own parent or whose
+command line is not the worker's; reflopd passes only its own workers' pids.
+Before suspending, reflopd checks that the worker's GPU memory (from
+nvidia-smi), plus an eighth, fits in host RAM above the RAM floor. A worker
+that cannot be suspended (not enough RAM, a kernel still running at the
+timeout, a driver without the API, a CPU session) is killed as before, and its
+checkpoint stays recoverable. `reflopd resume` resumes workers before it
+releases queued work. The watchdog does not count suspended time, and eviction
+skips suspended sessions, which hold no GPU memory. `yield --auto --suspend`,
+off by default, also suspends during auto-yield; there a worker that cannot be
+suspended stays paused.
+
+**Alternatives.** Checkpoint every session to disk and kill it (seconds to
+minutes, and the disk writes of ADR-029 without the Owner choosing them).
+Link libcuda into reflopd (reflopd is a static Go binary without cgo; a
+helper keeps the daemon unchanged). Run the helper inside the worker (the
+API restores from another process, and the worker's seccomp filter must not
+grow).
+
+**Consequences.** The Owner gets the GPU back within seconds without ending
+sessions. Suspended memory sits in the worker's own host memory and counts
+against the RAM rail. The helper is new code that can freeze processes, which
+is why it accepts only reflop workers. The driver API needs no ptrace, so
+reflopd's seccomp filter does not limit it. Guests see a "suspended" event and
+their requests wait. Tests: `TestHelperRefusesOtherProcesses`,
+`test_suspend_helper_refuses_non_workers`.

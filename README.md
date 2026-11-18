@@ -291,7 +291,7 @@ correction, a Python learning-rate schedule) are detected and refused; use
 > - The Owner can see Guests' data and models. reFLOP protects the Owner's machine from Guests, not the other way around.
 > - No arbitrary CPU programs, custom CUDA or Triton kernels, or server-side image and text decoding.
 > - GPU results can differ bitwise from local runs (TF32, non-deterministic kernels).
-> - Killing a worker loses its session state.
+> - Killing a worker loses its session state, unless the Guest uses [checkpoints](docs/GUEST_GUIDE.md#automatic-checkpoints), which the Owner must allow.
 >
 > [All limitations](docs/THREAT_MODEL.md#known-limitations)
 

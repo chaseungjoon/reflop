@@ -18,7 +18,7 @@ import torch
 from . import _opset_generated as opset
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
-from .errors import ReflopError, ReflopRemoteError
+from .errors import ReflopError, ReflopRemoteError, SessionLostError
 from .trace import CPU, DATASET, HANDLE, NODE, SCALAR, ArgEncoder, GraphBuilder, Trace, Value, tensor_meta
 
 FLUSH_NODES = int(os.environ.get("REFLOP_FLUSH_NODES", "20000"))
@@ -144,6 +144,8 @@ class Session:
         self.trace = Trace()
         self.dirty: weakref.WeakSet = weakref.WeakSet()
         self.registered: set[bytes] = set()
+        self.storages: weakref.WeakValueDictionary = weakref.WeakValueDictionary()  # handle → Storage
+        self.checkpoints = None  # checkpoints.AutoCheckpoint when the Guest turned them on
         self.pending_free: list[bytes] = []
         self.upload_log: list | None = None  # set by reflop.capture while it records a step
         self.async_error: BaseException | None = None
@@ -256,6 +258,9 @@ class Session:
         e = self.async_error
         if e is not None:
             self.async_error = None
+            if isinstance(e, SessionLostError) and self.checkpoints is not None and self.checkpoints.saved:
+                raise SessionLostError(e.code, f"{e.message} (reflop.recover() continues from the last checkpoint)",
+                                       e.stage, e.node, e.op_name) from e
             if isinstance(e, ReflopRemoteError):
                 # Requests are sent without waiting, so this can surface on a
                 # later line than the operation that caused it. Name the
@@ -378,19 +383,7 @@ class Session:
         self.stats["flushes"] += 1
         reg = None
         if built.graph_hash not in self.registered:
-            fut = self.conn.request(cpb.Envelope(register_graph=cpb.RegisterGraph(graph=built.graph)))
-            self.stats["registers"] += 1
-            expect = built.graph_hash
-
-            def check(f, expect=expect):
-                if f.exception() is not None:
-                    self.registered.discard(expect)
-                elif f.result().graph_registered.graph_hash != expect and self.async_error is None:
-                    self.async_error = RuntimeError("the server computed a different graph hash")
-            fut.add_done_callback(check)
-            self._track(fut, "register")
-            reg = fut
-            self.registered.add(built.graph_hash)
+            reg = self.register_graph(built.graph, built.graph_hash)
         ex = cpb.Execute(graph_hash=built.graph_hash)
         temp = self.bind_inputs(ex, built.input_values)
         ex.outputs.extend(specs)
@@ -419,6 +412,25 @@ class Session:
                 self.stats["bytes_down"] += len(td.data)
         else:
             self._track(fut, "execute")
+
+    def register_graph(self, graph, expect: bytes):
+        fut = self.conn.request(cpb.Envelope(register_graph=cpb.RegisterGraph(graph=graph)))
+        self.stats["registers"] += 1
+
+        def check(f, expect=expect):
+            if f.exception() is not None:
+                self.registered.discard(expect)
+            elif f.result().graph_registered.graph_hash != expect and self.async_error is None:
+                self.async_error = RuntimeError("the server computed a different graph hash")
+        fut.add_done_callback(check)
+        self._track(fut, "register")
+        self.registered.add(expect)
+        return fut
+
+    def maybe_checkpoint(self) -> None:
+        """At a step boundary: start a checkpoint if one is due (ADR-029)."""
+        if self.checkpoints is not None:
+            self.checkpoints.maybe()
 
     def bind_inputs(self, ex: cpb.Execute, values: list) -> list[bytes]:
         """Fill ex.bindings for graph input values; returns temporary handles."""

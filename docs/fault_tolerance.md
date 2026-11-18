@@ -1,0 +1,443 @@
+# Fault-tolerant session state (Issue #2)
+
+Status: first delivery implemented on 2026-11-18, branch
+`enhance/fault-tolerant-state`. The decisions are ADR-028, ADR-029 and
+ADR-030 in `docs/DECISIONS.md`, which override this plan. This file is a
+working document and keeps the design study and the measurements behind
+those decisions.
+
+## Where this stands (2026-11-18)
+
+| Part | State |
+|---|---|
+| A. Hardened snapshot write and restore (durable publication, reservations, all-or-nothing restore, key rules) | done, ADR-028 |
+| B. `reflop.save` / `load` / `snapshots` / `delete_snapshot` | done, ADR-028 |
+| D. Asynchronous checkpoints, Owner opt-in (off by default, 10-minute default, 5-minute hard floor), red Owner warning, yellow Guest warning | done, ADR-029 |
+| Recovery from the last checkpoint in the same process (`reflop.recover()`), final versus recoverable ends | done, ADR-029 |
+| `pause --now` suspends GPU workers through the CUDA driver; `yield --auto --suspend` | done, ADR-030 |
+| C/E. Client redo log and transparent replay | deferred: needs strict deterministic numerics and a client that reconnects with requests in flight |
+| F. reflopd spilling detached sessions and draining on shutdown | not started |
+
+Answers to the open questions below: checkpoints are off by default on the
+Owner side and opt-in on the Guest side; the redo log is not in the first
+release; `pause --now` is recoverable (it suspends, and a kill keeps the
+checkpoint); one ADR per decision.
+
+## Problem
+
+A session's state lives only in its worker's memory. When the worker ends,
+the Guest loses every tensor on the server: parameters, optimizer state,
+buffers. Issue #2 suggests asynchronous checkpoints or fully replicated state.
+
+## What exists today
+
+- **Snapshot and Restore are implemented on the server but unused.**
+  `Snapshot`, `Restore`, `ListSnapshots` and `DeleteSnapshot` are in
+  `proto/reflop/v1/compute.proto`. `Session.snapshot` in
+  `server/reflopd/internal/server/session.go` writes a temp file in the
+  identity's snapshot directory, checks the disk rail and renames the file into
+  place. The worker writes safetensors to a file descriptor
+  (`core.py: snapshot_write`) and checks the header again on restore. The
+  Python client exposes none of it, and no test calls these RPCs.
+- **A dropped connection already survives.** A detached session keeps its
+  worker for `[session] ttl` (30 minutes by default), and
+  `RemoteConnection._reconnect` re-attaches with `resume_session_id`.
+- **Handle ids are chosen by the client** (PLAN.md §6.1). If a new session
+  restores the old ids, every `RemoteTensor` the Guest holds stays valid, so
+  recovery can be invisible to the Guest's code.
+- **Server tensors are never modified in place.** `KIND_REBIND` replaces the
+  table entry with a new tensor (`execute.py`), and ADR-014 already relies on
+  this. Holding references to the current tensors therefore gives a consistent
+  point-in-time view without blocking execution. Buffer donation (PLAN.md §9.3)
+  is not implemented.
+
+### Where state is lost today
+
+| Event | Today |
+|---|---|
+| Worker crash, CUDA context error | `SESSION_LOST` |
+| Watchdog timeout | worker killed, `SESSION_LOST` |
+| `reflopd kill`, `reflopd pause --now` | worker killed |
+| Detached session evicted for GPU memory (ADR-022) | worker killed |
+| Detached session past its TTL | worker killed |
+| `reflopd` restart or update, host reboot | all workers end (`Pdeathsig`) |
+| Guest process dies | the server session stays until its TTL, but nothing can resume it |
+
+### What a session holds besides tensors
+
+- **RNG state.** The worker uses torch's global generators, seeded in
+  `core.py` at init and on `Reseed`.
+- **Registered graphs.** The client can register them again; it tracks them in
+  `Session.registered`.
+- **Opened datasets.** They are on disk per identity and survive.
+
+## The two options in the issue
+
+### Asynchronous checkpoints: adopt as the base
+
+Tensors are immutable, so a checkpoint costs little:
+
+1. The worker handles requests one at a time, so a checkpoint request falls
+   exactly between two executes. At that point the worker records a reference
+   to every live handle and the CPU and CUDA RNG state.
+2. A background thread copies the tensors from GPU to host on a separate CUDA
+   stream. The stream first waits on an event recorded at the cut. The thread
+   streams safetensors to the file descriptor. The header can be written first
+   because all shapes and dtypes are known.
+3. Execution continues meanwhile. A rebind drops the table's reference, but the
+   checkpoint's reference keeps the old version alive until it is copied.
+
+Details:
+
+- **GPU memory.** Old versions of rebound tensors stay allocated until they are
+  copied. If an execute fails with an OOM while a checkpoint is running, the
+  worker finishes the copy, drops those references and retries once before it
+  reports `OUT_OF_MEMORY`.
+- **Host memory.** Stage into pageable host memory up to the host-RAM rail;
+  past that, stream through a small pinned ring buffer (for example two
+  64 MiB buffers). Pinned memory cannot be swapped out, so it must stay small
+  to protect the Owner's desktop.
+- **Allocator.** Call `record_stream` for the copy stream, or synchronize it,
+  before dropping references, so the caching allocator does not reuse memory
+  that a copy is still reading.
+- **Donation.** If buffer donation is implemented later, a tensor referenced by
+  a running checkpoint counts as another use and must not be donated.
+
+### Fully replicated state: reject as stated
+
+| Replica | Why not |
+|---|---|
+| Standby worker on the same GPU | Doubles memory and compute, and covers only a worker crash |
+| State streamed to the client | Breaks the target of a few KB of traffic per step |
+| State kept in `reflopd` memory | Puts Guest data in `reflopd`, which must not touch tensors, and dies with it on restart |
+
+### Replicate the inputs instead: a client redo log
+
+The client already sends every request. It keeps a redo log of everything sent
+since the last confirmed checkpoint: graph hashes and bindings, inline tensors,
+uploads, frees and reseeds. Recovery:
+
+1. Open a new session.
+2. `Restore` the checkpoint into the same handle ids.
+3. Register the graphs again.
+4. Replay the log.
+
+Recovery replays everything sent since the checkpoint, so it does not lose the
+work done between checkpoints. With `Numerics.deterministic` set, the replay is
+bit-identical. Without it, the result equals a nondeterministic rerun.
+
+## Design
+
+### Protocol
+
+All additions sit behind a new capability string. A client talking to an older
+server turns recovery off (I11).
+
+- **`Checkpoint{}`** saves all live handles plus RNG state, asynchronously. The
+  response `CheckpointSaved{bytes}` arrives once the file is durable.
+- **A checkpoint is a barrier.** Requests sent after it, uploads included, stay
+  behind it. Today uploads skip the queue that holds requests during a pause
+  (`Session.forward`). Without the barrier, an upload could reach the worker
+  before an earlier checkpoint, end up inside it, and fail with
+  `HANDLE_EXISTS` when replayed.
+- **`Restore{name, all: true}`** restores every tensor in the file. The key
+  is the handle in hex and maps back to the same handle. Each handle still
+  goes through `check_new`.
+- **Reserved keys.** The RNG state is stored under the prefix `__reflop__/`.
+  `Snapshot` rejects Guest keys with that prefix. Restore checks the sizes of
+  the RNG tensors before it sets them.
+- **Lost reason.** `SESSION_LOST` carries a reason that is either
+  *recoverable* or *final*:
+  - recoverable: crash, CUDA fault, eviction, TTL, `reflopd` restart, and
+    probably `pause --now` (open question 3);
+  - final: `reflopd kill`, revoke, unpair. The client must never bring back a
+    session the Owner ended on purpose.
+
+### Worker
+
+- Checkpoint thread as described above. Threads are allowed by the seccomp
+  filter (`clone` with `CLONE_THREAD`). The worker writes only to the file
+  descriptor that `reflopd` passes, as `snapshot_write` does today.
+- RNG state is saved as `uint8` tensors from `torch.get_rng_state()` and
+  `torch.cuda.get_rng_state(device)`.
+- One checkpoint at a time per session. A second request waits for the first.
+
+### reflopd
+
+- The file name is chosen by the server: `auto-<session id>.safetensors` in the
+  identity's snapshot directory. It keeps one checkpoint and replaces it by
+  atomic rename. The monitor sweeps orphaned auto checkpoints after
+  `keep`.
+- Disk rail and the optional storage quota apply as for snapshots, plus a
+  per-identity `max_bytes` for auto checkpoints.
+- I/O priority for workers (ioprio set before exec, or cgroup `io.max`) so a
+  large checkpoint does not stall the Owner's disk. To be measured first.
+- `reflopd` also uses checkpoints itself:
+  - **Spill instead of kill.** Before it evicts a detached session (ADR-022) or
+    ends one at its TTL, it checkpoints the session. A later resume falls back
+    to restoring that checkpoint.
+  - **Drain.** On SIGTERM, `reflopd update` and `pause --now`, it checkpoints
+    every session within a deadline (for example 30 s), then stops the
+    workers.
+  - A hung kernel cannot be checkpointed. A watchdog kill falls back to the
+    last periodic checkpoint.
+- After a restart, `reflopd` does not need to remember sessions. The client
+  presents the checkpoint name, and `reflopd` opens the file only from the
+  calling identity's directory (I7, I8).
+
+### Client
+
+- `reflop.device(..., checkpoint="auto")` checkpoints at `step_boundary()`
+  every N seconds or when the redo log passes a size limit. A large upload
+  triggers an early checkpoint so the log does not have to keep its bytes.
+- `reflop.checkpoint()` starts one explicitly and returns a future.
+- The log is trimmed when `CheckpointSaved` arrives.
+- During replay, results the Guest already received are discarded. Requests
+  that were in flight when the session was lost get their futures resolved from
+  the replay.
+- One recovery attempt per failure, then the error is raised, so a graph that
+  crashes the worker cannot loop.
+- Named snapshots (`reflop.save(name, ...)` and `reflop.load(name, ...)`) cover
+  a Guest process that dies, where the redo log is gone too. Keys follow
+  `state_dict` paths. Non-tensor parts of an optimizer `state_dict` stay on the
+  Guest machine.
+
+### Owner configuration
+
+```toml
+[session.checkpoint]
+enabled = true         # allow Guest auto checkpoints
+max_bytes = 0          # per identity; 0 = only the disk rail
+keep = "7d"            # how long an orphaned auto checkpoint is kept
+spill_detached = true  # checkpoint a detached session before ending it
+```
+
+## Security
+
+- **Unchanged invariants.** I1, I6 and I9 hold: checkpoints are safetensors
+  written by the worker, and the worker checks the header again on restore.
+  Replay goes through full validation; no per-execute check is cached. I13
+  holds: restored tensors come from file bytes.
+- **New risks and their limits:**
+  - Owner disk space and I/O: disk rail, `max_bytes`, I/O priority.
+  - Pinned host memory: a small fixed ring, counted against the host-RAM rail.
+  - A Guest forcing other Guests' detached sessions to spill. This replaces
+    ADR-022's eviction, which destroys state, so it is no worse than today.
+  - Checkpoint files hold Guest data at rest: mode 0600, deleted on session
+    `CloseSession` for auto checkpoints, and on identity deletion (ADR-024).
+- **Tests under `tests/security/`:**
+  - a Guest key with the `__reflop__/` prefix is rejected;
+  - one identity cannot restore another identity's checkpoint;
+  - a truncated or corrupt checkpoint fails closed;
+  - a session ended by `reflopd kill` is never revived;
+  - recovery stops after one attempt when replay crashes the worker again.
+
+## Phases
+
+0. **Client API for the existing Snapshot and Restore**, plus their first
+   tests (Go and Python). This already covers a Guest script that crashes and
+   starts over.
+1. **Asynchronous checkpoints:** worker thread, `Checkpoint` RPC, barrier,
+   reserved keys, rails, rotation, capability string.
+2. **Client redo log** and transparent recovery, with recoverable and final
+   reasons.
+3. **`reflopd` uses checkpoints:** spill detached sessions, drain on shutdown,
+   update and `pause --now`.
+4. **Fault-injection end-to-end test:** `kill -9` the worker mid-training on
+   CPU with deterministic numerics, and check that the parameters are
+   bit-identical to an uninterrupted run.
+
+Each phase adds its tests, an ADR or an ADR update, and a
+`CHANGELOG.md` entry.
+
+## Open questions
+
+1. Auto checkpoint default: allowed by default on the Owner side but off in the
+   client unless the Guest asks? It costs the Owner disk space.
+2. Is the client redo log in scope for the first release, or are checkpoints
+   alone, losing up to one interval, enough?
+3. Is `pause --now` recoverable? Proposed: yes; `reflopd kill` stays final.
+4. One ADR for the whole design, or one per phase?
+
+## Implementation review (2026-11-15)
+
+Reviewed Issue #2 and the code at `4d85725`. This section corrects assumptions
+in the draft above and proposes the implementation order. The proposals are
+not accepted ADRs. No runtime changes have been made.
+
+### Findings that change the plan
+
+1. **Snapshot success does not yet mean durable storage.**
+   `Session.snapshot` in `server/reflopd/internal/server/session.go` ignores
+   rename errors and does not sync the file or its directory. A failed stat can
+   also leave the response marked successful. Check every publication error,
+   sync before acknowledging, and preserve the previous checkpoint on failure.
+   The disk rail is checked before writing and after the whole file is written;
+   it does not reserve the expected bytes. This path does not enforce the
+   identity's storage quota. Account for concurrent writers and the temporary
+   file alongside the previous checkpoint.
+
+2. **Snapshot I/O and restore need bounded memory and atomic failure.**
+   `safetensors.write` collects every tensor's bytes in a list, and
+   `core.Session.snapshot_read` reads the entire file. Restore allocates tensors
+   before checking aggregate handle capacity and inserts them one at a time.
+   A two-tensor restore with room for one leaves the first tensor installed
+   after returning an error. Duplicate destination handles silently keep the
+   last tensor. Validate the whole request and resource budget before device
+   allocation, then commit all handles together. Bound read/write staging and
+   apply device and host limits. Reject reserved keys, including safetensors'
+   existing `__metadata__`, and enforce writer/reader header-size agreement.
+
+3. **Automatic reconnect is not working through the public request path.**
+   `Connection.request` and `upload` reject a closed connection before
+   `RemoteConnection._send` can call `_reconnect`. The reader also fails every
+   outstanding future on disconnect. A surviving server worker is therefore
+   only part of the solution. Define a connection recovery state, coordinate
+   concurrent callers, and retain pending futures until recovery succeeds or
+   fails. Replies for a detached connection are currently dropped by the server;
+   an in-flight execute cannot safely be resent to that same worker without
+   knowing whether it already ran.
+
+4. **The graph cache is insufficient for recovery.**
+   `client/python/reflop/session.py` stores a set of hashes in `registered`,
+   not graph definitions. Keep the serialized graphs needed by the redo log,
+   including graphs registered before the checkpoint. Recheck capabilities,
+   numerics and runtime compatibility after reconnect. Dataset files survive,
+   and `ensureDatasets` opens them when an execute needs them; define failure
+   behavior if a required dataset has since been deleted.
+
+5. **A checkpoint needs a generation and an exact replay boundary.**
+   Replacing one file by name is ambiguous when the new file is published but
+   its acknowledgement is lost: the client could restore new state and replay
+   requests already included in it. Persist the checkpoint generation and the
+   last included request sequence with its state. Define how the client learns
+   that boundary after reconnect, and retain the required log until then.
+   Sequence complete logical uploads, account for partially received uploads,
+   and serialize checkpoint cuts with all state-changing operations. The draft's
+   upload claim is too broad: `forward` already holds uploads when `held` is
+   non-empty. Pause release and concurrent dispatch still need ordering tests.
+
+6. **Replay equivalence needs a narrower contract.**
+   `_apply_numerics` calls `torch.use_deterministic_algorithms` with
+   `warn_only=True`; the current setting does not enforce the draft's promise
+   of bit-identical replay. A nondeterministic replay can also change a value
+   the Guest already used to choose its next operation. Discarding the new
+   response cannot undo that choice. Decide whether transparent recovery
+   requires strict deterministic execution or offers a weaker, explicit
+   guarantee. Failed executes and the proposed OOM retry also need defined RNG
+   and handle-commit behavior before any automatic retry is safe.
+
+7. **Owner termination must remain final across disconnects and restarts.**
+   A reason attached to a live response is insufficient if the client never
+   receives it. Specify persistent recovery authorization or checkpoint
+   invalidation for Owner kill, revoke, unpair and normal close. Coordinate
+   cancellation with checkpoint completion so a late rename cannot recreate
+   recovery state. If `pause --now` is recoverable, restoring GPU allocations
+   must wait for Owner resume. Checkpointing cannot delay emergency rail or
+   watchdog kills indefinitely.
+
+8. **Background work changes the worker's concurrency assumptions.**
+   `wire.Channel.send` currently relies on a single writer. Route background
+   completion through the main loop or serialize sends. Define thread and file
+   descriptor cleanup on errors and termination. Test CUDA stream dependencies,
+   allocator lifetimes, non-contiguous tensors and retained GPU memory under
+   the real sandbox. A separate stream alone is not evidence of acceptable
+   checkpoint overhead. Also, `reflopd update` currently replaces the binary
+   and asks the Owner to restart; draining belongs in shutdown unless update
+   behavior is deliberately changed.
+
+### Proposed work packages and completion criteria
+
+| Order | Work | Completion criterion |
+|---|---|---|
+| A | Harden existing snapshot/restore storage, validation and limits; add Go and security regression tests | Failed writes never report success or destroy the previous snapshot; failed restores leave handles unchanged; concurrent writes respect rails and quotas |
+| B | Expose explicit Python save/load/list/delete APIs, flush pending traces, and define how load obtains tensor metadata | A fresh Guest session restores model and optimizer tensors and continues training; document Guest-owned scalar state, RNG and data-loader position |
+| C | Specify the recovery protocol and record approved decisions in ADRs | Checkpoint format, generation, request sequence, compatibility, lost acknowledgements, termination policy and replay guarantees are unambiguous |
+| D | Implement complete session checkpoints with bounded asynchronous I/O and RNG state | Requests continue during copying; durable completion identifies the cut; overlapping checkpoints, cancellation and resource failures behave predictably |
+| E | Implement graph retention, bounded redo logging and the recovery state machine | Restore plus replay preserves handles, resolves each pending future once, retains needed upload bytes and stops after the allowed recovery attempt |
+| F | Add detached-session spill and bounded shutdown drain | TTL, eviction, graceful restart and pause behavior follow the approved policy; emergency termination remains available |
+
+Fault injection belongs in each package. The final matrix must include worker
+death before and after execute completion; a dropped reply; checkpoint
+publication followed by a lost acknowledgement; interrupted uploads; restart;
+corrupt files; disk and memory exhaustion; and Owner kill during checkpointing
+and recovery. Test tenant isolation and forbidden recovery under
+`tests/security/`. Use CPU deterministic training first, then separately test
+CUDA RNG, stream ordering, memory peaks and throughput in sandboxed workers.
+The existing Python e2e session tests use the in-process backend, so they cannot
+alone verify daemon restart or worker-death recovery. Define behavior before
+the first successful checkpoint and for repeated failures across a recovery
+chain, not just one failed replay.
+
+### Decisions to resolve before the dependent implementation
+
+- **First delivery:** recommend A and B first, with explicit restart from a
+  named snapshot. Keep transparent recovery as a separate milestone; this
+  initial delivery does not fully resolve Issue #2.
+- **Defaults and retention:** recommend explicit Guest opt-in, subject to Owner
+  permission. Owner-side defaults, byte limits and retention remain proposals.
+- **Replay guarantee:** recommend a strict deterministic recovery mode first;
+  do not promise equivalence for arbitrary nondeterministic jobs or across
+  incompatible runtime/device changes.
+- **Owner controls:** confirm whether `pause --now` should retain recoverable
+  state and what drain delay is acceptable. Final Owner termination must never
+  trigger automatic revival.
+- **Decision records:** recommend one recovery-contract ADR and separate ADRs
+  for storage/concurrency and lifecycle policy as those choices are approved.
+
+### Checks performed for this review
+
+- Direct CPU probes reproduced partial restore on a handle-limit error,
+  acceptance of duplicate destination handles, a writer/reader mismatch for
+  `__metadata__`, and rejection before reconnect on a closed connection.
+- `tests/security/corpus/test_data.py`: 12 passed.
+- The Go server's two OOM eviction tests passed.
+
+These checks establish the findings and the existing parser/eviction baseline.
+They do not validate the proposed recovery feature. Implementation must add
+permanent regression tests, update the changelog and relevant guides and threat
+model, regenerate protocol bindings where needed, and pass the repository's
+build, test, lint and code-generation checks.
+
+## Measurements (2026-11-18)
+
+RTX 5070 (12 GiB), driver 595, torch 2.15.0+cu132, NVMe SSD. The client's
+request stream was recorded from real training runs and replayed into the
+worker's `Session`, so the numbers are worker-side (faster than a real
+deployment, where the client and network add time: the relative overheads
+are upper bounds). Scripts and raw results were kept outside the repository.
+
+Checkpoint cost per mode (217M-parameter GPT, AdamW, 3.3 GiB of state):
+
+| Mode | ms/step | Worst stall | Extra GPU memory |
+|---|---|---|---|
+| no checkpoints | 99.6 | 0.2 s | none |
+| synchronous (the old `snapshot_write`), every 5 s | 182 (+83%) | 8.3 s | none |
+| side stream, 2 × 64 MiB pinned ring, back to back | 99.8 (noise) | 0.2 s | +3.3 GiB, held 0.6 s per checkpoint |
+| copy everything to host first, back to back | 105 (+6%) | 0.66 s | +3.3 GiB |
+
+ResNet-18 (130 MiB of state, about 5 ms per step) showed the same pattern: the
+ring design cost 0 to 5% with checkpoints back to back, the synchronous one
+made steps 36 times slower. A checkpoint of 3.3 GiB took 3.4 s to reach the
+disk with fsync. Every step rebinds every parameter and optimizer tensor, so
+for the copy's duration the old version of the whole state stays allocated.
+
+Disk volume at 3.3 GiB per checkpoint: 950 GiB per day at 5 minutes, 475 GiB
+per day at 10 minutes. The worst case, state that fills a 12 GiB GPU, is
+72 GiB per hour at 10 minutes.
+
+Redo log (prototype): 10 to 44 KiB per step when the batches stay on the
+server, about 1.5 MiB per step when every batch is uploaded. Replaying the
+log after restoring a checkpoint into a new worker gave bit-identical
+parameters for a GPT with dropout, a 217M-parameter GPT and ResNet-18, but
+ResNet-18 needed deterministic numerics: without them two uninterrupted runs
+already differ (22 of 249 tensors identical, cuDNN convolutions). Restoring
+without the RNG state, or without registering the graphs again, broke the
+replay.
+
+Suspend (CUDA driver process checkpoint API): 2 GiB in 0.49 s and 8 GiB in
+1.4 s to free the GPU, 0.3 s and 0.7 s to restore, data intact. It works on a
+process under the worker's seccomp filter and on a real sandboxed worker
+driven from inside reflopd's own sandbox (0.31 s for 1.3 GiB). The suspended
+memory moves into the worker's own host memory (its RSS grew by the same
+amount).

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"sort"
+
+	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
 // MaxHeader bounds the safetensors JSON header (§10.2).
@@ -17,6 +19,23 @@ const MaxHeader = 1 << 20
 
 var stDTypes = map[string]int{
 	"BOOL": 1, "U8": 1, "I8": 1, "I16": 2, "I32": 4, "I64": 8, "F16": 2, "BF16": 2, "F32": 4, "F64": 8,
+}
+
+// snapshotDTypes are the dtypes a worker writes into snapshots and
+// checkpoints (reflop_worker/safetensors.py DTYPES): datasets plus complex
+// and fp8.
+var snapshotDTypes = map[string]int{
+	"BOOL": 1, "U8": 1, "I8": 1, "I16": 2, "I32": 4, "I64": 8, "F16": 2, "BF16": 2, "F32": 4, "F64": 8,
+	"C64": 8, "C128": 16, "F8_E4M3": 1, "F8_E5M2": 1,
+}
+
+// SnapshotDTypeToPB maps snapshot dtype names to wire dtypes.
+var SnapshotDTypeToPB = map[string]pb.DType{
+	"BOOL": pb.DType_DTYPE_BOOL, "U8": pb.DType_DTYPE_UINT8, "I8": pb.DType_DTYPE_INT8, "I16": pb.DType_DTYPE_INT16,
+	"I32": pb.DType_DTYPE_INT32, "I64": pb.DType_DTYPE_INT64, "F16": pb.DType_DTYPE_FLOAT16,
+	"BF16": pb.DType_DTYPE_BFLOAT16, "F32": pb.DType_DTYPE_FLOAT32, "F64": pb.DType_DTYPE_FLOAT64,
+	"C64": pb.DType_DTYPE_COMPLEX64, "C128": pb.DType_DTYPE_COMPLEX128, "F8_E4M3": pb.DType_DTYPE_FLOAT8_E4M3FN,
+	"F8_E5M2": pb.DType_DTYPE_FLOAT8_E5M2,
 }
 
 // STTensor is one parsed tensor entry.
@@ -31,6 +50,16 @@ type STTensor struct {
 // and JSON shape, dtype whitelist, in-bounds and non-overlapping offsets
 // consistent with dtype × shape, and no trailing bytes.
 func ParseSafetensors(r io.ReaderAt, size int64, maxNumel uint64) (map[string]STTensor, error) {
+	return parseST(r, size, maxNumel, stDTypes)
+}
+
+// ParseSnapshot is ParseSafetensors for snapshot and checkpoint files,
+// which may also hold complex and fp8 tensors.
+func ParseSnapshot(r io.ReaderAt, size int64, maxNumel uint64) (map[string]STTensor, error) {
+	return parseST(r, size, maxNumel, snapshotDTypes)
+}
+
+func parseST(r io.ReaderAt, size int64, maxNumel uint64, dtypes map[string]int) (map[string]STTensor, error) {
 	if size < 8 {
 		return nil, errors.New("safetensors: file too short")
 	}
@@ -86,7 +115,7 @@ func ParseSafetensors(r io.ReaderAt, size int64, maxNumel uint64) (map[string]ST
 			json.Unmarshal(raw["data_offsets"], &offs) != nil || len(offs) != 2 {
 			return nil, fmt.Errorf("safetensors: tensor %q: malformed entry", key)
 		}
-		item, ok := stDTypes[t.DType]
+		item, ok := dtypes[t.DType]
 		if !ok {
 			return nil, fmt.Errorf("safetensors: tensor %q: dtype %q not allowed", key, t.DType)
 		}

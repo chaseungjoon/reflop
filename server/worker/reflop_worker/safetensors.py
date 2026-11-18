@@ -4,6 +4,10 @@
 safetensors is a data-only format, but the parser is ours and strict:
 header ≤ 1 MiB, JSON object of known shape, whitelisted dtypes, in-bounds,
 non-overlapping and size-consistent data_offsets, no trailing garbage.
+
+The writer and the readers agree on every rule: the writer refuses what a
+reader would reject, so a file this module wrote always reads back.
+Keys that start with RESERVED are written only by checkpoints (ADR-029).
 """
 
 from __future__ import annotations
@@ -24,8 +28,22 @@ DTYPES = {
 NAMES = {v: k for k, v in DTYPES.items()}
 
 
+RESERVED = "__reflop__/"
+MAX_KEY = 256
+
+
 class SafetensorsError(ValueError):
     pass
+
+
+def check_key(k: str, reserved_ok: bool = False) -> None:
+    """A tensor name a snapshot may use (the same rule for writer and reader)."""
+    if not isinstance(k, str) or not k or len(k.encode()) > MAX_KEY:
+        raise SafetensorsError("tensor names must be 1 to 256 bytes")
+    if k == "__metadata__":
+        raise SafetensorsError("'__metadata__' is reserved by the safetensors format")
+    if k.startswith(RESERVED) and not reserved_ok:
+        raise SafetensorsError(f"names starting with {RESERVED!r} are reserved")
 
 
 def _reject_dupes(pairs):
@@ -56,7 +74,13 @@ def parse_header(buf, total_len: int, max_numel: int = 1 << 40) -> tuple[int, di
     spans = []
     for name, info in hdr.items():
         if name == "__metadata__":
-            continue  # ignored (§10.2)
+            # Ignored (§10.2), but only in its standard form.
+            if not isinstance(info, dict) or not all(isinstance(k, str) and isinstance(v, str)
+                                                     for k, v in info.items()):
+                raise SafetensorsError("__metadata__ must map strings to strings")
+            continue
+        if len(name.encode()) > MAX_KEY:
+            raise SafetensorsError("tensor name too long")
         if not isinstance(info, dict) or set(info) != {"dtype", "shape", "data_offsets"}:
             raise SafetensorsError(f"tensor {name!r}: unexpected fields")
         dt = DTYPES.get(info["dtype"])
@@ -101,23 +125,36 @@ def tensor_bytes(t: torch.Tensor) -> bytes:
     return bytes(buf)
 
 
-def write(f, tensors: dict[str, torch.Tensor]) -> int:
-    """Write tensors (CPU, contiguous) in safetensors format to a binary file."""
+def header(items) -> tuple[bytes, int]:
+    """safetensors header for items = [(name, dtype, shape)] in file order.
+
+    Returns (header bytes including the 8-byte length, data length)."""
     hdr = {}
     off = 0
-    blobs = []
-    for name in sorted(tensors):
-        t = tensors[name].detach().contiguous().cpu()
-        if t.dtype not in NAMES:
-            raise SafetensorsError(f"dtype {t.dtype} cannot be stored")
-        b = tensor_bytes(t)
-        hdr[name] = {"dtype": NAMES[t.dtype], "shape": list(t.shape), "data_offsets": [off, off + len(b)]}
-        off += len(b)
-        blobs.append(b)
+    for name, dt, shape in items:
+        if dt not in NAMES:
+            raise SafetensorsError(f"dtype {dt} cannot be stored")
+        n = (math.prod(shape) if shape else 1) * torch.empty((), dtype=dt).element_size()
+        hdr[name] = {"dtype": NAMES[dt], "shape": list(shape), "data_offsets": [off, off + n]}
+        off += n
     h = json.dumps(hdr, separators=(",", ":")).encode()
     h += b" " * ((8 - len(h) % 8) % 8)
-    f.write(struct.pack("<Q", len(h)))
-    f.write(h)
-    for b in blobs:
-        f.write(b)
-    return 8 + len(h) + off
+    if len(h) > MAX_HEADER:
+        raise SafetensorsError(f"the header would be {len(h)} bytes; the limit is {MAX_HEADER} "
+                               f"(about {MAX_HEADER // 100} tensors)")
+    return struct.pack("<Q", len(h)) + h, off
+
+
+def write(f, tensors: dict[str, torch.Tensor]) -> int:
+    """Write tensors in safetensors format to a binary file (tests and tools).
+
+    The worker streams snapshots with checkpoint.Writer instead."""
+    names = sorted(tensors)
+    for k in names:
+        check_key(k)
+    ts = [tensors[k].detach().contiguous().cpu() for k in names]
+    hb, total = header([(k, t.dtype, tuple(t.shape)) for k, t in zip(names, ts)])
+    f.write(hb)
+    for t in ts:
+        f.write(tensor_bytes(t))
+    return len(hb) + total

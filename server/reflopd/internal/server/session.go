@@ -9,18 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/store"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
 )
@@ -62,6 +58,14 @@ type Session struct {
 	flops     uint64
 	statsWait []chan *pb.WorkerStats
 	lastStats *pb.WorkerStats
+
+	// Snapshots and checkpoints (snapshots.go).
+	writing        *pendingWrite // at most one write in progress
+	final          bool          // ended on purpose: no checkpoint survives it
+	lastCheckpoint time.Time
+	checkpointGen  uint64
+	// suspended: the worker's GPU memory is in host RAM (ADR-030).
+	suspended bool
 }
 
 func (s *Server) openSession(c *clientConn, req *pb.OpenSession) (*Session, error) {
@@ -169,7 +173,8 @@ func (s *Server) oldestDetached(slot *DeviceSlot) *Session {
 			continue
 		}
 		sess.mu.Lock()
-		d, ok := sess.detached, sess.conn == nil && !sess.closed && !sess.detached.IsZero()
+		// A suspended session holds no GPU memory: ending it frees nothing.
+		d, ok := sess.detached, sess.conn == nil && !sess.closed && !sess.suspended && !sess.detached.IsZero()
 		sess.mu.Unlock()
 		if ok && (best == nil || d.Before(since)) {
 			best, since = sess, d
@@ -254,6 +259,10 @@ func (s *Session) dispatch(c *clientConn, env *pb.Envelope) error {
 		return s.snapshot(c, env, b.Snapshot)
 	case *pb.Envelope_Restore:
 		return s.restore(c, env, b.Restore)
+	case *pb.Envelope_Checkpoint:
+		return s.checkpoint(c, env, b.Checkpoint)
+	case *pb.Envelope_RecoverSession:
+		return s.recoverSession(c, env, b.RecoverSession)
 	}
 	s.mu.Lock()
 	key := [2]uint64{c.gen, env.RequestId}
@@ -321,6 +330,8 @@ func (s *Session) readWorker() {
 		switch b := env.Body.(type) {
 		case *pb.WorkerEnvelope_Client:
 			s.deliver(b.Client)
+		case *pb.WorkerEnvelope_SnapshotCut:
+			s.onCut(b.SnapshotCut)
 		case *pb.WorkerEnvelope_Stats:
 			s.mu.Lock()
 			s.lastStats = b.Stats
@@ -413,7 +424,12 @@ func (s *Session) lost(why string) {
 	conn := s.conn
 	routes := s.routes
 	s.routes = map[uint64]*route{}
+	pw := s.writing
 	s.mu.Unlock()
+	if pw != nil {
+		os.Remove(pw.tmp)
+		s.clearWrite(pw)
+	}
 	s.srv.removeSession(s)
 	if conn != nil {
 		for _, r := range routes {
@@ -428,10 +444,19 @@ func (s *Session) lost(why string) {
 		Fields: map[string]any{"reason": why, "executes": s.executes, "flops": s.flops}})
 }
 
+// close ends the session; its last checkpoint stays for RecoverSession
+// (a crash, the watchdog, a rail, eviction, TTL, pause --now). Use
+// closeFinal for an end on purpose.
 func (s *Session) close(why string) {
 	s.worker.Kill(why)
 	<-s.worker.Done()
 	s.lost(why)
+}
+
+func (s *Session) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 // stats asks the worker for live statistics.
@@ -501,131 +526,6 @@ func (s *Session) ensureDatasets(ex *pb.Execute) error {
 		s.mu.Lock()
 		s.datasets[key] = true
 		s.mu.Unlock()
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------- snapshots
-
-func (s *Session) snapshotDir() string { return s.srv.layout.IdentitySnapshots(s.Identity.ID) }
-
-func (s *Session) snapshot(c *clientConn, env *pb.Envelope, req *pb.Snapshot) error {
-	if !store.NameRe.MatchString(req.Name) {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "snapshot name must match [a-z0-9][a-z0-9_-]{0,63}")
-		return nil
-	}
-	if len(req.Handles) != len(req.Keys) || len(req.Handles) == 0 {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "handles and keys must be non-empty and equal in length")
-		return nil
-	}
-	if rails.DiskBudget(s.srv.cfg().Rails, s.srv.layout.State) == 0 {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_SAFETY_RAIL, "the disk safety rail leaves no room for snapshots")
-		return nil
-	}
-	dir := s.snapshotDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	final := filepath.Join(dir, req.Name+".safetensors")
-	tmp := filepath.Join(dir, "."+req.Name+".tmp-"+s.hex()[:8])
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_CLOEXEC, 0o600)
-	if err != nil {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_INTERNAL, "could not create the snapshot file")
-		return nil
-	}
-	id := s.newRoute(c, env.RequestId, "snapshot", func(resp *pb.Envelope) {
-		ok := resp.GetSnapshotSaved() != nil
-		if ok {
-			if st, err := os.Stat(tmp); err == nil {
-				if err := rails.CheckDiskWrite(s.srv.cfg().Rails, s.srv.layout.State, 0); err != nil {
-					ok = false
-					resp = &pb.Envelope{End: true, Body: &pb.Envelope_Error{Error: &pb.Error{
-						Code: pb.ErrorCode_ERROR_SAFETY_RAIL, Message: err.Error()}}}
-				} else {
-					resp.GetSnapshotSaved().Name = req.Name
-					resp.GetSnapshotSaved().Bytes = uint64(st.Size())
-				}
-			}
-		}
-		if ok {
-			os.Rename(tmp, final)
-		} else {
-			os.Remove(tmp)
-		}
-		s.reply(c, env.RequestId, resp)
-	})
-	err = s.worker.SendFDs([]byte("snapshot"), []int{int(f.Fd())})
-	f.Close()
-	if err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return s.worker.Send(&pb.WorkerEnvelope{Body: &pb.WorkerEnvelope_SnapshotWrite{SnapshotWrite: &pb.SnapshotWrite{
-		RequestId: id, Handles: req.Handles, Keys: req.Keys}}})
-}
-
-func (s *Session) restore(c *clientConn, env *pb.Envelope, req *pb.Restore) error {
-	if !store.NameRe.MatchString(req.Name) || len(req.Keys) != len(req.Handles) {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "invalid restore request")
-		return nil
-	}
-	f, err := os.Open(filepath.Join(s.snapshotDir(), req.Name+".safetensors"))
-	if err != nil {
-		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "no such snapshot")
-		return nil
-	}
-	id := s.newRoute(c, env.RequestId, "restore", func(resp *pb.Envelope) { s.reply(c, env.RequestId, resp) })
-	err = s.worker.SendFDs([]byte("restore"), []int{int(f.Fd())})
-	f.Close()
-	if err != nil {
-		return err
-	}
-	return s.worker.Send(&pb.WorkerEnvelope{Body: &pb.WorkerEnvelope_SnapshotRead{SnapshotRead: &pb.SnapshotRead{
-		RequestId: id, Keys: req.Keys, Handles: req.Handles}}})
-}
-
-func (s *Session) newRoute(c *clientConn, rid uint64, kind string, done func(*pb.Envelope)) uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nextID++
-	s.routes[s.nextID] = &route{gen: c.gen, rid: rid, kind: kind, start: time.Now(), onDone: done}
-	return s.nextID
-}
-
-func (s *Session) reply(c *clientConn, rid uint64, env *pb.Envelope) {
-	out := &pb.Envelope{RequestId: rid, End: true, Body: env.Body}
-	_ = c.send(out)
-}
-
-func (c *clientConn) snapshotAdmin(env *pb.Envelope) error {
-	dir := c.srv.layout.IdentitySnapshots(c.identity.ID)
-	switch b := env.Body.(type) {
-	case *pb.Envelope_ListSnapshots:
-		ents, _ := os.ReadDir(dir)
-		out := &pb.SnapshotList{}
-		for _, e := range ents {
-			n := e.Name()
-			if filepath.Ext(n) != ".safetensors" || n[0] == '.' {
-				continue
-			}
-			fi, err := e.Info()
-			if err != nil {
-				continue
-			}
-			out.Snapshots = append(out.Snapshots, &pb.SnapshotInfo{Name: n[:len(n)-len(".safetensors")],
-				Bytes: uint64(fi.Size()), CreatedUnix: fi.ModTime().Unix()})
-		}
-		return c.send(&pb.Envelope{RequestId: env.RequestId, End: true, Body: &pb.Envelope_SnapshotList{SnapshotList: out}})
-	case *pb.Envelope_DeleteSnapshot:
-		if !store.NameRe.MatchString(b.DeleteSnapshot.Name) {
-			c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "invalid snapshot name")
-			return nil
-		}
-		if err := os.Remove(filepath.Join(dir, b.DeleteSnapshot.Name+".safetensors")); err != nil {
-			c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PROTOCOL, "no such snapshot")
-			return nil
-		}
-		return c.send(&pb.Envelope{RequestId: env.RequestId, End: true, Body: &pb.Envelope_Freed{Freed: &pb.Freed{}}})
 	}
 	return nil
 }

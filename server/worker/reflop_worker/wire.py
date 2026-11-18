@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import socket
 import struct
+import threading
 
 from google.protobuf.message import Message
 
@@ -61,13 +62,15 @@ def check_enums(msg: Message) -> None:
 
 
 class Channel:
-    """Blocking framed channel. Reads are single-threaded; writes are
-    serialized by the caller (the worker is single-threaded)."""
+    """Blocking framed channel. Reads happen on the request thread only;
+    writes are serialized by a lock, because the snapshot writer thread
+    answers from the background (ADR-029)."""
 
     def __init__(self, sock: socket.socket, max_frame: int) -> None:
         self.sock = sock
         self.max_frame = max_frame
         self._buf = bytearray()
+        self._wlock = threading.Lock()
 
     def _read_exact(self, n: int) -> bytes:
         while len(self._buf) < n:
@@ -93,4 +96,5 @@ class Channel:
         data = msg.SerializeToString(deterministic=True)
         if len(data) > self.max_frame:
             raise ProtocolError(f"outgoing frame of {len(data)} bytes exceeds limit")
-        self.sock.sendall(_HDR.pack(len(data)) + data)
+        with self._wlock:
+            self.sock.sendall(_HDR.pack(len(data)) + data)

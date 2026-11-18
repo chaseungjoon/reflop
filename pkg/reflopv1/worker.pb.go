@@ -538,11 +538,21 @@ func (x *DatasetClose) GetDatasetId() []byte {
 }
 
 // SnapshotWrite/SnapshotRead: one fd follows on the fd channel.
+//
+// A write is asynchronous (ADR-029): the worker takes references to the
+// tensors between two requests (the cut), reports the file size in
+// SnapshotCut, waits for SnapshotGo, then writes in a background thread and
+// answers with the client envelope (SnapshotSaved or CheckpointSaved).
 type SnapshotWrite struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Handles       [][]byte               `protobuf:"bytes,2,rep,name=handles,proto3" json:"handles,omitempty"`
-	Keys          []string               `protobuf:"bytes,3,rep,name=keys,proto3" json:"keys,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Handles   [][]byte               `protobuf:"bytes,2,rep,name=handles,proto3" json:"handles,omitempty"`
+	Keys      []string               `protobuf:"bytes,3,rep,name=keys,proto3" json:"keys,omitempty"`
+	// checkpoint: save every live handle (key = handle hex) plus RNG state and
+	// `tag`/`generation` under reserved "__reflop__/" keys; handles/keys empty.
+	Checkpoint    bool   `protobuf:"varint,4,opt,name=checkpoint,proto3" json:"checkpoint,omitempty"`
+	Tag           []byte `protobuf:"bytes,5,opt,name=tag,proto3" json:"tag,omitempty"`
+	Generation    uint64 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -598,11 +608,33 @@ func (x *SnapshotWrite) GetKeys() []string {
 	return nil
 }
 
+func (x *SnapshotWrite) GetCheckpoint() bool {
+	if x != nil {
+		return x.Checkpoint
+	}
+	return false
+}
+
+func (x *SnapshotWrite) GetTag() []byte {
+	if x != nil {
+		return x.Tag
+	}
+	return nil
+}
+
+func (x *SnapshotWrite) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
 type SnapshotRead struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Keys          []string               `protobuf:"bytes,2,rep,name=keys,proto3" json:"keys,omitempty"`
 	Handles       [][]byte               `protobuf:"bytes,3,rep,name=handles,proto3" json:"handles,omitempty"`
+	RestoreRng    bool                   `protobuf:"varint,4,opt,name=restore_rng,json=restoreRng,proto3" json:"restore_rng,omitempty"` // also set the RNG state saved by a checkpoint
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -658,6 +690,136 @@ func (x *SnapshotRead) GetHandles() [][]byte {
 	return nil
 }
 
+func (x *SnapshotRead) GetRestoreRng() bool {
+	if x != nil {
+		return x.RestoreRng
+	}
+	return false
+}
+
+// SnapshotCut (worker → reflopd): the cut is taken; the file will have
+// exactly `bytes` bytes. reflopd answers SnapshotGo.
+type SnapshotCut struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Bytes         uint64                 `protobuf:"varint,2,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotCut) Reset() {
+	*x = SnapshotCut{}
+	mi := &file_reflop_v1_worker_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotCut) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotCut) ProtoMessage() {}
+
+func (x *SnapshotCut) ProtoReflect() protoreflect.Message {
+	mi := &file_reflop_v1_worker_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotCut.ProtoReflect.Descriptor instead.
+func (*SnapshotCut) Descriptor() ([]byte, []int) {
+	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SnapshotCut) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *SnapshotCut) GetBytes() uint64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
+// SnapshotGo (reflopd → worker): write the file, or drop the references.
+type SnapshotGo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Proceed       bool                   `protobuf:"varint,2,opt,name=proceed,proto3" json:"proceed,omitempty"`
+	Code          ErrorCode              `protobuf:"varint,3,opt,name=code,proto3,enum=reflop.v1.ErrorCode" json:"code,omitempty"` // when !proceed
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotGo) Reset() {
+	*x = SnapshotGo{}
+	mi := &file_reflop_v1_worker_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotGo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotGo) ProtoMessage() {}
+
+func (x *SnapshotGo) ProtoReflect() protoreflect.Message {
+	mi := &file_reflop_v1_worker_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotGo.ProtoReflect.Descriptor instead.
+func (*SnapshotGo) Descriptor() ([]byte, []int) {
+	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SnapshotGo) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *SnapshotGo) GetProceed() bool {
+	if x != nil {
+		return x.Proceed
+	}
+	return false
+}
+
+func (x *SnapshotGo) GetCode() ErrorCode {
+	if x != nil {
+		return x.Code
+	}
+	return ErrorCode_ERROR_INVALID
+}
+
+func (x *SnapshotGo) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type StatsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -666,7 +828,7 @@ type StatsRequest struct {
 
 func (x *StatsRequest) Reset() {
 	*x = StatsRequest{}
-	mi := &file_reflop_v1_worker_proto_msgTypes[9]
+	mi := &file_reflop_v1_worker_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +840,7 @@ func (x *StatsRequest) String() string {
 func (*StatsRequest) ProtoMessage() {}
 
 func (x *StatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_reflop_v1_worker_proto_msgTypes[9]
+	mi := &file_reflop_v1_worker_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +853,7 @@ func (x *StatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsRequest.ProtoReflect.Descriptor instead.
 func (*StatsRequest) Descriptor() ([]byte, []int) {
-	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{9}
+	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{11}
 }
 
 type WorkerStats struct {
@@ -708,7 +870,7 @@ type WorkerStats struct {
 
 func (x *WorkerStats) Reset() {
 	*x = WorkerStats{}
-	mi := &file_reflop_v1_worker_proto_msgTypes[10]
+	mi := &file_reflop_v1_worker_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -720,7 +882,7 @@ func (x *WorkerStats) String() string {
 func (*WorkerStats) ProtoMessage() {}
 
 func (x *WorkerStats) ProtoReflect() protoreflect.Message {
-	mi := &file_reflop_v1_worker_proto_msgTypes[10]
+	mi := &file_reflop_v1_worker_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -733,7 +895,7 @@ func (x *WorkerStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerStats.ProtoReflect.Descriptor instead.
 func (*WorkerStats) Descriptor() ([]byte, []int) {
-	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{10}
+	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WorkerStats) GetDeviceMemoryAllocated() uint64 {
@@ -789,9 +951,11 @@ type WorkerEnvelope struct {
 	//	*WorkerEnvelope_SnapshotWrite
 	//	*WorkerEnvelope_SnapshotRead
 	//	*WorkerEnvelope_StatsRequest
+	//	*WorkerEnvelope_SnapshotGo
 	//	*WorkerEnvelope_Ready
 	//	*WorkerEnvelope_Stats
 	//	*WorkerEnvelope_Fatal
+	//	*WorkerEnvelope_SnapshotCut
 	Body          isWorkerEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -799,7 +963,7 @@ type WorkerEnvelope struct {
 
 func (x *WorkerEnvelope) Reset() {
 	*x = WorkerEnvelope{}
-	mi := &file_reflop_v1_worker_proto_msgTypes[11]
+	mi := &file_reflop_v1_worker_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +975,7 @@ func (x *WorkerEnvelope) String() string {
 func (*WorkerEnvelope) ProtoMessage() {}
 
 func (x *WorkerEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_reflop_v1_worker_proto_msgTypes[11]
+	mi := &file_reflop_v1_worker_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +988,7 @@ func (x *WorkerEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerEnvelope.ProtoReflect.Descriptor instead.
 func (*WorkerEnvelope) Descriptor() ([]byte, []int) {
-	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{11}
+	return file_reflop_v1_worker_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WorkerEnvelope) GetBody() isWorkerEnvelope_Body {
@@ -897,6 +1061,15 @@ func (x *WorkerEnvelope) GetStatsRequest() *StatsRequest {
 	return nil
 }
 
+func (x *WorkerEnvelope) GetSnapshotGo() *SnapshotGo {
+	if x != nil {
+		if x, ok := x.Body.(*WorkerEnvelope_SnapshotGo); ok {
+			return x.SnapshotGo
+		}
+	}
+	return nil
+}
+
 func (x *WorkerEnvelope) GetReady() *WorkerReady {
 	if x != nil {
 		if x, ok := x.Body.(*WorkerEnvelope_Ready); ok {
@@ -919,6 +1092,15 @@ func (x *WorkerEnvelope) GetFatal() *Error {
 	if x != nil {
 		if x, ok := x.Body.(*WorkerEnvelope_Fatal); ok {
 			return x.Fatal
+		}
+	}
+	return nil
+}
+
+func (x *WorkerEnvelope) GetSnapshotCut() *SnapshotCut {
+	if x != nil {
+		if x, ok := x.Body.(*WorkerEnvelope_SnapshotCut); ok {
+			return x.SnapshotCut
 		}
 	}
 	return nil
@@ -957,6 +1139,10 @@ type WorkerEnvelope_StatsRequest struct {
 	StatsRequest *StatsRequest `protobuf:"bytes,7,opt,name=stats_request,json=statsRequest,proto3,oneof"`
 }
 
+type WorkerEnvelope_SnapshotGo struct {
+	SnapshotGo *SnapshotGo `protobuf:"bytes,8,opt,name=snapshot_go,json=snapshotGo,proto3,oneof"`
+}
+
 type WorkerEnvelope_Ready struct {
 	// worker → reflopd
 	Ready *WorkerReady `protobuf:"bytes,20,opt,name=ready,proto3,oneof"`
@@ -968,6 +1154,10 @@ type WorkerEnvelope_Stats struct {
 
 type WorkerEnvelope_Fatal struct {
 	Fatal *Error `protobuf:"bytes,22,opt,name=fatal,proto3,oneof"` // worker is about to exit
+}
+
+type WorkerEnvelope_SnapshotCut struct {
+	SnapshotCut *SnapshotCut `protobuf:"bytes,23,opt,name=snapshot_cut,json=snapshotCut,proto3,oneof"`
 }
 
 func (*WorkerEnvelope_Init) isWorkerEnvelope_Body() {}
@@ -984,11 +1174,15 @@ func (*WorkerEnvelope_SnapshotRead) isWorkerEnvelope_Body() {}
 
 func (*WorkerEnvelope_StatsRequest) isWorkerEnvelope_Body() {}
 
+func (*WorkerEnvelope_SnapshotGo) isWorkerEnvelope_Body() {}
+
 func (*WorkerEnvelope_Ready) isWorkerEnvelope_Body() {}
 
 func (*WorkerEnvelope_Stats) isWorkerEnvelope_Body() {}
 
 func (*WorkerEnvelope_Fatal) isWorkerEnvelope_Body() {}
+
+func (*WorkerEnvelope_SnapshotCut) isWorkerEnvelope_Body() {}
 
 var File_reflop_v1_worker_proto protoreflect.FileDescriptor
 
@@ -1039,17 +1233,37 @@ const file_reflop_v1_worker_proto_rawDesc = "" +
 	"\x06shards\x18\x03 \x03(\v2\x17.reflop.v1.DatasetShardR\x06shards\"-\n" +
 	"\fDatasetClose\x12\x1d\n" +
 	"\n" +
-	"dataset_id\x18\x01 \x01(\fR\tdatasetId\"\\\n" +
+	"dataset_id\x18\x01 \x01(\fR\tdatasetId\"\xae\x01\n" +
 	"\rSnapshotWrite\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x18\n" +
 	"\ahandles\x18\x02 \x03(\fR\ahandles\x12\x12\n" +
-	"\x04keys\x18\x03 \x03(\tR\x04keys\"[\n" +
+	"\x04keys\x18\x03 \x03(\tR\x04keys\x12\x1e\n" +
+	"\n" +
+	"checkpoint\x18\x04 \x01(\bR\n" +
+	"checkpoint\x12\x10\n" +
+	"\x03tag\x18\x05 \x01(\fR\x03tag\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x06 \x01(\x04R\n" +
+	"generation\"|\n" +
 	"\fSnapshotRead\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x12\n" +
 	"\x04keys\x18\x02 \x03(\tR\x04keys\x12\x18\n" +
-	"\ahandles\x18\x03 \x03(\fR\ahandles\"\x0e\n" +
+	"\ahandles\x18\x03 \x03(\fR\ahandles\x12\x1f\n" +
+	"\vrestore_rng\x18\x04 \x01(\bR\n" +
+	"restoreRng\"B\n" +
+	"\vSnapshotCut\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x14\n" +
+	"\x05bytes\x18\x02 \x01(\x04R\x05bytes\"\x87\x01\n" +
+	"\n" +
+	"SnapshotGo\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x18\n" +
+	"\aproceed\x18\x02 \x01(\bR\aproceed\x12(\n" +
+	"\x04code\x18\x03 \x01(\x0e2\x14.reflop.v1.ErrorCodeR\x04code\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x0e\n" +
 	"\fStatsRequest\"\xef\x01\n" +
 	"\vWorkerStats\x126\n" +
 	"\x17device_memory_allocated\x18\x01 \x01(\x04R\x15deviceMemoryAllocated\x124\n" +
@@ -1057,7 +1271,7 @@ const file_reflop_v1_worker_proto_rawDesc = "" +
 	"\x0ehost_rss_bytes\x18\x03 \x01(\x04R\fhostRssBytes\x12\x18\n" +
 	"\ahandles\x18\x04 \x01(\rR\ahandles\x12\x16\n" +
 	"\x06graphs\x18\x05 \x01(\rR\x06graphs\x12\x1a\n" +
-	"\bexecutes\x18\x06 \x01(\x04R\bexecutes\"\xbe\x04\n" +
+	"\bexecutes\x18\x06 \x01(\x04R\bexecutes\"\xb5\x05\n" +
 	"\x0eWorkerEnvelope\x12+\n" +
 	"\x04init\x18\x01 \x01(\v2\x15.reflop.v1.WorkerInitH\x00R\x04init\x12-\n" +
 	"\x06client\x18\x02 \x01(\v2\x13.reflop.v1.EnvelopeH\x00R\x06client\x12;\n" +
@@ -1065,10 +1279,13 @@ const file_reflop_v1_worker_proto_rawDesc = "" +
 	"\rdataset_close\x18\x04 \x01(\v2\x17.reflop.v1.DatasetCloseH\x00R\fdatasetClose\x12A\n" +
 	"\x0esnapshot_write\x18\x05 \x01(\v2\x18.reflop.v1.SnapshotWriteH\x00R\rsnapshotWrite\x12>\n" +
 	"\rsnapshot_read\x18\x06 \x01(\v2\x17.reflop.v1.SnapshotReadH\x00R\fsnapshotRead\x12>\n" +
-	"\rstats_request\x18\a \x01(\v2\x17.reflop.v1.StatsRequestH\x00R\fstatsRequest\x12.\n" +
+	"\rstats_request\x18\a \x01(\v2\x17.reflop.v1.StatsRequestH\x00R\fstatsRequest\x128\n" +
+	"\vsnapshot_go\x18\b \x01(\v2\x15.reflop.v1.SnapshotGoH\x00R\n" +
+	"snapshotGo\x12.\n" +
 	"\x05ready\x18\x14 \x01(\v2\x16.reflop.v1.WorkerReadyH\x00R\x05ready\x12.\n" +
 	"\x05stats\x18\x15 \x01(\v2\x16.reflop.v1.WorkerStatsH\x00R\x05stats\x12(\n" +
-	"\x05fatal\x18\x16 \x01(\v2\x10.reflop.v1.ErrorH\x00R\x05fatalB\x06\n" +
+	"\x05fatal\x18\x16 \x01(\v2\x10.reflop.v1.ErrorH\x00R\x05fatal\x12;\n" +
+	"\fsnapshot_cut\x18\x17 \x01(\v2\x16.reflop.v1.SnapshotCutH\x00R\vsnapshotCutB\x06\n" +
 	"\x04bodyB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
@@ -1083,7 +1300,7 @@ func file_reflop_v1_worker_proto_rawDescGZIP() []byte {
 	return file_reflop_v1_worker_proto_rawDescData
 }
 
-var file_reflop_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_reflop_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_reflop_v1_worker_proto_goTypes = []any{
 	(*WorkerInit)(nil),     // 0: reflop.v1.WorkerInit
 	(*SandboxReport)(nil),  // 1: reflop.v1.SandboxReport
@@ -1094,44 +1311,50 @@ var file_reflop_v1_worker_proto_goTypes = []any{
 	(*DatasetClose)(nil),   // 6: reflop.v1.DatasetClose
 	(*SnapshotWrite)(nil),  // 7: reflop.v1.SnapshotWrite
 	(*SnapshotRead)(nil),   // 8: reflop.v1.SnapshotRead
-	(*StatsRequest)(nil),   // 9: reflop.v1.StatsRequest
-	(*WorkerStats)(nil),    // 10: reflop.v1.WorkerStats
-	(*WorkerEnvelope)(nil), // 11: reflop.v1.WorkerEnvelope
-	(*Device)(nil),         // 12: reflop.v1.Device
-	(*Numerics)(nil),       // 13: reflop.v1.Numerics
-	(*Limits)(nil),         // 14: reflop.v1.Limits
-	(*DeviceInfo)(nil),     // 15: reflop.v1.DeviceInfo
-	(*RuntimeInfo)(nil),    // 16: reflop.v1.RuntimeInfo
-	(*TensorMeta)(nil),     // 17: reflop.v1.TensorMeta
-	(*Envelope)(nil),       // 18: reflop.v1.Envelope
-	(*Error)(nil),          // 19: reflop.v1.Error
+	(*SnapshotCut)(nil),    // 9: reflop.v1.SnapshotCut
+	(*SnapshotGo)(nil),     // 10: reflop.v1.SnapshotGo
+	(*StatsRequest)(nil),   // 11: reflop.v1.StatsRequest
+	(*WorkerStats)(nil),    // 12: reflop.v1.WorkerStats
+	(*WorkerEnvelope)(nil), // 13: reflop.v1.WorkerEnvelope
+	(*Device)(nil),         // 14: reflop.v1.Device
+	(*Numerics)(nil),       // 15: reflop.v1.Numerics
+	(*Limits)(nil),         // 16: reflop.v1.Limits
+	(*DeviceInfo)(nil),     // 17: reflop.v1.DeviceInfo
+	(*RuntimeInfo)(nil),    // 18: reflop.v1.RuntimeInfo
+	(*TensorMeta)(nil),     // 19: reflop.v1.TensorMeta
+	(ErrorCode)(0),         // 20: reflop.v1.ErrorCode
+	(*Envelope)(nil),       // 21: reflop.v1.Envelope
+	(*Error)(nil),          // 22: reflop.v1.Error
 }
 var file_reflop_v1_worker_proto_depIdxs = []int32{
-	12, // 0: reflop.v1.WorkerInit.device:type_name -> reflop.v1.Device
-	13, // 1: reflop.v1.WorkerInit.numerics:type_name -> reflop.v1.Numerics
-	14, // 2: reflop.v1.WorkerInit.limits:type_name -> reflop.v1.Limits
+	14, // 0: reflop.v1.WorkerInit.device:type_name -> reflop.v1.Device
+	15, // 1: reflop.v1.WorkerInit.numerics:type_name -> reflop.v1.Numerics
+	16, // 2: reflop.v1.WorkerInit.limits:type_name -> reflop.v1.Limits
 	1,  // 3: reflop.v1.WorkerReady.sandbox:type_name -> reflop.v1.SandboxReport
-	15, // 4: reflop.v1.WorkerReady.devices:type_name -> reflop.v1.DeviceInfo
-	16, // 5: reflop.v1.WorkerReady.runtime_info:type_name -> reflop.v1.RuntimeInfo
-	13, // 6: reflop.v1.WorkerReady.numerics:type_name -> reflop.v1.Numerics
-	17, // 7: reflop.v1.DatasetTensor.meta:type_name -> reflop.v1.TensorMeta
+	17, // 4: reflop.v1.WorkerReady.devices:type_name -> reflop.v1.DeviceInfo
+	18, // 5: reflop.v1.WorkerReady.runtime_info:type_name -> reflop.v1.RuntimeInfo
+	15, // 6: reflop.v1.WorkerReady.numerics:type_name -> reflop.v1.Numerics
+	19, // 7: reflop.v1.DatasetTensor.meta:type_name -> reflop.v1.TensorMeta
 	4,  // 8: reflop.v1.DatasetOpen.tensors:type_name -> reflop.v1.DatasetTensor
 	3,  // 9: reflop.v1.DatasetOpen.shards:type_name -> reflop.v1.DatasetShard
-	0,  // 10: reflop.v1.WorkerEnvelope.init:type_name -> reflop.v1.WorkerInit
-	18, // 11: reflop.v1.WorkerEnvelope.client:type_name -> reflop.v1.Envelope
-	5,  // 12: reflop.v1.WorkerEnvelope.dataset_open:type_name -> reflop.v1.DatasetOpen
-	6,  // 13: reflop.v1.WorkerEnvelope.dataset_close:type_name -> reflop.v1.DatasetClose
-	7,  // 14: reflop.v1.WorkerEnvelope.snapshot_write:type_name -> reflop.v1.SnapshotWrite
-	8,  // 15: reflop.v1.WorkerEnvelope.snapshot_read:type_name -> reflop.v1.SnapshotRead
-	9,  // 16: reflop.v1.WorkerEnvelope.stats_request:type_name -> reflop.v1.StatsRequest
-	2,  // 17: reflop.v1.WorkerEnvelope.ready:type_name -> reflop.v1.WorkerReady
-	10, // 18: reflop.v1.WorkerEnvelope.stats:type_name -> reflop.v1.WorkerStats
-	19, // 19: reflop.v1.WorkerEnvelope.fatal:type_name -> reflop.v1.Error
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	20, // 10: reflop.v1.SnapshotGo.code:type_name -> reflop.v1.ErrorCode
+	0,  // 11: reflop.v1.WorkerEnvelope.init:type_name -> reflop.v1.WorkerInit
+	21, // 12: reflop.v1.WorkerEnvelope.client:type_name -> reflop.v1.Envelope
+	5,  // 13: reflop.v1.WorkerEnvelope.dataset_open:type_name -> reflop.v1.DatasetOpen
+	6,  // 14: reflop.v1.WorkerEnvelope.dataset_close:type_name -> reflop.v1.DatasetClose
+	7,  // 15: reflop.v1.WorkerEnvelope.snapshot_write:type_name -> reflop.v1.SnapshotWrite
+	8,  // 16: reflop.v1.WorkerEnvelope.snapshot_read:type_name -> reflop.v1.SnapshotRead
+	11, // 17: reflop.v1.WorkerEnvelope.stats_request:type_name -> reflop.v1.StatsRequest
+	10, // 18: reflop.v1.WorkerEnvelope.snapshot_go:type_name -> reflop.v1.SnapshotGo
+	2,  // 19: reflop.v1.WorkerEnvelope.ready:type_name -> reflop.v1.WorkerReady
+	12, // 20: reflop.v1.WorkerEnvelope.stats:type_name -> reflop.v1.WorkerStats
+	22, // 21: reflop.v1.WorkerEnvelope.fatal:type_name -> reflop.v1.Error
+	9,  // 22: reflop.v1.WorkerEnvelope.snapshot_cut:type_name -> reflop.v1.SnapshotCut
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_reflop_v1_worker_proto_init() }
@@ -1142,7 +1365,7 @@ func file_reflop_v1_worker_proto_init() {
 	file_reflop_v1_graph_proto_init()
 	file_reflop_v1_capabilities_proto_init()
 	file_reflop_v1_compute_proto_init()
-	file_reflop_v1_worker_proto_msgTypes[11].OneofWrappers = []any{
+	file_reflop_v1_worker_proto_msgTypes[13].OneofWrappers = []any{
 		(*WorkerEnvelope_Init)(nil),
 		(*WorkerEnvelope_Client)(nil),
 		(*WorkerEnvelope_DatasetOpen)(nil),
@@ -1150,9 +1373,11 @@ func file_reflop_v1_worker_proto_init() {
 		(*WorkerEnvelope_SnapshotWrite)(nil),
 		(*WorkerEnvelope_SnapshotRead)(nil),
 		(*WorkerEnvelope_StatsRequest)(nil),
+		(*WorkerEnvelope_SnapshotGo)(nil),
 		(*WorkerEnvelope_Ready)(nil),
 		(*WorkerEnvelope_Stats)(nil),
 		(*WorkerEnvelope_Fatal)(nil),
+		(*WorkerEnvelope_SnapshotCut)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1160,7 +1385,7 @@ func file_reflop_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_reflop_v1_worker_proto_rawDesc), len(file_reflop_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

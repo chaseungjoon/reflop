@@ -149,6 +149,38 @@ func MemoryUse(g GPU) (usedMiB, totalMiB uint64, ok bool) {
 	return parseMemoryUse(string(out))
 }
 
+// ProcessMemory returns the GPU memory, in bytes, that each compute process
+// uses on any GPU (nvidia-smi --query-compute-apps), or ok=false.
+func ProcessMemory() (map[int]uint64, bool) {
+	smi := findSMI(false)
+	if smi == "" {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, smi, "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return nil, false
+	}
+	return parseProcessMemory(string(out)), true
+}
+
+func parseProcessMemory(s string) map[int]uint64 {
+	m := map[int]uint64{}
+	for _, ln := range strings.Split(s, "\n") {
+		a, b, ok := strings.Cut(ln, ",")
+		if !ok {
+			continue
+		}
+		pid, err1 := strconv.Atoi(strings.TrimSpace(a))
+		mib, err2 := strconv.ParseUint(strings.TrimSpace(b), 10, 64)
+		if err1 == nil && err2 == nil {
+			m[pid] += mib << 20
+		}
+	}
+	return m
+}
+
 func parseMemoryUse(s string) (used, total uint64, ok bool) {
 	u, t, found := strings.Cut(firstLine(strings.TrimSpace(s)), ",")
 	if !found {
