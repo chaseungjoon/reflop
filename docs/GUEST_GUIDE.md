@@ -393,13 +393,13 @@ reflop.delete_snapshot("run1")
 Only tensors are stored. Keep step counts and other Python values on your
 machine. A save replaces an older snapshot of the same name only once the new
 one is fully written. Snapshots count against your storage quota, if the Owner
-set one. This needs a reflopd with the `snapshots` capability.
+set one. This needs reflopd 0.2.0 or newer.
 
 ### Automatic checkpoints
 
 If the Owner has turned checkpoints on (`reflopd checkpoints on`), the server
 can save your whole session at a step boundary: every server tensor and the
-server's random number generator state.
+server's random number generator state. This needs reflopd 0.2.0 or newer.
 
 ```python
 dev = reflop.device(checkpoint=True)                    # the Owner's interval

@@ -129,7 +129,7 @@ def enable(sess, interval=None) -> None:
     caps = sess.caps
     if "checkpoints" not in caps.capabilities:
         ver = sanitize(caps.runtime_info.reflopd_version, 40) or "unknown"
-        raise ReflopError(f"this server (reflopd {ver}) does not support checkpoints; it needs a newer reflopd")
+        raise ReflopError(f"this server (reflopd {ver}) does not support checkpoints; it needs reflopd 0.2.0 or newer")
     owner = int(caps.checkpoint_interval_s)
     if owner <= 0:
         raise ReflopError("the Owner has not enabled checkpoints on this server (`reflopd checkpoints on`)")
@@ -223,7 +223,7 @@ def _adopt(sess, rec) -> None:
 def _need_snapshots(sess) -> None:
     if "snapshots" not in sess.caps.capabilities:
         ver = sanitize(sess.caps.runtime_info.reflopd_version, 40) or "unknown"
-        raise ReflopError(f"this server (reflopd {ver}) does not support reflop.save/load; it needs a newer reflopd")
+        raise ReflopError(f"this server (reflopd {ver}) does not support reflop.save/load; it needs reflopd 0.2.0 or newer")
 
 
 def _flatten(obj, prefix: str, out: dict) -> None:

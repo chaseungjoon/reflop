@@ -37,7 +37,7 @@ import (
 	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
 )
 
-const version = "0.1.6"
+const version = "0.2.0"
 
 // Return codes besides 0 (include/reflop.h).
 const (
