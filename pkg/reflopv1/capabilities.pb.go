@@ -479,8 +479,11 @@ type ServerCapabilities struct {
 	Numerics         *Numerics              `protobuf:"bytes,6,opt,name=numerics,proto3" json:"numerics,omitempty"`
 	Limits           *Limits                `protobuf:"bytes,7,opt,name=limits,proto3" json:"limits,omitempty"`
 	RuntimeInfo      *RuntimeInfo           `protobuf:"bytes,8,opt,name=runtime_info,json=runtimeInfo,proto3" json:"runtime_info,omitempty"` // informational only; never used in client logic
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Checkpoints ("checkpoints" capability): the Owner's interval in seconds,
+	// the shortest a Guest may use. 0 = the Owner has not enabled them.
+	CheckpointIntervalS uint64 `protobuf:"varint,9,opt,name=checkpoint_interval_s,json=checkpointIntervalS,proto3" json:"checkpoint_interval_s,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ServerCapabilities) Reset() {
@@ -569,6 +572,13 @@ func (x *ServerCapabilities) GetRuntimeInfo() *RuntimeInfo {
 	return nil
 }
 
+func (x *ServerCapabilities) GetCheckpointIntervalS() uint64 {
+	if x != nil {
+		return x.CheckpointIntervalS
+	}
+	return 0
+}
+
 var File_reflop_v1_capabilities_proto protoreflect.FileDescriptor
 
 const file_reflop_v1_capabilities_proto_rawDesc = "" +
@@ -618,7 +628,7 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\fcuda_version\x18\x02 \x01(\tR\vcudaVersion\x12%\n" +
 	"\x0edriver_version\x18\x03 \x01(\tR\rdriverVersion\x12'\n" +
 	"\x0freflopd_version\x18\x04 \x01(\tR\x0ereflopdVersion\x12'\n" +
-	"\x0fruntime_variant\x18\x05 \x01(\tR\x0eruntimeVariant\"\xfa\x02\n" +
+	"\x0fruntime_variant\x18\x05 \x01(\tR\x0eruntimeVariant\"\xae\x03\n" +
 	"\x12ServerCapabilities\x12+\n" +
 	"\x11protocol_versions\x18\x01 \x03(\rR\x10protocolVersions\x12%\n" +
 	"\x0eopset_versions\x18\x02 \x03(\rR\ropsetVersions\x12$\n" +
@@ -627,7 +637,8 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\adevices\x18\x05 \x03(\v2\x15.reflop.v1.DeviceInfoR\adevices\x12/\n" +
 	"\bnumerics\x18\x06 \x01(\v2\x13.reflop.v1.NumericsR\bnumerics\x12)\n" +
 	"\x06limits\x18\a \x01(\v2\x11.reflop.v1.LimitsR\x06limits\x129\n" +
-	"\fruntime_info\x18\b \x01(\v2\x16.reflop.v1.RuntimeInfoR\vruntimeInfoB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
+	"\fruntime_info\x18\b \x01(\v2\x16.reflop.v1.RuntimeInfoR\vruntimeInfo\x122\n" +
+	"\x15checkpoint_interval_s\x18\t \x01(\x04R\x13checkpointIntervalSB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_capabilities_proto_rawDescOnce sync.Once

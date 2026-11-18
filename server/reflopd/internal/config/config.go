@@ -165,9 +165,33 @@ type Config struct {
 	Yield struct {
 		Auto     bool     `toml:"auto"`
 		Interval Duration `toml:"interval"`
+		// Suspend moves Guest workers' GPU memory to host RAM while
+		// auto-yield pauses them (ADR-030). Off by default.
+		Suspend bool `toml:"suspend"`
 	} `toml:"yield"`
-	Quotas map[string]Quota `toml:"quotas"`
+	Checkpoints Checkpoints      `toml:"checkpoints"`
+	Quotas      map[string]Quota `toml:"quotas"`
 }
+
+// Checkpoints is the Owner's switch for Guest checkpoints (ADR-029). They
+// are off by default: every checkpoint writes the Guest's whole state to
+// this machine's disk, which wears SSDs, and doubles that state's GPU memory
+// while it is copied.
+type Checkpoints struct {
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Interval is the shortest time between two checkpoints of a session,
+	// and the default a Guest gets. Never below MinCheckpointInterval.
+	Interval Duration `toml:"interval" json:"interval"`
+}
+
+// Checkpoint interval bounds. The floor is a hard limit: no setting, flag or
+// Guest request goes below it (each checkpoint can write as much as the
+// GPU's memory).
+const (
+	MinCheckpointInterval     = 5 * time.Minute
+	DefaultCheckpointInterval = 10 * time.Minute
+	MaxCheckpointInterval     = 24 * time.Hour
+)
 
 // Rail minimums: no configuration can go below these, so the rails are
 // never off (SEC_SWEEP L5). Going below DefaultRails needs
@@ -221,15 +245,18 @@ func Defaults() Config {
 		"rnn_fused": false, // O11: off until the _cudnn_rnn validator has M4 tests
 	}
 	c.Yield.Interval = Duration(2 * time.Second)
+	c.Checkpoints.Interval = Duration(DefaultCheckpointInterval)
 	c.Quotas = map[string]Quota{}
 	return c
 }
 
 // Settings are values changed at runtime by Owner commands.
 type Settings struct {
-	Rails  *Rails           `json:"rails,omitempty"`
-	Quotas map[string]Quota `json:"quotas,omitempty"`
-	Yield  *bool            `json:"yield_auto,omitempty"`
+	Rails        *Rails           `json:"rails,omitempty"`
+	Quotas       map[string]Quota `json:"quotas,omitempty"`
+	Yield        *bool            `json:"yield_auto,omitempty"`
+	YieldSuspend *bool            `json:"yield_suspend,omitempty"`
+	Checkpoints  *Checkpoints     `json:"checkpoints,omitempty"`
 }
 
 // Load reads the optional config file and settings file over Defaults().
@@ -264,6 +291,12 @@ func Load(configFile, settingsFile string) (Config, error) {
 	}
 	if s.Yield != nil {
 		c.Yield.Auto = *s.Yield
+	}
+	if s.YieldSuspend != nil {
+		c.Yield.Suspend = *s.YieldSuspend
+	}
+	if s.Checkpoints != nil {
+		c.Checkpoints = *s.Checkpoints
 	}
 	return c, c.Validate()
 }
@@ -331,6 +364,9 @@ func (c Config) Validate() error {
 		if x.v < x.min || x.v > x.max {
 			return fmt.Errorf("limits.%s must be %d..%d (got %d)", x.name, x.min, x.max, x.v)
 		}
+	}
+	if err := c.Checkpoints.Validate(); err != nil {
+		return err
 	}
 	if c.Audit.RetentionDays < 1 || c.Audit.RetentionDays > 3650 {
 		return errors.New("audit.retention_days must be 1..3650")
@@ -418,4 +454,17 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// Validate enforces the checkpoint interval's hard floor (ADR-029).
+func (c Checkpoints) Validate() error {
+	iv := time.Duration(c.Interval)
+	if iv < MinCheckpointInterval {
+		return fmt.Errorf("checkpoints.interval must be at least %s (got %s): each checkpoint can write as much as "+
+			"the GPU's memory to disk", MinCheckpointInterval, iv)
+	}
+	if iv > MaxCheckpointInterval {
+		return fmt.Errorf("checkpoints.interval must be at most %s", MaxCheckpointInterval)
+	}
+	return nil
 }

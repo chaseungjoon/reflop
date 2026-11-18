@@ -790,17 +790,26 @@ func pauseCmd() *cobra.Command {
 	var now bool
 	cmd := &cobra.Command{
 		Use:   "pause",
-		Short: "Queue new Guest work (with --now, also kill running workers)",
+		Short: "Queue new Guest work (with --now, also free the GPU right away)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := control("pause", map[string]bool{"now": now}, nil); err != nil {
+			var r server.PauseResult
+			if err := control("pause", map[string]bool{"now": now}, &r); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "paused")
+			if now {
+				fmt.Fprintf(cmd.OutOrStdout(), "%d session(s) suspended (GPU memory moved to host RAM until `reflopd resume`), "+
+					"%d killed\n", r.Suspended, r.Killed)
+				for _, n := range r.Notes {
+					fmt.Fprintln(cmd.OutOrStdout(), "  "+n)
+				}
+			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&now, "now", false, "kill running workers too (their sessions are lost)")
+	cmd.Flags().BoolVar(&now, "now", false, "also suspend running GPU workers (their GPU memory moves to host RAM); "+
+		"workers that cannot be suspended are killed")
 	return cmd
 }
 
@@ -829,9 +838,9 @@ func killCmd() *cobra.Command {
 }
 
 func yieldCmd() *cobra.Command {
-	var auto, off bool
+	var auto, off, susp bool
 	cmd := &cobra.Command{
-		Use:   "yield --auto | --off",
+		Use:   "yield --auto [--suspend] | --off",
 		Short: "Pause Guests automatically while you use the GPU",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -846,18 +855,26 @@ func yieldCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			v := auto
-			s.Yield = &v
+			if susp && !auto {
+				return exitWith(ExitUsage, errors.New("--suspend goes with --auto"))
+			}
+			v, sv := auto, susp
+			s.Yield, s.YieldSuspend = &v, &sv
 			if err := config.SaveSettings(settingsPath(l), s); err != nil {
 				return err
 			}
-			_ = control("yield", map[string]bool{"auto": auto}, nil)
-			fmt.Fprintf(cmd.OutOrStdout(), "auto-yield %s\n", map[bool]string{true: "on", false: "off"}[auto])
+			_ = control("yield", map[string]bool{"auto": auto, "suspend": susp}, nil)
+			msg := map[bool]string{true: "on", false: "off"}[auto]
+			if susp {
+				msg += " (suspending Guests: their GPU memory moves to host RAM while you use the GPU)"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "auto-yield %s\n", msg)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&auto, "auto", false, "turn auto-yield on")
 	cmd.Flags().BoolVar(&off, "off", false, "turn auto-yield off")
+	cmd.Flags().BoolVar(&susp, "suspend", false, "with --auto: also move paused Guests' GPU memory to host RAM (needs free host RAM)")
 	return cmd
 }
 
@@ -935,6 +952,9 @@ func printStatus(out io.Writer, st server.StatusView, detail bool) error {
 	fmt.Fprintf(out, "runtime:  %s\n", st.Runtime)
 	fmt.Fprintf(out, "devices:  %s\n", strings.Join(st.Devices, "; "))
 	fmt.Fprintf(out, "sandbox:  %s\n", strings.Join(st.Sandbox, ", "))
+	if st.Checkpoints != "" {
+		fmt.Fprintf(out, "checkpoints: %s\n", st.Checkpoints)
+	}
 	fmt.Fprintf(out, "%d connection(s), %d session(s)\n", st.Connections, len(st.Sessions))
 	if len(st.Sessions) == 0 {
 		return nil
@@ -950,7 +970,11 @@ func printStatus(out io.Writer, st server.StatusView, detail bool) error {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%.2f\t%s\t%s\t%d\t%d\n", s.ID[:8], s.Identity, s.Device, s.Age, s.Executes,
 				float64(s.FLOPs)/1e12, humanBytes(s.HostMemory), humanBytes(s.DeviceAlloc), s.Handles, s.Graphs)
 		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%v\n", s.ID[:8], s.Identity, s.Device, s.Age, s.Executes, s.Attached)
+			att := fmt.Sprint(s.Attached)
+			if s.Suspended {
+				att += " (suspended)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n", s.ID[:8], s.Identity, s.Device, s.Age, s.Executes, att)
 		}
 	}
 	return tw.Flush()

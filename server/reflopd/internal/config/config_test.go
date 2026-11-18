@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseBytes(t *testing.T) {
@@ -80,5 +81,35 @@ func TestQuotaZeroInTOMLRejected(t *testing.T) {
 	c, err := Load(cfg, filepath.Join(dir, "settings.json"))
 	if err != nil || c.Quotas["alice"].DeviceMemoryBytes != 6<<30 || c.Quotas["alice"].MaxSessions != 0 {
 		t.Fatalf("got %+v, %v", c.Quotas, err)
+	}
+}
+
+// The checkpoint interval has a hard floor no setting can go below (ADR-029).
+func TestCheckpointIntervalFloor(t *testing.T) {
+	d := Defaults()
+	if d.Checkpoints.Enabled || time.Duration(d.Checkpoints.Interval) != 10*time.Minute {
+		t.Fatalf("defaults: %+v (want off, 10m)", d.Checkpoints)
+	}
+	for _, iv := range []time.Duration{0, time.Minute, 5*time.Minute - time.Second, 25 * time.Hour} {
+		c := Checkpoints{Enabled: true, Interval: Duration(iv)}
+		if c.Validate() == nil {
+			t.Errorf("interval %s accepted", iv)
+		}
+	}
+	for _, iv := range []time.Duration{5 * time.Minute, 10 * time.Minute, 24 * time.Hour} {
+		if err := (Checkpoints{Interval: Duration(iv)}).Validate(); err != nil {
+			t.Errorf("interval %s: %v", iv, err)
+		}
+	}
+	// The floor holds for the config file and the settings file alike.
+	dir := t.TempDir()
+	cf := filepath.Join(dir, "reflopd.toml")
+	os.WriteFile(cf, []byte("[checkpoints]\nenabled = true\ninterval = \"1m\"\n"), 0o600)
+	if _, err := Load(cf, filepath.Join(dir, "settings.json")); err == nil {
+		t.Fatal("config file with a 1m checkpoint interval loaded")
+	}
+	os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"checkpoints":{"enabled":true,"interval":"2m"}}`), 0o600)
+	if _, err := Load(filepath.Join(dir, "none.toml"), filepath.Join(dir, "settings.json")); err == nil {
+		t.Fatal("settings with a 2m checkpoint interval loaded")
 	}
 }

@@ -15,6 +15,7 @@ from ._pb import capabilities_pb2 as kpb
 from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
 from ._pb import worker_pb2 as wpb
+from .checkpoint import RNG_CPU_KEY, RNG_CUDA_KEY, Writer
 from .cost import analyze, input_bytes
 from .datasets import open_dataset
 from .errors import FatalError, ReflopError
@@ -23,8 +24,7 @@ from .graph import Builder
 from .handles import HandleTable, check_new
 from .meta import infer
 from .ops_generated import OPS
-from .safetensors import parse_header, tensor_bytes
-from .safetensors import write as st_write
+from .safetensors import MAX_HEADER, RESERVED, SafetensorsError, parse_header, tensor_bytes
 
 # Tier 2 capability keys and how to detect them on a device.
 CAPABILITY_KEYS = ("linalg", "complex", "fp8", "rnn_fused", "ctc", "cdist_backward")
@@ -141,6 +141,7 @@ class Session:
                                  device_memory_quota=init.device_memory_quota_bytes)
         self._apply_numerics(init.numerics)
         torch.manual_seed(init.seed)
+        self.writer = Writer(self)
 
     def _apply_numerics(self, n: kpb.Numerics) -> None:
         if self.device.type == "cuda":
@@ -321,35 +322,106 @@ class Session:
         if ds is not None:
             ds.close()
 
-    def snapshot_write(self, msg: wpb.SnapshotWrite, fd: int) -> int:
-        if len(msg.handles) != len(msg.keys):
-            raise ReflopError(cpb.ERROR_PROTOCOL, "handles and keys differ in length")
-        tensors = {}
-        for h, k in zip(msg.handles, msg.keys):
-            if k in tensors:
-                raise ReflopError(cpb.ERROR_PROTOCOL, f"duplicate key {k!r}")
-            tensors[k] = self.handles.get(h)
-        with os.fdopen(fd, "wb", closefd=True) as f:
-            return st_write(f, tensors)
+    def snapshot_write(self, msg: wpb.SnapshotWrite, fd: int, cut, done) -> None:
+        """Start a background write (see checkpoint.Writer)."""
+        self.writer.start(msg, fd, cut, done)
 
     def snapshot_read(self, msg: wpb.SnapshotRead, fd: int) -> None:
+        """Restore tensors from a snapshot or checkpoint file: all or nothing.
+
+        Everything is validated before any device memory is allocated; the
+        handles are added only once every tensor has been read."""
+        try:
+            self._snapshot_read(msg, fd)
+        finally:
+            os.close(fd)
+
+    def _snapshot_read(self, msg: wpb.SnapshotRead, fd: int) -> None:
         if len(msg.handles) != len(msg.keys):
             raise ReflopError(cpb.ERROR_PROTOCOL, "handles and keys differ in length")
+        if len(set(msg.handles)) != len(msg.handles):
+            raise ReflopError(cpb.ERROR_PROTOCOL, "the same handle is named twice")
+        if len(set(msg.keys)) != len(msg.keys):
+            raise ReflopError(cpb.ERROR_PROTOCOL, "the same key is named twice")
         for h in msg.handles:
             check_new(h)
             if h in self.handles.t:
                 raise ReflopError(cpb.ERROR_HANDLE_EXISTS, "handle already exists")
-        with os.fdopen(fd, "rb", closefd=True) as f:
-            data = f.read()
-        start, hdr = parse_header(memoryview(data), len(data), self.limits.max_tensor_numel)
-        out = {}
-        for h, k in zip(msg.handles, msg.keys):
-            if k not in hdr:
-                raise ReflopError(cpb.ERROR_PROTOCOL, f"snapshot has no tensor {k!r}")
-            dt, shape, b, e = hdr[k]
-            out[h] = tensor_from_bytes(data[start + b:start + e], dt, shape, self.device)
+        if len(self.handles) + len(msg.handles) > self.handles.max:
+            raise ReflopError(cpb.ERROR_RESOURCE_LIMIT, f"restoring {len(msg.handles)} tensors would exceed "
+                              f"{self.handles.max} live handles")
+        size = os.fstat(fd).st_size
+        head = os.pread(fd, 8, 0)
+        if len(head) != 8:
+            raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file too short")
+        n = int.from_bytes(head, "little")
+        if n == 0 or n > MAX_HEADER or 8 + n > size:
+            raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file: bad header length")
+        buf = head + os.pread(fd, n, 8)
+        try:
+            start, hdr = parse_header(memoryview(buf), size, self.limits.max_tensor_numel)
+        except SafetensorsError as e:
+            raise ReflopError(cpb.ERROR_PROTOCOL, f"snapshot file: {e}") from None
+        for k in msg.keys:
+            if k not in hdr or k.startswith(RESERVED):
+                raise ReflopError(cpb.ERROR_PROTOCOL, f"snapshot has no tensor {k[:64]!r}")
+        rng = {}
+        if msg.restore_rng:
+            want = {RNG_CPU_KEY: torch.get_rng_state().numel()}
+            if self.device.type == "cuda":
+                want[RNG_CUDA_KEY] = torch.cuda.get_rng_state(self.device).numel()
+            for k, numel in want.items():
+                ent = hdr.get(k)
+                if ent is None or ent[0] != torch.uint8 or ent[1] != (numel,):
+                    raise ReflopError(cpb.ERROR_PROTOCOL, "checkpoint RNG state is missing or has the wrong size")
+                rng[k] = ent
+        total = sum(hdr[k][3] - hdr[k][2] for k in msg.keys)
+        if self.device.type == "cuda":
+            from .checkpoint import free_device_bytes
+
+            free = free_device_bytes(self.device)
+            if total > free:
+                raise ReflopError(cpb.ERROR_OUT_OF_MEMORY, f"restoring needs {total >> 20} MiB of GPU memory; "
+                                  f"{free >> 20} MiB are free")
+        staging = bytearray(min(max(total, 1), 64 << 20))
+        stage = torch.frombuffer(staging, dtype=torch.uint8)
+        out: dict[bytes, torch.Tensor] = {}
+        try:
+            for h, k in zip(msg.handles, msg.keys):
+                dt, shape, b, e = hdr[k]
+                t = torch.empty(shape, dtype=dt, device=self.device)
+                if e > b:
+                    flat = t.reshape(-1).view(torch.uint8)
+                    for off in range(0, e - b, len(staging)):
+                        m = min(len(staging), e - b - off)
+                        got = os.preadv(fd, [memoryview(staging)[:m]], start + b + off)
+                        if got != m:
+                            raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file is truncated")
+                        flat[off:off + m].copy_(stage[:m])
+                out[h] = t
+            states = {}
+            for k, (_dt, _shape, b, e) in rng.items():
+                raw = os.pread(fd, e - b, start + b)
+                if len(raw) != e - b:
+                    raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file is truncated")
+                states[k] = torch.frombuffer(bytearray(raw), dtype=torch.uint8).clone()
+        except torch.OutOfMemoryError:
+            out.clear()
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
+            raise ReflopError(cpb.ERROR_OUT_OF_MEMORY, "out of GPU memory while restoring") from None
+        except BaseException:
+            out.clear()
+            raise
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+        # Commit: every check above passed, so none of these can fail.
         for h, t in out.items():
-            self.handles.put_new(h, t)
+            self.handles.t[h] = t
+        if RNG_CPU_KEY in states:
+            torch.set_rng_state(states[RNG_CPU_KEY])
+        if RNG_CUDA_KEY in states:
+            torch.cuda.set_rng_state(states[RNG_CUDA_KEY], self.device)
 
     def stats(self) -> wpb.WorkerStats:
         s = wpb.WorkerStats(handles=len(self.handles), graphs=len(self.programs), executes=self.executes)

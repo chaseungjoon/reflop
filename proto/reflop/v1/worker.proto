@@ -77,16 +77,42 @@ message DatasetClose {
 }
 
 // SnapshotWrite/SnapshotRead: one fd follows on the fd channel.
+//
+// A write is asynchronous (ADR-029): the worker takes references to the
+// tensors between two requests (the cut), reports the file size in
+// SnapshotCut, waits for SnapshotGo, then writes in a background thread and
+// answers with the client envelope (SnapshotSaved or CheckpointSaved).
 message SnapshotWrite {
   uint64 request_id = 1;
   repeated bytes handles = 2;
   repeated string keys = 3;
+  // checkpoint: save every live handle (key = handle hex) plus RNG state and
+  // `tag`/`generation` under reserved "__reflop__/" keys; handles/keys empty.
+  bool checkpoint = 4;
+  bytes tag = 5;
+  uint64 generation = 6;
 }
 
 message SnapshotRead {
   uint64 request_id = 1;
   repeated string keys = 2;
   repeated bytes handles = 3;
+  bool restore_rng = 4;  // also set the RNG state saved by a checkpoint
+}
+
+// SnapshotCut (worker → reflopd): the cut is taken; the file will have
+// exactly `bytes` bytes. reflopd answers SnapshotGo.
+message SnapshotCut {
+  uint64 request_id = 1;
+  uint64 bytes = 2;
+}
+
+// SnapshotGo (reflopd → worker): write the file, or drop the references.
+message SnapshotGo {
+  uint64 request_id = 1;
+  bool proceed = 2;
+  ErrorCode code = 3;  // when !proceed
+  string reason = 4;
 }
 
 message StatsRequest {}
@@ -110,9 +136,11 @@ message WorkerEnvelope {
     SnapshotWrite snapshot_write = 5;
     SnapshotRead snapshot_read = 6;
     StatsRequest stats_request = 7;
+    SnapshotGo snapshot_go = 8;
     // worker → reflopd
     WorkerReady ready = 20;
     WorkerStats stats = 21;
     Error fatal = 22;  // worker is about to exit
+    SnapshotCut snapshot_cut = 23;
   }
 }

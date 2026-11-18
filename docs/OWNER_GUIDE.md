@@ -236,16 +236,99 @@ upload with no progress for 7 days is deleted.
 
 ```sh
 reflopd pause            # new work waits; running work finishes
-reflopd pause --now      # also kills running workers (their sessions are lost)
+reflopd pause --now      # also frees the GPU now: running workers are suspended
 reflopd resume
 reflopd kill alice       # end alice's sessions (or pass a session id prefix)
 reflopd say "pausing in 10 minutes for a deadline run"
 reflopd yield --auto     # pause Guests whenever a non-reFLOP process uses the GPU
+reflopd yield --auto --suspend   # ... and suspend them too (off by default)
 reflopd yield --off
 ```
 
 Guests see pause, resume and your messages printed in their terminal. These
 events are informational only: nothing in them makes a Guest's client do anything.
+
+`reflopd pause --now` gives you the GPU back without ending sessions (ADR-030).
+The NVIDIA driver moves each GPU worker's memory into host RAM, inside that
+worker's own process, and `reflopd resume` moves it back. On an RTX 5070 this
+took 1.4 s for 8 GiB and 0.7 s to resume. The Guest's program waits meanwhile
+and continues as if nothing happened. reflopd kills a worker instead, as it
+did before, when:
+
+- suspending it would take host RAM below the RAM floor: it needs about as
+  much free RAM as the GPU memory it uses (nvidia-smi shows that);
+- a kernel is still running after 10 seconds;
+- the driver is older than 550, or the worker runs on the CPU.
+
+`pause --now` prints how many sessions it suspended and killed, and why.
+`reflopd status` marks suspended sessions. A killed session's last checkpoint
+(see below) stays, so the Guest can recover from it.
+
+Auto-yield pauses Guests but leaves their GPU memory allocated. With
+`yield --auto --suspend` it also suspends them, so your own programs get that
+memory. A worker that cannot be suspended then stays paused; it is not killed.
+
+reFLOP has no minimum host RAM requirement. Only suspending needs free RAM,
+and only as much as the GPU memory it moves.
+
+## Guest checkpoints
+
+Checkpoints are off by default. When you turn them on, a Guest can have its
+session saved to this machine's disk at a step boundary, at most once per
+interval. A worker crash, a `reflopd` restart or a `pause --now` that had to
+kill the worker then costs the Guest at most one interval of work.
+
+> [!WARNING]
+> **Checkpoints wear out SSDs and use extra GPU memory.**
+>
+> - Every checkpoint writes the Guest's whole state (parameters, optimizer
+>   state, buffers) to the disk that holds `~/.local/share/reflop/snapshots/`.
+>   A Guest whose state fills a 12 GiB GPU writes up to 72 GiB per hour at
+>   the default 10-minute interval (1.7 TiB per day), and up to 144 GiB per
+>   hour at the 5-minute minimum (3.4 TiB per day). Consumer SSDs are rated
+>   for a few hundred TB written over their life. A 217M-parameter model
+>   trained with AdamW has 3.3 GiB of state: 950 GiB per day at 5 minutes.
+> - While a checkpoint is copied, the GPU memory for the Guest's state
+>   doubles: a tensor that changes during the copy keeps its old version
+>   until that version is copied. A checkpoint that does not fit in free GPU
+>   memory is skipped, never forced, so it cannot take memory from another
+>   Guest.
+
+```sh
+reflopd checkpoints on                  # at most one per session every 10 minutes
+reflopd checkpoints on --interval 30m   # less often
+reflopd checkpoints off
+reflopd checkpoints                     # show the setting
+```
+
+Every time you turn them on, reflopd prints a red warning with the worst case
+for your GPUs and interval:
+
+```text
+WARNING: checkpoints wear out SSDs and use extra GPU memory.
+  Every 10m0s, each Guest session that uses checkpoints writes its whole state
+  (parameters, optimizer state, buffers) to this machine's disk.
+  If Guest state fills the GPU memory (12 GiB on NVIDIA GeForce RTX 5070), that is
+  up to 72 GiB written per hour of use (1.7 TiB per day).
+  Each GiB of Guest state writes 6 GiB per hour.
+  While a checkpoint is copied, the GPU memory for the Guest's state doubles.
+```
+
+The interval cannot be shorter than 5 minutes. No flag, setting or Guest
+request goes below that. Guests use your interval or a longer one, and
+reflopd refuses a checkpoint that comes sooner.
+
+Each session keeps one checkpoint, replaced atomically, in
+`snapshots/<identity>/.checkpoints/`. Checkpoints count against the disk rail
+and the identity's storage quota. A Guest who closes the session, `reflopd
+kill`, `revoke` and `unpair` delete the session's checkpoint: a session ended
+on purpose can never be brought back. After any other end (a crash, a rail,
+the session TTL, eviction, a restart) the checkpoint stays for 24 hours so the
+Guest can recover from it.
+
+Measured on an RTX 5070 with 3.3 GiB of Guest state, a checkpoint took about
+3.4 seconds to reach the disk and did not slow training measurably; the extra
+GPU memory was held for about 0.6 seconds ([fault_tolerance.md](fault_tolerance.md)).
 
 ## Monitoring and the audit log
 
@@ -301,7 +384,7 @@ Guests see their own lifetime totals with `reflop usage` (and a summary in
 | `~/.config/reflop/` | `server.key` (mode 0600) and `server.crt`, optional `reflopd.toml` |
 | `~/.local/share/reflop/identities/` | paired identities and pending invites |
 | `~/.local/share/reflop/store/<identity>/` | Guest datasets, content-addressed |
-| `~/.local/share/reflop/snapshots/<identity>/` | Guest snapshots |
+| `~/.local/share/reflop/snapshots/<identity>/` | Guest snapshots; checkpoints in `.checkpoints/` |
 | `~/.local/share/reflop/runtime/` | pinned runtimes and the worker package, read-only |
 | `~/.local/share/reflop/audit/` | audit log, one JSON-lines file per day |
 | `~/.cache/reflop/scratch/` | per-session scratch, deleted when a session ends |
@@ -339,6 +422,13 @@ tf32_cudnn = true
 [session]
 ttl = "30m"       # how long a disconnected session's state is kept; a kept
                   # session is evicted early when a new session needs its GPU memory
+
+[checkpoints]     # also set by `reflopd checkpoints on|off`
+enabled = false
+interval = "10m"  # never below 5m
+
+[yield]
+suspend = false   # `yield --auto --suspend`
 
 [sandbox]
 accept_weak_isolation = false

@@ -73,7 +73,7 @@ whitelisted tensor operators in sandboxed workers. Guests never get a shell.
 	root.AddCommand(
 		upCmd(), serveCmd(), stopCmd(), statusCmd(), installCmd(), uninstallCmd(),
 		inviteCmd(), usersCmd(), revokeCmd(), unpairCmd(), quotaCmd(), railsCmd(),
-		pauseCmd(), resumeCmd(), killCmd(), yieldCmd(), sayCmd(), topCmd(), usageCmd(), auditCmd(),
+		pauseCmd(), resumeCmd(), killCmd(), yieldCmd(), checkpointsCmd(), sayCmd(), topCmd(), usageCmd(), auditCmd(),
 		doctorCmd(), selftestCmd(), runtimeCmd(), updateCmd(), versionCmd(),
 	)
 	return root

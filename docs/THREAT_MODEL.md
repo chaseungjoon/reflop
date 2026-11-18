@@ -23,6 +23,8 @@ enforced, how it is tested, and what remains possible. It expands
 | Machine availability (disk, host RAM, process table) | disk fill, RAM exhaustion, fork bombs |
 | GPU time for the Owner | a Guest monopolizing the GPU |
 | Guest-to-Guest isolation | one Guest reading or changing another's tensors or datasets |
+| Guest data at rest (snapshots, checkpoints) | another identity reading it; a session revived after the Owner ended it |
+| The Owner's disk endurance | checkpoints writing the Guest's state over and over (ADR-029) |
 | Guest machines | a malicious or impersonated server attacking the client |
 | The connection | MITM, replay, impersonation |
 
@@ -31,7 +33,8 @@ enforced, how it is tested, and what remains possible. It expands
 A Guest can influence the server only through:
 
 1. the handshake (Hello, Pair, Authenticate),
-2. protobuf requests (register graph, execute, upload, fetch, free, datasets, snapshots),
+2. protobuf requests (register graph, execute, upload, fetch, free, datasets, snapshots,
+   checkpoints, session recovery),
 3. raw tensor bytes with an explicit dtype and shape,
 4. TensorPack uploads (safetensors shards and a JSON manifest).
 
@@ -126,7 +129,13 @@ Quotas (device memory, sessions, wall clock per execute, FLOPs per execute,
 storage, upload bandwidth) are optional and off by default. 0 is rejected as
 a quota value, because an unset quota means no limit; `unlimited` removes one.
 The storage quota counts uploads still in progress, and uploads with no
-progress for 7 days are deleted.
+progress for 7 days are deleted. Snapshots and checkpoints count against it
+too, and so do their writes in progress: the worker announces a write's exact
+size before writing, and reflopd reserves it against the disk rail and the
+quota or refuses it (ADR-028).
+
+Checkpoints are off unless the Owner turns them on, and then at most one per
+session per interval, never more often than every 5 minutes (ADR-029).
 
 ## Client protection
 
@@ -152,6 +161,10 @@ progress for 7 days are deleted.
 | A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes. A failed allocation while running may end the oldest detached session on that GPU; a graph rejected as larger than the device never does (ADR-022) |
 | Escape at Level 0 lands in the Owner's account | Level 1 moves it to an empty account |
 | The Owner sees Guests' data | by design (non-goal N1) |
+| Checkpoints wearing the Owner's SSD | Owner opt-in, off by default; a hard 5-minute floor on the interval, enforced by reflopd; a red worst-case warning every time they are turned on; the disk rail and quotas bound the space. The write volume itself is the cost the Owner accepts (ADR-029) |
+| A checkpoint doubling the Guest's GPU memory for a moment | the worker refuses the cut when the GPU lacks that much free memory, so a checkpoint never pushes another Guest into OUT_OF_MEMORY; references are dropped tensor by tensor as they are copied |
+| A revived session the Owner ended | kill, revoke, unpair and CloseSession delete the session's checkpoint, and a late write of that session is never published; RecoverSession reads only the calling identity's own directory and checks the file in full (Go and Python parsers) before anything is allocated |
+| The suspend helper (ADR-030) | it runs four CUDA driver calls on one pid. The driver's checkpoint API works between processes of one user without ptrace, so the helper is limited to reflop workers: reflopd passes only its own workers' pids, and the helper refuses any process whose parent is not its own parent or whose command line is not the worker's. It reads no Guest data; the driver moves GPU memory into the worker's own host memory |
 | A tampered client on PyPI | `pip` and `uv` do not check the offline signature. Only `pypi.yml`, through Trusted Publishing and the `pypi` GitHub environment, can upload, and only signed files. Someone who controls the PyPI account or the repository's Actions could still upload a different file. `install.sh` and `reflop update` check the signature on the Guest's machine |
 
 ## Known limitations
@@ -165,7 +178,11 @@ progress for 7 days are deleted.
 4. Results can differ bitwise from local runs (TF32, non-deterministic GPU kernels).
 5. GPU timing side channels between Guests are out of scope.
 6. Killing a worker (watchdog, rail, or the Owner) loses that session's state.
-   Long jobs should fetch or snapshot periodically.
+   With checkpoints, which the Owner must allow, a Guest loses only the work
+   since the last one and recovers in the same process; what the Guest keeps
+   on its own machine is not rewound. Long jobs can also `reflop.save`
+   periodically. `reflopd pause --now` suspends GPU workers instead of killing
+   them when host RAM allows.
 7. At Level 0 a sandbox escape would land in the Owner's account. Level 1 is stronger.
 8. Without quotas, Guests can starve each other of GPU memory. That is by
    design; contention produces errors, not damage.

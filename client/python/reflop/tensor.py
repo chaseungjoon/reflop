@@ -37,7 +37,7 @@ class Storage:
     in a server handle.
     """
 
-    __slots__ = ("session", "meta", "value", "version", "handle", "view_cache", "seq", "__weakref__")
+    __slots__ = ("session", "meta", "value", "version", "_handle", "view_cache", "seq", "lost", "__weakref__")
     _seq = itertools.count()
 
     def __init__(self, session, meta: torch.Tensor, value: Value | None) -> None:
@@ -46,12 +46,23 @@ class Storage:
         self.meta = meta
         self.value = value
         self.version = 0
-        self.handle: bytes | None = None
+        self._handle: bytes | None = None
+        self.lost = ""  # why this tensor's server data is gone (set by reflop.recover)
         self.view_cache: dict = {}
         if value is not None and value.kind == HANDLE:
             self.handle = value.handle
         elif value is not None:
             session.mark_dirty(self)
+
+    @property
+    def handle(self) -> bytes | None:
+        return self._handle
+
+    @handle.setter
+    def handle(self, h: bytes | None) -> None:
+        self._handle = h
+        if h is not None:
+            self.session.storages[h] = self  # every live server handle (reflop.recover)
 
     def set(self, value: Value) -> None:
         self.value = value
@@ -61,7 +72,7 @@ class Storage:
             self.session.mark_dirty(self)
 
     def __del__(self) -> None:
-        h = self.handle
+        h = self._handle
         if h is not None:
             try:
                 self.session.release(h)
@@ -341,6 +352,10 @@ def value_of(t: RemoteTensor) -> Value:
     """The current Value of t, replaying its view chain if needed."""
     st = t._rf_storage
     sess = st.session
+    if st.lost:
+        from .errors import SessionLostError
+
+        raise SessionLostError(18, st.lost)
     if st.value is None:
         st.set(sess.record_simple("aten.full.default", aten.full.default,
                                   [list(st.meta.shape), 0, st.meta.dtype, None, torch.device("reflop"), None],

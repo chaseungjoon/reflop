@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Session state survives more failures (#2, ADR-028, ADR-029, ADR-030).
+
+Owner:
+
+- `reflopd pause --now` no longer ends sessions: it suspends each GPU worker,
+  moving its GPU memory to host RAM, and `reflopd resume` brings it back. A
+  worker is still killed when host RAM is short, a kernel does not finish
+  within 10 seconds, the driver is older than 550, or it runs on the CPU.
+  `pause --now` reports what it did. `reflopd yield --auto --suspend`
+  (off by default) also suspends while auto-yield pauses Guests.
+- `reflopd checkpoints on|off [--interval]` lets Guests checkpoint their
+  sessions. Off by default; the interval defaults to 10 minutes and can never
+  be shorter than 5. Checkpoints write the Guest's whole state to disk each
+  time, which wears SSDs, and double that state's GPU memory while they are
+  copied: turning them on prints the worst case in red.
+- Snapshots are now synced to disk before they count as saved, never replace
+  the previous file on a failed write, and count against the disk rail and
+  the storage quota while they are written. A restore adds all of its tensors
+  or none.
+
+Client:
+
+- `reflop.save(name, state_dict)`, `reflop.load(name)`, `reflop.snapshots()`
+  and `reflop.delete_snapshot(name)` keep tensors on the server.
+- `reflop.device(checkpoint=True)` checkpoints the session at step boundaries,
+  at the Owner's interval or a longer `checkpoint_interval`, and warns in
+  yellow that the state's GPU memory doubles during a checkpoint. After a
+  `SessionLostError`, `reflop.recover()` continues from the last checkpoint
+  and returns the value set with `reflop.checkpoint_tag()`.
+
 ## 0.1.14 (2026-11-17)
 
 On macOS, `reflop run` keeps OpenMP on one thread (#7, ADR-027).

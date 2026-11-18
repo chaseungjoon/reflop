@@ -32,6 +32,7 @@ func (s *Server) monitor(ctx context.Context) {
 		if time.Since(lastSweep) > time.Hour {
 			lastSweep = time.Now()
 			go s.store.SweepStale(store.UploadTTL) // abandoned uploads (L4)
+			go s.sweepCheckpoints()
 		}
 		s.ramRail()
 		s.retryPending(ctx)
@@ -113,6 +114,10 @@ func (s *Server) watchdog() {
 		}
 		limit := time.Duration(q.ExecuteWallMS) * time.Millisecond
 		sess.mu.Lock()
+		if sess.suspended {
+			sess.mu.Unlock()
+			continue // the Owner suspended it: its executes are not running
+		}
 		over := false
 		for _, r := range sess.routes {
 			if r.kind == "execute" && time.Since(r.start) > limit {
@@ -137,6 +142,11 @@ func (s *Server) autoYield() {
 		s.paused.Store(true)
 		s.events.publish(pb.Event_KIND_YIELDING, "the Owner is using the GPU; Guest work is paused")
 		s.audit.Write(audit.Record{Identity: "owner", Event: "yield", Fields: map[string]any{"busy": true}})
+		if s.cfg().Yield.Suspend {
+			// Owner option (ADR-030): also give the GPU memory back. A
+			// session that cannot be suspended stays paused, not killed.
+			go s.suspendAll(false, "auto-yield")
+		}
 	case !busy && s.yielding.Load():
 		s.yielding.Store(false)
 		s.Resume("auto-yield")

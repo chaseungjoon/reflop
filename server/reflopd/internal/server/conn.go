@@ -265,17 +265,18 @@ func (c *clientConn) route(env *pb.Envelope) error {
 		return c.openSession(rid, b.OpenSession)
 	case *pb.Envelope_CloseSession:
 		if c.session != nil {
-			c.session.close("closed by client")
+			c.session.closeFinal("closed by client")
 			c.session = nil
 		}
 		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_SessionClosed{SessionClosed: &pb.SessionClosed{}}})
 	case *pb.Envelope_PackBegin, *pb.Envelope_PackChunk, *pb.Envelope_PackCommit, *pb.Envelope_ListDatasets,
 		*pb.Envelope_DeleteDataset:
 		return c.dataRequest(env)
-	case *pb.Envelope_ListSnapshots, *pb.Envelope_DeleteSnapshot:
+	case *pb.Envelope_ListSnapshots, *pb.Envelope_DeleteSnapshot, *pb.Envelope_DescribeSnapshot:
 		return c.snapshotAdmin(env)
 	case *pb.Envelope_RegisterGraph, *pb.Envelope_Execute, *pb.Envelope_UploadTensor, *pb.Envelope_Fetch,
-		*pb.Envelope_Free, *pb.Envelope_Snapshot, *pb.Envelope_Restore, *pb.Envelope_Reseed:
+		*pb.Envelope_Free, *pb.Envelope_Snapshot, *pb.Envelope_Restore, *pb.Envelope_Reseed,
+		*pb.Envelope_Checkpoint, *pb.Envelope_RecoverSession:
 		if c.session == nil {
 			c.sendErr(rid, pb.ErrorCode_ERROR_UNKNOWN_SESSION, "open a session first")
 			return nil
@@ -315,7 +316,9 @@ func (c *clientConn) unpair(rid uint64) error {
 }
 
 func (c *clientConn) openSession(rid uint64, req *pb.OpenSession) error {
-	if c.session != nil {
+	// A session whose worker died may be replaced on the same connection
+	// (the client then recovers it from its checkpoint).
+	if c.session != nil && !c.session.isClosed() {
 		c.sendErr(rid, pb.ErrorCode_ERROR_PROTOCOL, "this connection already has a session")
 		return nil
 	}

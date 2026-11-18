@@ -1,8 +1,27 @@
 # Fault-tolerant session state (Issue #2)
 
-Status: draft plan, 2026-11-15. Branch `enhance/fault-tolerant-state`.
-Nothing here is implemented yet. Once the open questions at the end are
-answered, the decisions go into `docs/DECISIONS.md` as ADRs.
+Status: first delivery implemented on 2026-11-18, branch
+`enhance/fault-tolerant-state`. The decisions are ADR-028, ADR-029 and
+ADR-030 in `docs/DECISIONS.md`, which override this plan. This file is a
+working document and keeps the design study and the measurements behind
+those decisions.
+
+## Where this stands (2026-11-18)
+
+| Part | State |
+|---|---|
+| A. Hardened snapshot write and restore (durable publication, reservations, all-or-nothing restore, key rules) | done, ADR-028 |
+| B. `reflop.save` / `load` / `snapshots` / `delete_snapshot` | done, ADR-028 |
+| D. Asynchronous checkpoints, Owner opt-in (off by default, 10-minute default, 5-minute hard floor), red Owner warning, yellow Guest warning | done, ADR-029 |
+| Recovery from the last checkpoint in the same process (`reflop.recover()`), final versus recoverable ends | done, ADR-029 |
+| `pause --now` suspends GPU workers through the CUDA driver; `yield --auto --suspend` | done, ADR-030 |
+| C/E. Client redo log and transparent replay | deferred: needs strict deterministic numerics and a client that reconnects with requests in flight |
+| F. reflopd spilling detached sessions and draining on shutdown | not started |
+
+Answers to the open questions below: checkpoints are off by default on the
+Owner side and opt-in on the Guest side; the redo log is not in the first
+release; `pause --now` is recoverable (it suspends, and a kill keeps the
+checkpoint); one ADR per decision.
 
 ## Problem
 
@@ -379,3 +398,46 @@ They do not validate the proposed recovery feature. Implementation must add
 permanent regression tests, update the changelog and relevant guides and threat
 model, regenerate protocol bindings where needed, and pass the repository's
 build, test, lint and code-generation checks.
+
+## Measurements (2026-11-18)
+
+RTX 5070 (12 GiB), driver 595, torch 2.15.0+cu132, NVMe SSD. The client's
+request stream was recorded from real training runs and replayed into the
+worker's `Session`, so the numbers are worker-side (faster than a real
+deployment, where the client and network add time: the relative overheads
+are upper bounds). Scripts and raw results were kept outside the repository.
+
+Checkpoint cost per mode (217M-parameter GPT, AdamW, 3.3 GiB of state):
+
+| Mode | ms/step | Worst stall | Extra GPU memory |
+|---|---|---|---|
+| no checkpoints | 99.6 | 0.2 s | none |
+| synchronous (the old `snapshot_write`), every 5 s | 182 (+83%) | 8.3 s | none |
+| side stream, 2 × 64 MiB pinned ring, back to back | 99.8 (noise) | 0.2 s | +3.3 GiB, held 0.6 s per checkpoint |
+| copy everything to host first, back to back | 105 (+6%) | 0.66 s | +3.3 GiB |
+
+ResNet-18 (130 MiB of state, about 5 ms per step) showed the same pattern: the
+ring design cost 0 to 5% with checkpoints back to back, the synchronous one
+made steps 36 times slower. A checkpoint of 3.3 GiB took 3.4 s to reach the
+disk with fsync. Every step rebinds every parameter and optimizer tensor, so
+for the copy's duration the old version of the whole state stays allocated.
+
+Disk volume at 3.3 GiB per checkpoint: 950 GiB per day at 5 minutes, 475 GiB
+per day at 10 minutes. The worst case, state that fills a 12 GiB GPU, is
+72 GiB per hour at 10 minutes.
+
+Redo log (prototype): 10 to 44 KiB per step when the batches stay on the
+server, about 1.5 MiB per step when every batch is uploaded. Replaying the
+log after restoring a checkpoint into a new worker gave bit-identical
+parameters for a GPT with dropout, a 217M-parameter GPT and ResNet-18, but
+ResNet-18 needed deterministic numerics: without them two uninterrupted runs
+already differ (22 of 249 tensors identical, cuDNN convolutions). Restoring
+without the RNG state, or without registering the graphs again, broke the
+replay.
+
+Suspend (CUDA driver process checkpoint API): 2 GiB in 0.49 s and 8 GiB in
+1.4 s to free the GPU, 0.3 s and 0.7 s to restore, data intact. It works on a
+process under the worker's seccomp filter and on a real sandboxed worker
+driven from inside reflopd's own sandbox (0.31 s for 1.3 GiB). The suspended
+memory moves into the worker's own host memory (its RSS grew by the same
+amount).

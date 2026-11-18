@@ -216,7 +216,7 @@ class Captured:
                 specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_REBIND, handle=sp.handle))
             else:
                 specs.append(sp)
-        return out, {"sess": sess, "hash": built.graph_hash, "sources": sources, "specs": specs,
+        return out, {"sess": sess, "hash": built.graph_hash, "graph": built.graph, "sources": sources, "specs": specs,
                      "owners": [st for st, _ in plan["owners"]]}
 
     @staticmethod
@@ -247,6 +247,12 @@ class Captured:
         return None
 
     def __call__(self, *args):
+        out = self._call(args)
+        for sess in list(_session._sessions.values()):
+            sess.maybe_checkpoint()  # a captured call is one step
+        return out
+
+    def _call(self, args):
         sig = _sig(args)
         if self.plan is not None and sig == self.sig:
             return self._replay(self.plan["sess"], args)
@@ -271,7 +277,7 @@ class Captured:
                 self.warned = True
                 name = getattr(self.fn, "__qualname__", "the step")
                 warnings.warn(f"reflop.capture: {name} runs eagerly (no replay): {_WHY[why]}.",
-                              RuntimeWarning, stacklevel=2)
+                              RuntimeWarning, stacklevel=3)
         self.prev, self.sig = plan, sig
         return out
 
@@ -302,6 +308,9 @@ class Captured:
                 values.append(Value(SCALAR, None, payload=src[1]))
             elif kind == "dataset":
                 values.append(src[1])
+        if self.plan["hash"] not in sess.registered:
+            # A new worker (after reflop.recover) has no graphs yet.
+            sess.register_graph(self.plan["graph"], self.plan["hash"])
         ex = cpb.Execute(graph_hash=self.plan["hash"])
         temp = sess.bind_inputs(ex, values)
         ex.outputs.extend(self.plan["specs"])

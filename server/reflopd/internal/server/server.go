@@ -97,6 +97,11 @@ type Server struct {
 	events       *broadcaster
 	throttles    map[string]*bucket
 
+	// Disk bytes reserved by snapshot and checkpoint writes in progress.
+	diskMu       sync.Mutex
+	diskReserved uint64
+	idReserved   map[string]uint64
+
 	listeners []net.Listener
 	started   time.Time
 }
@@ -136,7 +141,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{layout: l, opts: opts, config: cfg, key: key, ids: ids, audit: al, usage: ul, logger: logger,
 		sessions: map[string]*Session{}, conns: map[*clientConn]bool{}, preauth: map[string]int{}, events: newBroadcaster(),
-		throttles: map[string]*bucket{}, started: time.Now()}
+		throttles: map[string]*bucket{}, started: time.Now(), idReserved: map[string]uint64{}}
 	s.store = store.New(l.Store(), int64(cfg.Limits.UploadChunkBytes), cfg.Limits.MaxTensorNumel,
 		func() config.Rails { return s.cfg().Rails },
 		func(name string) uint64 { return uint64(s.quotaByID(name).StorageBytes) })
@@ -192,7 +197,7 @@ func (s *Server) Reload() error {
 	}
 	s.mu.Unlock()
 	for _, sess := range kill {
-		go sess.close("identity revoked")
+		go sess.closeFinal("identity revoked")
 	}
 	for _, c := range drop {
 		c.close()
@@ -555,7 +560,10 @@ func (s *Server) capabilitiesFor(id *auth.Identity) *pb.ServerCapabilities {
 			}
 		}
 	}
-	c.Capabilities = append(c.Capabilities, "usage")
+	c.Capabilities = append(c.Capabilities, "usage", "snapshots", "checkpoints")
+	if ck := s.cfg().Checkpoints; ck.Enabled {
+		c.CheckpointIntervalS = uint64(time.Duration(ck.Interval) / time.Second)
+	}
 	if len(slots) > 0 {
 		c.EnabledOpIds = s.filterOps(slots[0])
 		c.RuntimeInfo = slots[0].Runtime

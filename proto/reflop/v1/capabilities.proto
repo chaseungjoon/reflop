@@ -72,4 +72,7 @@ message ServerCapabilities {
   Numerics numerics = 6;
   Limits limits = 7;
   RuntimeInfo runtime_info = 8;  // informational only; never used in client logic
+  // Checkpoints ("checkpoints" capability): the Owner's interval in seconds,
+  // the shortest a Guest may use. 0 = the Owner has not enabled them.
+  uint64 checkpoint_interval_s = 9;
 }

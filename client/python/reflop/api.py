@@ -21,20 +21,29 @@ def _open_session(conn, index: int, allow_local_fallback: bool):
 
 
 def device(index: int = 0, *, server: str | None = None, kind: str = "auto", local: str | None = None,
-           allow_local_fallback: bool = True) -> torch.device:
+           allow_local_fallback: bool = True, checkpoint: bool = False, checkpoint_interval=None) -> torch.device:
     """Connect (once) and return the remote device.
 
     server: a name from `reflop pair` (default: the default server).
     kind:   "auto" (GPU if the server has one), "cuda" or "cpu" (server CPU).
     local:  run the reflop worker in-process instead ("cpu" or "cuda"); for
             tests and diagnostics only, gives no isolation.
+    checkpoint: save the session on the server at step boundaries, at most
+            once per interval, so reflop.recover() can continue after the
+            worker is lost. The Owner must allow it.
+    checkpoint_interval: seconds (or a timedelta) between checkpoints; the
+            default and the minimum are the Owner's interval.
     """
     register()
     from . import natives
 
     natives.register()
     try:
-        _session.by_index(index)
+        sess = _session.by_index(index)
+        if checkpoint:
+            from . import checkpoints
+
+            checkpoints.enable(sess, checkpoint_interval)
         return torch_device(index)
     except KeyError:
         pass
@@ -47,14 +56,25 @@ def device(index: int = 0, *, server: str | None = None, kind: str = "auto", loc
         from .client import connect
 
         conn = connect(server=server, kind=kind)
-    _open_session(conn, index, allow_local_fallback)
+    sess = _open_session(conn, index, allow_local_fallback)
+    if checkpoint:
+        from . import checkpoints
+
+        try:
+            checkpoints.enable(sess, checkpoint_interval)
+        except BaseException:
+            sess.close()
+            raise
     return torch_device(index)
 
 
 def step_boundary() -> None:
-    """Flush the trace (keeps traces step-aligned → high graph cache hits)."""
+    """Flush the trace (keeps traces step-aligned → high graph cache hits).
+
+    With checkpoints on, this is also where they are taken."""
     for s in list(_session._sessions.values()):
         s.flush()
+        s.maybe_checkpoint()
 
 
 def synchronize() -> None:
@@ -128,6 +148,66 @@ def _dedupe(tensors: dict) -> dict:
         seen[key] = k
         out[k] = v
     return out
+
+
+def _sess(index: int | None):
+    return _session.current() if index is None else _session.by_index(index)
+
+
+def save(name: str, tensors) -> int:
+    """Save reflop tensors on the server as the snapshot `name`.
+
+    `tensors` is a dict (nested dicts allowed), for example
+    model.state_dict() or optimizer.state_dict()["state"]. Only tensors are
+    stored. Returns the snapshot's size in bytes; an existing snapshot with
+    the same name is replaced once the new one is safely written."""
+    from . import checkpoints
+
+    return checkpoints.save(name, tensors)
+
+
+def load(name: str, index: int | None = None) -> dict:
+    """Load the snapshot `name` into new reflop tensors: {name: tensor}.
+
+    Works in any later session of the same identity, for example
+    model.load_state_dict(reflop.load("run1"))."""
+    from . import checkpoints
+
+    return checkpoints.load(name, _sess(index))
+
+
+def snapshots(index: int | None = None) -> list[dict]:
+    """Your snapshots on the server: name, bytes, created."""
+    from . import checkpoints
+
+    return checkpoints.snapshots(_sess(index))
+
+
+def delete_snapshot(name: str, index: int | None = None) -> None:
+    from . import checkpoints
+
+    checkpoints.delete(name, _sess(index))
+
+
+def checkpoint_tag(obj, index: int | None = None) -> None:
+    """Store a small JSON value (for example {"step": 1200}) with the next
+    checkpoints; reflop.recover() returns it."""
+    from . import checkpoints
+
+    checkpoints.set_tag(_sess(index), obj)
+
+
+def recover(index: int | None = None):
+    """After SessionLostError: start a new session from the last checkpoint.
+
+    Tensors that existed at the checkpoint have their values from then;
+    tensors created later raise SessionLostError when used. Returns the
+    reflop.checkpoint_tag() value of that checkpoint (None if none was set).
+    Raises ReflopError when there is no checkpoint (none was saved yet, or
+    the Owner ended the session on purpose)."""
+    from . import checkpoints
+
+    return checkpoints.recover(_sess(index))
 
 
 def stats() -> dict:
