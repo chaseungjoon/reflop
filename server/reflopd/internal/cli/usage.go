@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
+	"github.com/reflopai/reflop/server/reflopd/internal/usage"
 )
 
 func usageCmd() *cobra.Command {

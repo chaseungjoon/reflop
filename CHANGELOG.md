@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Development:
+
+- The Go module path is now `github.com/reflopai/reflop`, matching the
+  repository's new home. Go code that imports reflop packages needs the new
+  path; the generated protobuf code was regenerated with the same protoc
+  29.5 and protoc-gen-go 1.36.12.
+- The client caches operator names on the dispatch path instead of
+  formatting them several times per traced op.
+
 ## 0.2.1 (2026-11-19)
 
 The sandbox isolation probes now run in CI (#3, ADR-031), and every link

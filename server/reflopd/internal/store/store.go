@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/rails"
 )
 
 // NameRe constrains dataset and snapshot names.

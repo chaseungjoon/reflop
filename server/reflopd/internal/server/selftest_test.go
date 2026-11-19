@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
 )
 
 // The worker error from `reflopd up` on 0.1.9 when the desktop held 11.4 GiB

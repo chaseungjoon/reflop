@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/chaseungjoon/reflop/pkg/opset"
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/opset"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
 )
 
 type value struct {

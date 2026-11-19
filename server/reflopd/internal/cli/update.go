@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/selfupdate"
+	"github.com/reflopai/reflop/server/reflopd/internal/buildinfo"
+	"github.com/reflopai/reflop/server/reflopd/internal/selfupdate"
 )
 
 func updateCmd() *cobra.Command {

@@ -20,7 +20,7 @@ go_out=pkg
 rm -rf "$go_out/reflopv1"
 mkdir -p "$go_out"
 "$PROTOC" -I proto --plugin=protoc-gen-go="$PROTOC_GEN_GO" \
-	--go_out="$go_out" --go_opt=module=github.com/chaseungjoon/reflop/pkg \
+	--go_out="$go_out" --go_opt=module=github.com/reflopai/reflop/pkg \
 	proto/reflop/v1/*.proto
 
 for dst in server/worker/reflop_worker/_pb client/python/reflop/_pb; do

@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
 )
 
 // Totals is the cumulative usage of one identity.

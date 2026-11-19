@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
 )
 
 const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILs7graug4rm/Iz4hvKqazO5MLF8HcSzVedtFmkYjbTH guest@mac"

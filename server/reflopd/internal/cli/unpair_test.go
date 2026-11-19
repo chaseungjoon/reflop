@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
 )
 
 // ADR-025: `reflopd unpair` is revoke + users delete in one confirmed step,

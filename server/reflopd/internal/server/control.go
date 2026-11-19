@@ -18,16 +18,16 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/rails"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/suspend"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/buildinfo"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/rails"
+	"github.com/reflopai/reflop/server/reflopd/internal/sandbox"
+	"github.com/reflopai/reflop/server/reflopd/internal/suspend"
+	"github.com/reflopai/reflop/server/reflopd/internal/usage"
 )
 
 // ControlRequest is one Owner command on the control socket.

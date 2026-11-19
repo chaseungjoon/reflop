@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/pkg/wire"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/wire"
 )
 
 const maxFrame = 64 << 20

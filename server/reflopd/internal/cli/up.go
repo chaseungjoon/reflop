@@ -19,14 +19,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/cgroup"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/runtime"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/server"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/cgroup"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/runtime"
+	"github.com/reflopai/reflop/server/reflopd/internal/sandbox"
+	"github.com/reflopai/reflop/server/reflopd/internal/server"
 )
 
 const unitName = "reflopd.service"

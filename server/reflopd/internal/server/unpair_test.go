@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/pkg/wire"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/wire"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
 )
 
 type syncBuf struct {

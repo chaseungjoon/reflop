@@ -11,9 +11,9 @@ from .natives import op
 
 def fused(sess, func, vals):
     """Functionalize aten._fused_adam(w)_ / _fused_sgd_ / _fused_adagrad_."""
-    from .tensor import _assign, _rebind, dispatch
+    from .tensor import _assign, _op_name, _rebind, dispatch
 
-    name = str(func)
+    name = _op_name(func)
     if name in ("aten._fused_adam_.default", "aten._fused_adamw_.default"):
         params, grads, m, v, mx, steps, lr, b1, b2, wd, eps, ams, mxz, gs, fi = vals
         if isinstance(lr, torch.Tensor):
@@ -51,9 +51,9 @@ def fused(sess, func, vals):
 
 def amp(sess, func, vals):
     """GradScaler's in-place kernels → reflop-native functional ops."""
-    from .tensor import _assign, dispatch
+    from .tensor import _assign, _op_name, dispatch
 
-    name = str(func)
+    name = _op_name(func)
     if name == "aten._amp_foreach_non_finite_check_and_unscale_.default":
         grads, found_inf, inv_scale = vals
         new_grads, new_found = dispatch(sess, op("amp_unscale_and_check"), (list(grads), found_inf, inv_scale), {})

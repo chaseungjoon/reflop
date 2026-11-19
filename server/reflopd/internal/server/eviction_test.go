@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
 )
 
 // evictionFixture is a GPU slot with Guest A attached and Guest B detached.

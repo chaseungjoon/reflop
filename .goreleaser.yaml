@@ -24,9 +24,9 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
-      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Version={{ .Version }}
-      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Commit={{ .FullCommit }}
-      - -X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Date={{ .CommitDate }}
+      - -X github.com/reflopai/reflop/server/reflopd/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/reflopai/reflop/server/reflopd/internal/buildinfo.Commit={{ .FullCommit }}
+      - -X github.com/reflopai/reflop/server/reflopd/internal/buildinfo.Date={{ .CommitDate }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:

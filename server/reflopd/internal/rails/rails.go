@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
 )
 
 // DiskUsage describes a filesystem.

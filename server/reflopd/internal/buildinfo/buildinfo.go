@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package buildinfo carries version metadata injected at build time with
-// -ldflags "-X github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo.Version=...".
+// -ldflags "-X github.com/reflopai/reflop/server/reflopd/internal/buildinfo.Version=...".
 package buildinfo
 
 import (

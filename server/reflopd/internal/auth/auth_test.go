@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
 )
 
 func pairReq(t *testing.T, inv *Invite, priv ed25519.PrivateKey, nonce, fp []byte) *pb.Pair {

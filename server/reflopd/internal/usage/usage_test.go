@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
 )
 
 func writeLog(t *testing.T, dir string, base time.Time) {

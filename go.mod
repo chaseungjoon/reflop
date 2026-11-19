@@ -1,4 +1,4 @@
-module github.com/chaseungjoon/reflop
+module github.com/reflopai/reflop
 
 go 1.26.0
 

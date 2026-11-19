@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chaseungjoon/reflop/pkg/opset"
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
+	"github.com/reflopai/reflop/pkg/opset"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server/reflopd/internal/supervisor"
 )
 
 func opID(name string) uint32 {

@@ -117,7 +117,7 @@ class RemoteTensor(torch.Tensor):
                 s = x._rf_storage.session
                 if sess is None:
                     sess = s
-                elif s is not sess and str(func) != "aten._to_copy.default":
+                elif s is not sess and _op_name(func) != "aten._to_copy.default":
                     raise RuntimeError(
                         f"{func}: these reflop tensors live in different server sessions (device "
                         f"{sess.device_index} and {s.device_index}); move one with .to(reflop.device(i))")
@@ -226,6 +226,18 @@ class RemoteTensor(torch.Tensor):
                           copy=copy, memory_format=mf or torch.preserve_format)
 
 
+# OpOverload.__str__ formats the name on every call, and dispatch asks for it
+# several times per op. Overloads are singletons, so the cache stays small.
+_OP_NAMES: dict = {}
+
+
+def _op_name(func) -> str:
+    name = _OP_NAMES.get(func)
+    if name is None:
+        name = _OP_NAMES[func] = str(func)
+    return name
+
+
 def _split_copy(args, kwargs):
     """Remove `copy` from Tensor.to arguments (torch's _parse_to rejects it)."""
     kwargs = dict(kwargs)
@@ -319,7 +331,7 @@ def meta_cached(func, args, kwargs):
     global _UNCACHED_FLAGS
     if _UNCACHED_FLAGS is None:
         _UNCACHED_FLAGS = opset.FLAG_ALLOC | opset.FLAG_RNG
-    entry = opset.OPS.get(str(func))
+    entry = opset.OPS.get(_op_name(func))
     if entry is None or entry[1] & _UNCACHED_FLAGS:
         return run_meta(func, args, kwargs)
     try:
@@ -380,7 +392,7 @@ def value_of(t: RemoteTensor) -> Value:
         a, kw = _rebind(func, [cur_meta, *rest])
         out_meta = run_meta(func, a, kw)
         metas = _flat_tensors(out_meta)
-        outs = sess.record_values(str(func), func, [v, *rest], metas, self_is_value=True)
+        outs = sess.record_values(_op_name(func), func, [v, *rest], metas, self_is_value=True)
         v = outs[k if k is not None else 0]
         cur_meta = metas[k if k is not None else 0]
         st.view_cache[prefix] = (tag, v, cur_meta)
@@ -389,7 +401,7 @@ def value_of(t: RemoteTensor) -> Value:
 
 # Inverses for writing through a view (functionalization "view inverse").
 def _inverse(sess, func, rest, k, base_meta, base_val: Value, new_val: Value, view_meta) -> Value:
-    name = str(func)
+    name = _op_name(func)
     rec = sess.record_simple
 
     def scatter(sname, sfunc, args):
@@ -470,7 +482,7 @@ def write(t: RemoteTensor, new_val: Value, new_meta: torch.Tensor | None = None)
     for func, rest, k in t._rf_chain[:-1]:
         a, kw = _rebind(func, [cm, *rest])
         om = _flat_tensors(run_meta(func, a, kw))
-        cur = sess.record_values(str(func), func, [cur, *rest], om, self_is_value=True)[k or 0]
+        cur = sess.record_values(_op_name(func), func, [cur, *rest], om, self_is_value=True)[k or 0]
         cm = om[k or 0]
         vals.append(cur)
         metas.append(cm)
@@ -598,7 +610,7 @@ def _placement_local(sess, func, args, kwargs):
 
 
 def _dispatch(sess, func, args, kwargs):
-    name = str(func)
+    name = _op_name(func)
     if name not in _SPECIALS and _placement_local(sess, func, args, kwargs):
         return _run_locally(sess, func, args, kwargs, keep_local=True)
     special = _SPECIALS.get(name)
@@ -622,7 +634,7 @@ def _view(sess, func, args, kwargs):
     out_meta = run_meta(func, args, kwargs)
     rest = tuple(_freeze(v) for v in vals[1:])
     st = src._rf_storage
-    if str(func) in ("aten.alias.default", "aten.detach.default", "aten.lift_fresh.default"):
+    if _op_name(func) in ("aten.alias.default", "aten.detach.default", "aten.lift_fresh.default"):
         return RemoteTensor(out_meta, st, src._rf_chain)
     if isinstance(out_meta, torch.Tensor):
         return RemoteTensor(out_meta, st, src._rf_chain + ((func, rest, None),))
@@ -675,7 +687,7 @@ def _wrap_outputs(sess, out_meta, values: list[Value]):
 
 
 def _functional(sess, func, args, kwargs):
-    name = str(func)
+    name = _op_name(func)
     entry = opset.OPS.get(name)
     if entry is not None and entry[1] & opset.FLAG_DDS:
         return _dds(sess, func, args, kwargs)
@@ -693,7 +705,7 @@ def _functional(sess, func, args, kwargs):
 
 def _fallback(sess, func, args, kwargs):
     """Not in the opset: decompose, else run locally, else fail (§11.2 step 2)."""
-    name = str(func)
+    name = _op_name(func)
     from .decomp import TABLE as REFLOP_DECOMP
 
     d = REFLOP_DECOMP.get(func) or _decomp_table().get(func)
@@ -735,7 +747,7 @@ def _run_locally(sess, func, args, kwargs, keep_local=False):
 
 
 def _mutating(sess, func, args, kwargs):
-    name = str(func)
+    name = _op_name(func)
     schema = func._schema
     vals = normalize(func, args, kwargs)
     if name in _BATCH_NORM:
@@ -834,7 +846,7 @@ def _batch_norm(sess, func, vals):
 
 
 def _dds(sess, func, args, kwargs):
-    name = str(func)
+    name = _op_name(func)
     if name == "aten.nonzero.default":
         (x,) = normalize(func, args, kwargs)
         cnt = dispatch(sess, _native("nonzero_count"), (x,), {})
@@ -951,7 +963,7 @@ def _random_(sess, func, args, kwargs):
     """random_(from, to) → randint.low on the session generator (functional)."""
     vals = normalize(func, args, kwargs)
     dst = vals[0]
-    name = str(func)
+    name = _op_name(func)
     if name == "aten.random_.from":
         lo, hi = vals[1], vals[2]
     elif name == "aten.random_.to":

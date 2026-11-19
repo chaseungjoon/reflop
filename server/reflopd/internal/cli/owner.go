@@ -21,14 +21,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/pkg/sshhost"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/server"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/sshpipe"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/sshhost"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/server"
+	"github.com/reflopai/reflop/server/reflopd/internal/sshpipe"
 )
 
 func makeInvite(l paths.Layout, name string, ttl time.Duration, listen []string) (string, error) {

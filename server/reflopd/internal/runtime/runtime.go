@@ -28,8 +28,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
 )
 
 //go:embed lock.json

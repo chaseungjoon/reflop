@@ -22,10 +22,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/pkg/wire"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/cgroup"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/wire"
+	"github.com/reflopai/reflop/server/reflopd/internal/cgroup"
+	"github.com/reflopai/reflop/server/reflopd/internal/sandbox"
 )
 
 // Spec describes one worker.
@@ -542,7 +542,9 @@ func countUserTasks() int {
 }
 
 // UserNSAvailable probes whether unprivileged user+network namespaces can
-// be created (false on Ubuntu 24.04 defaults, where AppArmor restricts them).
+// be created. The answer depends on the kernel and its settings, not just the
+// distribution: with Ubuntu 24.04's AppArmor restriction on, `unshare -Urn`
+// fails, but this probe (the parent writes the ID maps) can still succeed.
 func UserNSAvailable() bool {
 	cmd := exec.Command("/proc/self/exe", "__userns-probe")
 	cmd.Env = []string{}
