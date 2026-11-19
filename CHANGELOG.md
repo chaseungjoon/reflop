@@ -8,8 +8,13 @@ points at the repository's new home, github.com/reflopai/reflop.
 Owner and Guest:
 
 - `reflopd update`, `reflop update` and `install.sh` download releases from
-  github.com/reflopai/reflop. Older versions use the old address, which
-  GitHub redirects, so they can still update to this release.
+  github.com/reflopai/reflop.
+- reflopd and the client at 0.2.0 or older cannot find this release by
+  themselves: they fail with "could not determine the latest release",
+  because they read the version from GitHub's redirect and the old address
+  now redirects to the new one first. Name the version instead:
+  `reflopd update --version v0.2.1` and `reflop update --version v0.2.1`.
+  Both still check the signature. From 0.2.1 on, plain `update` works again.
 
 Development:
 
