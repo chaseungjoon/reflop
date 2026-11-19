@@ -1286,7 +1286,7 @@ const file_reflop_v1_worker_proto_rawDesc = "" +
 	"\x05stats\x18\x15 \x01(\v2\x16.reflop.v1.WorkerStatsH\x00R\x05stats\x12(\n" +
 	"\x05fatal\x18\x16 \x01(\v2\x10.reflop.v1.ErrorH\x00R\x05fatal\x12;\n" +
 	"\fsnapshot_cut\x18\x17 \x01(\v2\x16.reflop.v1.SnapshotCutH\x00R\vsnapshotCutB\x06\n" +
-	"\x04bodyB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
+	"\x04bodyB)Z'github.com/reflopai/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_worker_proto_rawDescOnce sync.Once

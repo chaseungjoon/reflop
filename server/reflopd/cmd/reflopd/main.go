@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/cli"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/sandbox"
+	"github.com/reflopai/reflop/server/reflopd/internal/cli"
+	"github.com/reflopai/reflop/server/reflopd/internal/sandbox"
 )
 
 func main() {

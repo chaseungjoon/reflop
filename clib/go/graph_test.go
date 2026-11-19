@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
 )
 
 func tensorArg(v value) *pb.Arg { return &pb.Arg{Value: &pb.Arg_Tensor{Tensor: ref(v)}} }

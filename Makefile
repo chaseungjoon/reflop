@@ -2,7 +2,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-PKG     := github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo
+PKG     := github.com/reflopai/reflop/server/reflopd/internal/buildinfo
 LDFLAGS := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(DATE)
 PYTHON  ?= $(CURDIR)/.venv/bin/python
 

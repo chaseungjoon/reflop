@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
 )
 
 func stFile(hdr string, data []byte) []byte {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
 )
 
 // `reflopd users delete` refuses active identities and, for a revoked one,

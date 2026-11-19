@@ -16,8 +16,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
 )
 
 const (

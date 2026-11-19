@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/gpu"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/gpu"
 )
 
 // The warning gives the worst case for the configured interval.

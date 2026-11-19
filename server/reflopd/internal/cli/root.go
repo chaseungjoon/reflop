@@ -14,9 +14,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/server"
+	"github.com/reflopai/reflop/server/reflopd/internal/buildinfo"
+	"github.com/reflopai/reflop/server/reflopd/internal/paths"
+	"github.com/reflopai/reflop/server/reflopd/internal/server"
 )
 
 // Exit codes.

@@ -638,7 +638,7 @@ const file_reflop_v1_capabilities_proto_rawDesc = "" +
 	"\bnumerics\x18\x06 \x01(\v2\x13.reflop.v1.NumericsR\bnumerics\x12)\n" +
 	"\x06limits\x18\a \x01(\v2\x11.reflop.v1.LimitsR\x06limits\x129\n" +
 	"\fruntime_info\x18\b \x01(\v2\x16.reflop.v1.RuntimeInfoR\vruntimeInfo\x122\n" +
-	"\x15checkpoint_interval_s\x18\t \x01(\x04R\x13checkpointIntervalSB-Z+github.com/chaseungjoon/reflop/pkg/reflopv1b\x06proto3"
+	"\x15checkpoint_interval_s\x18\t \x01(\x04R\x13checkpointIntervalSB)Z'github.com/reflopai/reflop/pkg/reflopv1b\x06proto3"
 
 var (
 	file_reflop_v1_capabilities_proto_rawDescOnce sync.Once

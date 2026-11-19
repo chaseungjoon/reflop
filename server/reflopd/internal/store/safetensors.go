@@ -11,7 +11,7 @@ import (
 	"io"
 	"sort"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
 )
 
 // MaxHeader bounds the safetensors JSON header (§10.2).

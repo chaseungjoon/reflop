@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/chaseungjoon/reflop/pkg/sshhost"
+	"github.com/reflopai/reflop/pkg/sshhost"
 )
 
 // pinnedHostArgs returns the ssh options that make ssh trust only the host

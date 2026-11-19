@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/usage"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/usage"
 )
 
 func TestGuestUsageIsOwnAndLive(t *testing.T) {

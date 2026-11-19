@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/pkg/wire"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/pkg/wire"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
 )
 
 // NameRe constrains identity names.

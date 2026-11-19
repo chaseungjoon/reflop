@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/chaseungjoon/reflop/pkg/reflopv1"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/audit"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/auth"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/store"
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/supervisor"
+	pb "github.com/reflopai/reflop/pkg/reflopv1"
+	"github.com/reflopai/reflop/server/reflopd/internal/audit"
+	"github.com/reflopai/reflop/server/reflopd/internal/auth"
+	"github.com/reflopai/reflop/server/reflopd/internal/store"
+	"github.com/reflopai/reflop/server/reflopd/internal/supervisor"
 )
 
 type route struct {

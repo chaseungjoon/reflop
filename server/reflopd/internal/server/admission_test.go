@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chaseungjoon/reflop/server/reflopd/internal/config"
+	"github.com/reflopai/reflop/server/reflopd/internal/config"
 )
 
 func testServer(maxConns uint32) *Server {
