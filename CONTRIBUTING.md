@@ -22,9 +22,13 @@ On a Linux machine with an NVIDIA GPU, the tests also run on CUDA. To run the
 sandbox probes you need an installed runtime:
 
 ```sh
-REFLOP_HOME=/tmp/rf ./bin/reflopd runtime install
+REFLOP_HOME=/tmp/rf ./bin/reflopd runtime install --variant cpu
 REFLOP_TEST_HOME=/tmp/rf make test-isolation
 ```
+
+CI runs them in strict mode (`REFLOP_TEST_STRICT=1`), where anything that
+would make a probe skip or pass without testing the sandbox is a failure. See
+[tests/security/isolation/README.md](tests/security/isolation/README.md).
 
 ## Rules
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Development:
+
+- CI runs the sandbox isolation probes inside real sandboxed workers, with
+  user namespaces off and on, on sandbox pull requests, every push to `main`
+  and nightly (#3, ADR-031). In strict mode (`REFLOP_TEST_STRICT=1`) the test
+  fails instead of skipping when Landlock, seccomp or the runtime is missing,
+  and when a probe target does not exist.
+- The CUDA isolation probes skip when the installed runtime has no CUDA,
+  instead of failing.
+
 ## 0.2.0 (2026-11-18)
 
 Session state survives more failures (#2, ADR-028, ADR-029, ADR-030).
