@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-11-19)
+
+The sandbox isolation probes now run in CI (#3, ADR-031). No change to
+reflopd, the worker or the client at run time.
 
 Development:
 
