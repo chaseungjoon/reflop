@@ -791,3 +791,42 @@ is why it accepts only reflop workers. The driver API needs no ptrace, so
 reflopd's seccomp filter does not limit it. Guests see a "suspended" event and
 their requests wait. Tests: `TestHelperRefusesOtherProcesses`,
 `test_suspend_helper_refuses_non_workers`.
+
+## ADR-031: The isolation probes run in CI and fail closed
+
+**Context.** The isolation probes (PLAN.md §17.5) are the only test that a
+sandboxed worker really cannot open sockets, read the Owner's files, exec,
+fork, ptrace, mount or unshare. They need a test build and an installed
+runtime, so they ran only by hand; CI only compiled them (issue #3). A
+change to the sandbox, the seccomp filter or the supervisor could break
+isolation with CI still green. A CI job that skips when the runner lacks
+Landlock or seccomp would have the same problem after a runner kernel change.
+
+**Decision.** `.github/workflows/isolation.yml` builds reflopd, installs the
+pinned CPU runtime into a temporary `REFLOP_HOME` and runs the probes with
+`REFLOP_TEST_STRICT=1`. Strict mode fails instead of skipping when there is
+no runtime, no Landlock or no seccomp, or when the user namespace mode is not
+the one the job asked for (`REFLOP_TEST_USERNS`). It makes each probe worker
+require Landlock and seccomp, checks that the Landlock domain was applied,
+and fails if a read or list target does not exist, because a probe that gets
+ENOENT counts as blocked without testing the sandbox. The job sets the
+namespace mode itself (`user.max_user_namespaces`) and runs twice, with user
+namespaces off and on, since runner defaults vary and reflopd behaves
+differently in each mode. It runs on pull requests that touch the sandbox,
+supervisor, runtime, worker or the job itself, on every push to `main`, and
+nightly. The probes stay in `server/worker/testprobes/`, because `go:embed`
+cannot reach files outside the embedding package's directory;
+`tests/security/isolation/README.md` points there.
+
+**Alternatives.** Run on every pull request (a few minutes added to every
+PR, also those that cannot affect isolation). Test only the runner's default
+namespace mode (one of reflopd's two sandbox setups would never run). Move
+the probes to `tests/security/isolation/` (reflopd would have to import a
+package from `tests/`).
+
+**Consequences.** A sandbox break is caught on the pull request when it
+touches the sandbox paths, and otherwise on the push to `main` or by the next
+nightly run. The job takes a few minutes per mode; the runtime download is
+cached by `lock.json` hash and verified on every install. If GitHub's runners
+ever lose Landlock or seccomp, the job turns red rather than passing. Tests:
+`TestIsolationProbes`, `TestIsolationStrictChecks`.

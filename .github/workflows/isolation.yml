@@ -1,0 +1,96 @@
+name: Isolation
+
+# Runs the sandbox isolation probes (PLAN.md §17.5) inside real sandboxed
+# workers: each one tries to open a socket, read the Owner's files, exec,
+# fork, ptrace, mount and so on, and must be blocked. Issue #3.
+#
+# REFLOP_TEST_STRICT=1 makes the job fail, not skip, when the runner cannot
+# run them under the full sandbox (no Landlock, no seccomp, the wrong user
+# namespace mode, a missing probe target), so a runner change can never turn
+# it into a silent no-op.
+
+on:
+  pull_request:
+    paths:
+      - server/reflopd/internal/sandbox/**
+      - server/reflopd/internal/supervisor/**
+      - server/reflopd/internal/runtime/**
+      - server/reflopd/internal/server/isolation_test.go
+      - server/worker/**
+      - server/bundle*.go
+      - .github/workflows/isolation.yml
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"  # nightly, catches isolation breaks from other paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probes:
+    name: Sandbox probes (user namespaces ${{ matrix.userns == '1' && 'on' || 'off' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 0: reflopd falls back to Landlock + seccomp only.
+        # 1: reflopd also puts the worker in its own user and network namespace.
+        userns: ["0", "1"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: kernel sandbox features
+        run: |
+          uname -a
+          echo "LSMs: $(sudo cat /sys/kernel/security/lsm)"
+          sysctl user.max_user_namespaces kernel.apparmor_restrict_unprivileged_userns || true
+
+      # Set the namespace mode explicitly: runner defaults differ between
+      # images and kernels. The test checks the mode it gets (REFLOP_TEST_USERNS).
+      - name: user namespaces off
+        if: matrix.userns == '0'
+        run: sudo sysctl -w user.max_user_namespaces=0
+      - name: user namespaces on
+        if: matrix.userns == '1'
+        run: |
+          sudo sysctl -w user.max_user_namespaces=65536
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: test home
+        run: echo "REFLOP_TEST_HOME=$RUNNER_TEMP/reflop-home" >> "$GITHUB_ENV"
+
+      # Install verifies every file's SHA-256 against lock.json, cached or not.
+      - name: runtime download cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/reflop-home/runtime/downloads
+          key: reflop-runtime-cpu-${{ runner.arch }}-${{ hashFiles('server/reflopd/internal/runtime/lock.json') }}
+
+      - name: install the CPU runtime
+        run: make build && REFLOP_HOME="$REFLOP_TEST_HOME" bin/reflopd runtime install --variant cpu
+
+      # Probes that read a file count ENOENT as "blocked", which proves
+      # nothing. Give them real targets; strict mode fails if one is missing.
+      - name: probe targets
+        run: |
+          umask 077
+          mkdir -p ~/.ssh "$REFLOP_TEST_HOME/config" "$REFLOP_TEST_HOME/state/identities"
+          test -e ~/.ssh/id_ed25519 || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
+          echo "probe target, not a key" > "$REFLOP_TEST_HOME/config/server.key"
+          echo '{}' > "$REFLOP_TEST_HOME/state/identities/identities.json"
+
+      - name: isolation probes (strict)
+        env:
+          REFLOP_TEST_STRICT: "1"
+          REFLOP_TEST_USERNS: ${{ matrix.userns }}
+        run: go test -count=1 -timeout 20m -tags reflop_probes ./server/reflopd/internal/server -run Isolation -v
