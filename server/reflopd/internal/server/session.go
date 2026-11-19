@@ -43,21 +43,23 @@ type Session struct {
 	created  time.Time
 	quiet    bool // probe or self-test: worker stderr is not logged (see workerLog)
 
-	mu        sync.Mutex
-	conn      *clientConn
-	detached  time.Time
-	nextID    uint64
-	routes    map[uint64]*route
-	streams   map[[2]uint64]uint64 // (gen, client rid) → internal id, for upload streams
-	held      []*pb.Envelope       // queued while the Owner has paused execution
-	heldConn  []*clientConn
-	datasets  map[string]bool
-	closed    bool
-	lostWhy   string
-	executes  uint64
-	flops     uint64
-	statsWait []chan *pb.WorkerStats
-	lastStats *pb.WorkerStats
+	mu             sync.Mutex
+	conn           *clientConn
+	detached       time.Time
+	nextID         uint64
+	routes         map[uint64]*route
+	streams        map[[2]uint64]uint64 // (gen, client rid) → internal id, for upload streams
+	held           []heldReq            // queued while the Owner has paused execution (held.go)
+	heldBytes      int64
+	releasing      bool // release is forwarding held requests; newer ones queue behind them
+	heldFullLogged bool
+	datasets       map[string]bool
+	closed         bool
+	lostWhy        string
+	executes       uint64
+	flops          uint64
+	statsWait      []chan *pb.WorkerStats
+	lastStats      *pb.WorkerStats
 
 	// Snapshots and checkpoints (snapshots.go).
 	writing        *pendingWrite // at most one write in progress
@@ -224,19 +226,14 @@ func (s *Session) forward(c *clientConn, env *pb.Envelope) error {
 		c.sendErr(env.RequestId, pb.ErrorCode_ERROR_SESSION_LOST, "session lost: "+why)
 		return nil
 	}
-	if s.srv.paused.Load() {
-		if _, isUpload := env.Body.(*pb.Envelope_UploadTensor); !isUpload {
-			s.held = append(s.held, env)
-			s.heldConn = append(s.heldConn, c)
-			s.mu.Unlock()
-			return nil
-		}
-	}
-	if len(s.held) > 0 {
-		// Keep order behind held requests.
-		s.held = append(s.held, env)
-		s.heldConn = append(s.heldConn, c)
+	_, isUpload := env.Body.(*pb.Envelope_UploadTensor)
+	// Hold while paused (uploads go on), and keep order behind held requests.
+	if (s.srv.paused.Load() && !isUpload) || len(s.held) > 0 || s.releasing {
+		reject := s.holdLocked(env, c)
 		s.mu.Unlock()
+		if reject != "" {
+			c.sendErr(env.RequestId, pb.ErrorCode_ERROR_PAUSED, reject)
+		}
 		return nil
 	}
 	s.mu.Unlock()
@@ -402,17 +399,6 @@ func trunc(s string, n int) string {
 	return s
 }
 
-// release forwards requests held during a pause, in order.
-func (s *Session) release() {
-	s.mu.Lock()
-	held, conns := s.held, s.heldConn
-	s.held, s.heldConn = nil, nil
-	s.mu.Unlock()
-	for i, env := range held {
-		_ = s.dispatch(conns[i], env)
-	}
-}
-
 func (s *Session) lost(why string) {
 	s.mu.Lock()
 	if s.closed {
@@ -424,6 +410,7 @@ func (s *Session) lost(why string) {
 	conn := s.conn
 	routes := s.routes
 	s.routes = map[uint64]*route{}
+	held := s.dropHeldLocked()
 	pw := s.writing
 	s.mu.Unlock()
 	if pw != nil {
@@ -437,6 +424,10 @@ func (s *Session) lost(why string) {
 				conn.sendErr(r.rid, pb.ErrorCode_ERROR_SESSION_LOST, "session lost: "+why)
 			}
 		}
+	}
+	// Requests held during a pause never reached the worker: answer them too.
+	for _, h := range held {
+		h.conn.sendErr(h.env.RequestId, pb.ErrorCode_ERROR_SESSION_LOST, "session lost: "+why)
 	}
 	os.RemoveAll(s.srv.layout.SessionScratch(s.hex()))
 	s.srv.usage.SessionEnd(s.Identity.Name, time.Since(s.created))

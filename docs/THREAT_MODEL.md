@@ -125,6 +125,13 @@ memory. No setting turns a rail off: the minimums are 1% and 1 GiB of disk,
 and every protocol limit has a range that excludes 0. If host memory cannot
 be read, worker memory is frozen and no new worker starts.
 
+While the Owner has paused execution, reflopd holds each session's requests
+until resume. A session can hold at most 4096 requests and twice
+`max_frame_bytes`, and all sessions together at most 1 GiB; past that a
+request is answered with `ERROR_PAUSED` instead of queued, so a Guest that
+keeps sending during a pause cannot grow reflopd until its cgroup OOM-kills
+it (#15).
+
 Quotas (device memory, sessions, wall clock per execute, FLOPs per execute,
 storage, upload bandwidth) are optional and off by default. 0 is rejected as
 a quota value, because an unset quota means no limit; `unlimited` removes one.

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Owner:
+
+- Requests a Guest sends while execution is paused are now bounded: at most
+  4096 requests and twice `max_frame_bytes` per session, and 1 GiB for all
+  sessions together. Past that, a request is answered with `ERROR_PAUSED`.
+  Before, the queue had no limit, and a Guest that kept sending during a pause
+  (including one started by `yield --auto`) could grow reflopd until its
+  cgroup OOM-killed it, ending every session (#15).
+- A session that ends during a pause now answers its held requests with
+  `SESSION_LOST`; before, they were never answered.
+- Requests sent while `resume` is still forwarding held ones queue behind
+  them instead of overtaking them.
+
 Development:
 
 - The Go module path is now `github.com/reflopai/reflop`, matching the

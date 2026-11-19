@@ -92,6 +92,7 @@ type Server struct {
 	preauth      map[string]int // unauthenticated connections per source address
 	fails        failLimiter
 	paused       atomic.Bool
+	heldBytes    atomic.Int64 // requests held during a pause, all sessions (held.go)
 	ramErrLogged atomic.Bool
 	yielding     atomic.Bool
 	events       *broadcaster

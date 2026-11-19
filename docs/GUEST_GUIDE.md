@@ -460,6 +460,12 @@ If the Owner runs `reflopd pause --now`, your session is usually suspended
 rather than ended: your program waits until the Owner resumes, and nothing is
 lost.
 
+While execution is paused, the server holds your requests until it resumes.
+It holds up to 4096 of them per session (and a limit in bytes); a request
+past that fails with "the Owner has paused execution and ... send this
+request again after execution resumes". A normal training loop never gets
+near it, because it soon waits on a result.
+
 ## Mixed precision
 
 `torch.autocast("reflop", dtype=torch.bfloat16)` follows the same policy as CUDA
