@@ -267,7 +267,7 @@ def update(check: bool = False, version: str | None = None) -> int:
     if not tag.startswith("v"):
         tag = "v" + tag
     if not TAG.match(tag):
-        raise RuntimeError(f"invalid version {tag!r} (expected e.g. v0.2.1)")
+        raise RuntimeError(f"invalid version {tag!r} (expected e.g. v0.2.2)")
     want = tag[1:]
     cur, new = _vtuple(__version__), _vtuple(want)
     if not version and cur and new and cur >= new:

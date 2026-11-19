@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 (2026-11-19)
+
+reflopd bounds the requests it holds while execution is paused (#15), and the
+Go module moved to github.com/reflopai/reflop.
+
+Updating from 0.2.0 still needs the version named:
+`reflopd update --version v0.2.2` and `reflop update --version v0.2.2` (see
+0.2.1). From 0.2.1, plain `update` works.
 
 Owner:
 
