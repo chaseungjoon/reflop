@@ -37,7 +37,7 @@ nodes; `reflopd doctor` reports which sandbox layers the container allows.
 ## Install and first start
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh -s -- --server
 reflopd up --listen 100.64.0.7:7460
 ```
 

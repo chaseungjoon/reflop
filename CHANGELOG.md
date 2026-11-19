@@ -2,8 +2,14 @@
 
 ## 0.2.1 (2026-11-19)
 
-The sandbox isolation probes now run in CI (#3, ADR-031). No change to
-reflopd, the worker or the client at run time.
+The sandbox isolation probes now run in CI (#3, ADR-031), and every link
+points at the repository's new home, github.com/reflopai/reflop.
+
+Owner and Guest:
+
+- `reflopd update`, `reflop update` and `install.sh` download releases from
+  github.com/reflopai/reflop. Older versions use the old address, which
+  GitHub redirects, so they can still update to this release.
 
 Development:
 

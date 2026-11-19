@@ -10,7 +10,7 @@ machine from a server is a security bug. The guarantees are listed in
 ## Reporting
 
 Please report vulnerabilities privately through a
-[GitHub security advisory](https://github.com/chaseungjoon/reflop/security/advisories/new),
+[GitHub security advisory](https://github.com/reflopai/reflop/security/advisories/new),
 not in a public issue. Include the reflopd and client versions, the output of
 `reflopd doctor`, and the smallest graph or message sequence that shows the
 problem.

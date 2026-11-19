@@ -35,10 +35,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/chaseungjoon/reflop"
-Documentation = "https://github.com/chaseungjoon/reflop/blob/main/docs/GUEST_GUIDE.md"
-Changelog = "https://github.com/chaseungjoon/reflop/blob/main/CHANGELOG.md"
-Issues = "https://github.com/chaseungjoon/reflop/issues"
+Homepage = "https://github.com/reflopai/reflop"
+Documentation = "https://github.com/reflopai/reflop/blob/main/docs/GUEST_GUIDE.md"
+Changelog = "https://github.com/reflopai/reflop/blob/main/CHANGELOG.md"
+Issues = "https://github.com/reflopai/reflop/issues"
 
 [project.scripts]
 reflop = "reflop.cli.main:main"

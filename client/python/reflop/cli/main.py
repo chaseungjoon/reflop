@@ -345,7 +345,7 @@ REFLOP_DEBUG=1 reflop run ... also:
 # Signals that mean a native crash, where the macOS OpenMP clash (#7) is the
 # usual cause on a Guest's Mac.
 _CRASH_SIGNALS = ("SIGSEGV", "SIGBUS", "SIGABRT", "SIGILL")
-OPENMP_ISSUE = "https://github.com/chaseungjoon/reflop/issues/7"
+OPENMP_ISSUE = "https://github.com/reflopai/reflop/issues/7"
 
 
 def _run_child(command: list[str], env: dict[str, str]) -> int:

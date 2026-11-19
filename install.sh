@@ -6,12 +6,12 @@
 # (ADR-007).
 #
 #   Guest machine (macOS or Linux), the reflop client:
-#     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+#     curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh
 #   (The client is also on PyPI: `uv add reflop` or `pip install reflop` in your
 #   project, `uv tool install reflop` for the command alone.)
 #
 #   Owner machine (Linux, the one with the GPU), reflopd:
-#     curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+#     curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh -s -- --server
 #
 # Options:
 #   --server            install reflopd instead of the client
@@ -28,7 +28,7 @@
 
 set -eu
 
-REPO="chaseungjoon/reflop"
+REPO="reflopai/reflop"
 BASE_URL="https://github.com/${REPO}/releases"
 
 # Release signing keys (principal, then key). The same list is in reflopd

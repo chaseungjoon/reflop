@@ -36,7 +36,7 @@ archives:
 
 release:
   github:
-    owner: chaseungjoon
+    owner: reflopai
     name: reflop
   prerelease: auto
   draft: true
@@ -50,9 +50,9 @@ release:
     # Guest (macOS or Linux): the reflop client, in your project's environment
     uv add reflop=={{ .Version }}    # or: pip install reflop=={{ .Version }}
     # Guest: or with the installer (verifies this release's signature)
-    curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh
     # Owner (Linux, the machine with the GPU): reflopd
-    curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+    curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh -s -- --server
     ```
 
     Already installed? `reflop update` / `reflopd update`.

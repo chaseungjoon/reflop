@@ -1,6 +1,6 @@
 # reFLOP
 
-The client for [reFLOP](https://github.com/chaseungjoon/reflop): train with
+The client for [reFLOP](https://github.com/reflopai/reflop): train with
 PyTorch on someone else's GPU from your own machine. Your Python program runs
 locally. Only tensor math (as operator graphs) and tensor data go to the
 server, and only the values you ask for come back. Your machine needs no CUDA,
@@ -50,10 +50,10 @@ reflop run python train.py
 
 ## Links
 
-- [Guest guide](https://github.com/chaseungjoon/reflop/blob/main/docs/GUEST_GUIDE.md)
-- [Owner guide](https://github.com/chaseungjoon/reflop/blob/main/docs/OWNER_GUIDE.md) (the server, `reflopd`, is not on PyPI)
-- [Changelog](https://github.com/chaseungjoon/reflop/blob/main/CHANGELOG.md)
-- [Security](https://github.com/chaseungjoon/reflop/blob/main/SECURITY.md)
+- [Guest guide](https://github.com/reflopai/reflop/blob/main/docs/GUEST_GUIDE.md)
+- [Owner guide](https://github.com/reflopai/reflop/blob/main/docs/OWNER_GUIDE.md) (the server, `reflopd`, is not on PyPI)
+- [Changelog](https://github.com/reflopai/reflop/blob/main/CHANGELOG.md)
+- [Security](https://github.com/reflopai/reflop/blob/main/SECURITY.md)
 
 Every file on PyPI is the exact file from the matching GitHub release, whose
 `checksums.txt` is signed with the project's offline release key.

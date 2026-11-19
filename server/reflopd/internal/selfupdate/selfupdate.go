@@ -30,10 +30,10 @@ import (
 )
 
 // DefaultBaseURL is where releases are published.
-const DefaultBaseURL = "https://github.com/chaseungjoon/reflop/releases"
+const DefaultBaseURL = "https://github.com/reflopai/reflop/releases"
 
 // InstallScript is the documented installer, for error messages.
-const InstallScript = "curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server"
+const InstallScript = "curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh -s -- --server"
 
 const maxDownload = 256 << 20
 

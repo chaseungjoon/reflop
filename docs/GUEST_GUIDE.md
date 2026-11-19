@@ -37,7 +37,7 @@ The install script does the same from the GitHub release and checks the
 signature on your machine:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh
 ```
 
 It installs into the active virtual environment if one is active. Otherwise it
@@ -323,7 +323,7 @@ the variable yourself, and says so when it starts. PyTorch on macOS ships its
 own OpenMP runtime (`libomp`). A second one in the same process, from
 scikit-learn, xgboost, LightGBM, faiss, conda or Homebrew, crashes or hangs the
 program once both start their thread pools
-([#7](https://github.com/chaseungjoon/reflop/issues/7)). With one thread
+([#7](https://github.com/reflopai/reflop/issues/7)). With one thread
 neither does. Your math runs on the server, so only operators that fall back
 to your CPU are slower. To keep more threads, set the variable yourself
 (`OMP_NUM_THREADS=8 reflop run ...`). A program you start without `reflop run`
@@ -496,7 +496,7 @@ prints the Python stack of every thread.
 
 **macOS: the program crashes or hangs, or prints `OMP: Error #15`.** This is
 usually two OpenMP runtimes in one process
-([#7](https://github.com/chaseungjoon/reflop/issues/7)). `reflop doctor` lists
+([#7](https://github.com/reflopai/reflop/issues/7)). `reflop doctor` lists
 the OpenMP runtimes your packages install and the ones torch loads, and names
 the package each one came from. `reflop run` already sets `OMP_NUM_THREADS=1`;
 if you set it to more, or run without `reflop run`, try

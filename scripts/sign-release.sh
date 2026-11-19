@@ -19,7 +19,7 @@ set -eu
 
 tag=${1:?usage: scripts/sign-release.sh vX.Y.Z}
 key=${REFLOP_RELEASE_KEY:-$HOME/.config/reflop-release/release_ed25519}
-repo=chaseungjoon/reflop
+repo=reflopai/reflop
 cd "$(dirname "$0")/.."
 
 die() { printf 'sign-release: %s\n' "$*" >&2; exit 1; }

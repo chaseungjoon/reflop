@@ -2,8 +2,8 @@
 
 # reFLOP
 
-[![CI](https://github.com/chaseungjoon/reflop/actions/workflows/ci.yml/badge.svg)](https://github.com/chaseungjoon/reflop/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/chaseungjoon/reflop?include_prereleases)](https://github.com/chaseungjoon/reflop/releases)
+[![CI](https://github.com/reflopai/reflop/actions/workflows/ci.yml/badge.svg)](https://github.com/reflopai/reflop/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/reflopai/reflop?include_prereleases)](https://github.com/reflopai/reflop/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)](docs/GUEST_GUIDE.md)
@@ -85,7 +85,7 @@ This installs both the Python library (`import reflop`) and the `reflop` command
 - **Install script**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh
 ```
 
 The script installs into the active virtual environment if there is one, otherwise
@@ -100,7 +100,7 @@ into an environment of its own.
 - **Install script**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chaseungjoon/reflop/main/install.sh | sh -s -- --server
+curl -fsSL https://raw.githubusercontent.com/reflopai/reflop/main/install.sh | sh -s -- --server
 ```
 
 `reflopd` goes to `~/.local/bin`. 
@@ -137,7 +137,7 @@ the files of the signed GitHub release.
 
 Download `reflopd_0.2.1_linux_<arch>.tar.gz` or
 `reflop-0.2.1-py3-none-any.whl` from
-[Releases](https://github.com/chaseungjoon/reflop/releases) with `checksums.txt`
+[Releases](https://github.com/reflopai/reflop/releases) with `checksums.txt`
 and `checksums.txt.sig`. Check the signature, then the file:
 
 ```sh
@@ -158,7 +158,7 @@ Then put `reflopd` on your `PATH` or `pip install` the wheel.
 Requires Go (see `go.mod`) and, for the client, Python 3.10+:
 
 ```sh
-git clone https://github.com/chaseungjoon/reflop.git && cd reflop
+git clone https://github.com/reflopai/reflop.git && cd reflop
 make build                                  # bin/reflopd, with the worker embedded
 pip install ./client/python                 # the reFLOP client
 ```

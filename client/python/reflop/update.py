@@ -23,7 +23,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 
-DEFAULT_RELEASES = "https://github.com/chaseungjoon/reflop/releases"
+DEFAULT_RELEASES = "https://github.com/reflopai/reflop/releases"
 DEFAULT_PYPI = "https://pypi.org"
 TAG = re.compile(r"^v\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$")
 MAX_DOWNLOAD = 256 << 20
