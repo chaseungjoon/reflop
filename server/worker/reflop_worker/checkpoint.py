@@ -188,6 +188,8 @@ class Writer:
                     code=g.code or cpb.ERROR_SAFETY_RAIL, message=g.reason[:500])))
                 return
             self._write(fd, items, hb, ev)
+            os.close(fd)
+            fd = None
             if msg.checkpoint:
                 done(cpb.Envelope(request_id=rid, end=True, checkpoint_saved=cpb.CheckpointSaved(
                     bytes=total, generation=msg.generation)))
@@ -199,7 +201,8 @@ class Writer:
             done(cpb.Envelope(request_id=rid, end=True, error=cpb.Error(
                 code=cpb.ERROR_INTERNAL, message=f"{what} write failed: {type(e).__name__}: {str(e)[:300]}")))
         finally:
-            os.close(fd)
+            if fd is not None:
+                os.close(fd)
 
     def _write(self, fd: int, items: list, hb: bytes, ev) -> None:
         _write_all(fd, memoryview(hb))

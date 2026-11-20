@@ -81,7 +81,7 @@ def load_or_create() -> Ed25519PrivateKey:
     f = _key_file()
     if f.exists():
         st = f.stat()
-        if st.st_mode & 0o077:
+        if os.name != "nt" and (st.st_mode & 0o077):
             raise PermissionError(f"{f} is readable by other users; run: chmod 600 {f}")
         return serialization.load_ssh_private_key(f.read_bytes(), password=None)
     key = Ed25519PrivateKey.generate()

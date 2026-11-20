@@ -66,7 +66,10 @@ def test_exit_status_passes_through(monkeypatch):
 
 
 def test_ctrl_c_and_closed_pipe_are_quiet_like_a_shell(monkeypatch, capsys):
-    for sig in (signal.SIGINT, signal.SIGPIPE):
+    sigs = [signal.SIGINT]
+    if hasattr(signal, "SIGPIPE"):
+        sigs.append(signal.SIGPIPE)
+    for sig in sigs:
         _fake_child(monkeypatch, -sig)
         assert main(["run", "python", "x.py"]) == 128 + sig
         assert "killed" not in capsys.readouterr().err

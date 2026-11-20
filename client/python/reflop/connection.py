@@ -357,7 +357,8 @@ class LocalConnection(Connection):
             final = os.path.join(self._root(), name + ".safetensors")
             msg = wpb.SnapshotWrite(request_id=rid, handles=env.snapshot.handles, keys=env.snapshot.keys)
         tmp = final + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
+        fd = os.open(tmp, flags, 0o600)
         sid = self.session_id
 
         def cut(r, _n):
@@ -367,8 +368,11 @@ class LocalConnection(Connection):
             body = resp.WhichOneof("body")
             ok = body == "snapshot_saved" or (body == "checkpoint_saved" and not resp.checkpoint_saved.skipped)
             if ok and sid == self.session_id:
-                with open(tmp, "rb") as f:
-                    os.fsync(f.fileno())
+                try:
+                    with open(tmp, "r+b") as f:
+                        os.fsync(f.fileno())
+                except OSError:
+                    pass
                 os.replace(tmp, final)
                 if body == "checkpoint_saved":
                     self._last_ckpt, self._gen = time.time(), resp.checkpoint_saved.generation
@@ -418,7 +422,7 @@ class LocalConnection(Connection):
             msg = wpb.SnapshotRead(request_id=rid, keys=keys, handles=[bytes.fromhex(k) for k in keys], restore_rng=True)
         if not os.path.exists(path):
             return self._error(env, cpb.ERROR_PROTOCOL, "no such snapshot")
-        fd = os.open(path, os.O_RDONLY)
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
         try:
             self.worker.snapshot_read(msg, fd)
         except WorkerError as e:

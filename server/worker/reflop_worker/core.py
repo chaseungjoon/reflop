@@ -92,6 +92,29 @@ def enabled_ops(device: torch.device, caps: list[str], requested: list[int]) -> 
     return out
 
 
+def _pread(fd: int, n: int, offset: int) -> bytes:
+    try:
+        return os.pread(fd, n, offset)
+    except AttributeError:
+        os.lseek(fd, offset, os.SEEK_SET)
+        return os.read(fd, n)
+
+
+def _preadv(fd: int, buffers: list, offset: int) -> int:
+    try:
+        return os.preadv(fd, buffers, offset)
+    except AttributeError:
+        os.lseek(fd, offset, os.SEEK_SET)
+        total = 0
+        for buf in buffers:
+            data = os.read(fd, len(buf))
+            buf[:len(data)] = data
+            total += len(data)
+            if len(data) < len(buf):
+                break
+        return total
+
+
 def device_info(device: torch.device, gd: gpb.Device) -> kpb.DeviceInfo:
     di = kpb.DeviceInfo(device=gd)
     base = [torch.bool, torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,
@@ -109,7 +132,7 @@ def device_info(device: torch.device, gd: gpb.Device) -> kpb.DeviceInfo:
         di.name = "CPU"
         try:
             pages = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
-        except (ValueError, OSError):
+        except (ValueError, OSError, AttributeError):
             pages = 0
         di.total_memory_bytes = pages
     di.dtypes.extend(dtypes.TORCH_TO_PB[d] for d in base)
@@ -351,13 +374,13 @@ class Session:
             raise ReflopError(cpb.ERROR_RESOURCE_LIMIT, f"restoring {len(msg.handles)} tensors would exceed "
                               f"{self.handles.max} live handles")
         size = os.fstat(fd).st_size
-        head = os.pread(fd, 8, 0)
+        head = _pread(fd, 8, 0)
         if len(head) != 8:
             raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file too short")
         n = int.from_bytes(head, "little")
         if n == 0 or n > MAX_HEADER or 8 + n > size:
             raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file: bad header length")
-        buf = head + os.pread(fd, n, 8)
+        buf = head + _pread(fd, n, 8)
         try:
             start, hdr = parse_header(memoryview(buf), size, self.limits.max_tensor_numel)
         except SafetensorsError as e:
@@ -394,14 +417,14 @@ class Session:
                     flat = t.reshape(-1).view(torch.uint8)
                     for off in range(0, e - b, len(staging)):
                         m = min(len(staging), e - b - off)
-                        got = os.preadv(fd, [memoryview(staging)[:m]], start + b + off)
+                        got = _preadv(fd, [memoryview(staging)[:m]], start + b + off)
                         if got != m:
                             raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file is truncated")
                         flat[off:off + m].copy_(stage[:m])
                 out[h] = t
             states = {}
             for k, (_dt, _shape, b, e) in rng.items():
-                raw = os.pread(fd, e - b, start + b)
+                raw = _pread(fd, e - b, start + b)
                 if len(raw) != e - b:
                     raise ReflopError(cpb.ERROR_PROTOCOL, "snapshot file is truncated")
                 states[k] = torch.frombuffer(bytearray(raw), dtype=torch.uint8).clone()
