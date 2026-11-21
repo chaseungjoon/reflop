@@ -17,6 +17,18 @@ Guest:
   (`terminate called without an active exception`), with int lengths too. It
   needs this client and a reflopd from this release; an older reflopd rejects
   the backward with "cannot be validated (no meta kernel)".
+- BatchNorm's `running_mean` and `running_var` are updated when the forward
+  pass's output is not used, as in a BN recalibration loop. Before, only
+  `num_batches_tracked` went up. `native_batch_norm` does not mark the
+  statistics as written in its schema, so the client treated it as a pure
+  function, and the statistics changed only through the kernel's in-place
+  side effect on the server, which is skipped when the output is unused. The
+  client now records the update itself. Eager training steps with many BN
+  layers are a few percent slower (ResNet-18: about 3%).
+- BatchNorm in eval mode with gradients (fine-tuning with frozen statistics)
+  works in a server-CPU session. It failed with "output is torch.float32[0],
+  validated torch.float32[8]": PyTorch's CPU kernel returns empty saved
+  statistics in eval mode, its meta kernel full ones.
 
 ## 0.2.3 (2026-11-21)
 

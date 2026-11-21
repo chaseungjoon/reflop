@@ -559,6 +559,9 @@ _SPECIAL_FUNCTIONAL = {
     "aten.bernoulli_.Tensor": ("aten.bernoulli.Tensor", aten.bernoulli.Tensor),
 }
 
+# Batch norm updates running_mean and running_var in place. native_batch_norm's
+# schema does not mark them as written, so the generic paths would record it
+# as a pure function and drop the update: these go to _batch_norm first.
 _BATCH_NORM = {"aten._native_batch_norm_legit.default", "aten.native_batch_norm.default"}
 
 
@@ -759,8 +762,6 @@ def _mutating(sess, func, args, kwargs):
     name = _op_name(func)
     schema = func._schema
     vals = normalize(func, args, kwargs)
-    if name in _BATCH_NORM:
-        return _batch_norm(sess, func, vals)
     if name.startswith("aten._fused_") and name.endswith("_.default"):
         from . import optim
 
@@ -835,6 +836,49 @@ def _assign(sess, target, result) -> None:
             target.copy_(result.cpu() if isinstance(result, RemoteTensor) else result)
 
 
+def _batch_norm_special(sess, func, args, kwargs):
+    return _batch_norm(sess, func, normalize(func, args, kwargs))
+
+
+def _batch_norm_eval(sess, vals):
+    """Eval mode updates nothing, so it is a plain function."""
+    from ._pb import graph_pb2 as gpb
+
+    if sess.gdevice.kind == gpb.DEVICE_CPU:
+        # PyTorch's CPU kernel returns empty save_mean and save_invstd in eval
+        # mode, its meta kernel (and the CUDA kernel) [C], and autograd hands
+        # them to the backward, so the server would reject the mismatch. The
+        # formula below returns [C] (elementwise ops; the server CPU is slow
+        # anyway).
+        return _batch_norm_eval_ops(sess, *vals[:5], vals[7])
+    f = aten.native_batch_norm.default
+    if _placement_local(sess, f, vals, {}):
+        return _run_locally(sess, f, vals, {}, keep_local=True)
+    return _functional(sess, f, vals, {})
+
+
+def _batch_norm_eval_ops(sess, inp, w, b, rm, rv, eps):
+    """(input - mean) * rsqrt(var + eps) * weight + bias, computed in float32
+    for half inputs as the kernels do; returns (out, mean, invstd)."""
+    cdt = torch.float32 if inp.dtype in (torch.float16, torch.bfloat16) else inp.dtype
+
+    def cast(t, dt):
+        return t if t.dtype == dt else dispatch(sess, aten._to_copy.default, (t,), {"dtype": dt})
+
+    def col(t):  # [C] -> [1, C, 1, ...]
+        return dispatch(sess, aten.view.default, (t, [1, -1] + [1] * (inp.dim() - 2)), {})
+
+    mean = dispatch(sess, aten._to_copy.default, (rm,), {"dtype": cdt})  # a copy: autograd keeps it
+    invstd = dispatch(sess, aten.rsqrt.default, (dispatch(sess, aten.add.Tensor, (cast(rv, cdt), eps), {}),), {})
+    out = dispatch(sess, aten.sub.Tensor, (cast(inp, cdt), col(mean)), {})
+    out = dispatch(sess, aten.mul.Tensor, (out, col(invstd)), {})
+    if w is not None:
+        out = dispatch(sess, aten.mul.Tensor, (out, col(cast(w, cdt))), {})
+    if b is not None:
+        out = dispatch(sess, aten.add.Tensor, (out, col(cast(b, cdt))), {})
+    return cast(out, inp.dtype), mean, invstd
+
+
 def _batch_norm(sess, func, vals):
     # (input, weight, bias, running_mean, running_var, training, momentum, eps)
     inp, w, b, rm, rv, training, momentum, eps = vals
@@ -842,8 +886,7 @@ def _batch_norm(sess, func, vals):
         f = aten._native_batch_norm_legit.no_stats
         return dispatch(sess, f, (inp, w, b, training, momentum, eps), {})
     if not training:
-        f = aten._native_batch_norm_legit_no_training.default
-        return dispatch(sess, f, (inp, w, b, rm, rv, momentum, eps), {})
+        return _batch_norm_eval(sess, (inp, w, b, rm, rv, False, momentum, eps))
     f = aten._native_batch_norm_legit_functional.default
     out, mean, rstd, new_rm, new_rv = dispatch(sess, f, (inp, w, b, rm, rv, training, momentum, eps), {})
     _assign(sess, rm, new_rm)
@@ -1088,6 +1131,7 @@ def _ctc_loss_backward_tensor(sess, func, args, kwargs):
 
 
 _SPECIALS = {
+    **{name: _batch_norm_special for name in _BATCH_NORM},
     "aten._ctc_loss.Tensor": _ctc_loss_tensor,
     "aten._ctc_loss_backward.Tensor": _ctc_loss_backward_tensor,
     "aten._local_scalar_dense.default": _local_scalar,
