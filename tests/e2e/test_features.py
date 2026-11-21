@@ -204,3 +204,24 @@ def test_graph_larger_than_the_device_is_torch_out_of_memory(dev):
     assert isinstance(e.value, reflop.OutOfMemoryError)
     assert "earlier" not in str(e.value)
     assert torch.ones(2, device=dev).sum().item() == 2  # the session still works
+
+
+def test_capture_recaptures_after_a_shape_change(dev):
+    # Regression: after a new batch shape the old plan stayed, and the second
+    # call with the new shape replayed it (BINDING: "bound tensor is
+    # [16,784], the graph expects [32,784]").
+    w = torch.arange(784, dtype=torch.float32).to(dev)
+
+    def step(x):
+        return (x * w).sum(dim=1)
+
+    s = reflop.capture(step)
+    g = torch.Generator().manual_seed(4)
+    for b in (32, 32, 32, 16, 16, 16, 16, 32, 32, 32):
+        x = torch.randn(b, 784, generator=g)
+        out = s(x.to(dev))
+        assert out.shape == (b,)
+        torch.testing.assert_close(out.cpu(), (x * torch.arange(784, dtype=torch.float32)).sum(dim=1),
+                                   atol=1e-3, rtol=1e-4)
+    # Replays: the third 32, the last two 16s, the last 32.
+    assert s.replays == 4

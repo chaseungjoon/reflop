@@ -213,3 +213,57 @@ def test_rnn_batch_first(dev):
     r = copy.deepcopy(m).to(dev)
     x = g(3, 5, 4)
     _close(r(x.to(dev))[0], m(x)[0], 1e-4 if DEVICE == "cuda" else 1e-5)
+
+
+def test_random_factories_default_to_int64(dev):
+    # Regression: the schema default `ScalarType? dtype=long` arrives as the
+    # number 4, which failed with KeyError: 4.
+    r = torch.randint(0, 10, (64,), device=dev).cpu()
+    assert r.dtype == torch.int64 and r.shape == (64,) and 0 <= r.min() and r.max() < 10
+    r = torch.randint(10, (3, 4), device=dev).cpu()
+    assert r.dtype == torch.int64 and r.shape == (3, 4)
+    p = torch.randperm(17, device=dev).cpu()
+    assert p.dtype == torch.int64 and torch.equal(p.sort().values, torch.arange(17))
+    assert torch.randint(0, 10, (4,), dtype=torch.int32, device=dev).cpu().dtype == torch.int32
+
+
+def test_scalar_type_codes_match_torch():
+    from reflop.trace import DTYPE_TO_PB, SCALAR_TYPE_CODES
+
+    names = {torch.uint8: "uint8", torch.int8: "int8", torch.int16: "int16", torch.int32: "int", torch.int64: "long",
+             torch.float16: "half", torch.float32: "float", torch.float64: "double", torch.complex64: "cfloat",
+             torch.complex128: "cdouble", torch.bool: "bool", torch.bfloat16: "bfloat16",
+             torch.float8_e5m2: "float8_e5m2", torch.float8_e4m3fn: "float8_e4m3fn"}
+    assert set(SCALAR_TYPE_CODES.values()) == set(DTYPE_TO_PB) == set(names)
+    for code, dt in SCALAR_TYPE_CODES.items():
+        assert torch._C.parse_schema(f"f(ScalarType a={names[dt]}) -> ()").arguments[0].default_value == code
+
+
+@pytest.mark.parametrize("where", ["cpu", "device", "list"])
+@pytest.mark.parametrize("concat", [False, True])
+def test_ctc_loss_with_tensor_lengths(dev, where, concat):
+    # Regression: F.ctc_loss with tensor lengths reached _ctc_loss.Tensor,
+    # which has no meta kernel (NotImplementedError). Forward only: PyTorch
+    # has no meta kernel for _ctc_loss_backward either, so the server cannot
+    # validate the backward yet.
+    T, N, C = 12, 3, 5
+    lp = g(T, N, C).log_softmax(2)
+    tl = torch.tensor([4, 3, 2], dtype=torch.int32)
+    il = torch.tensor([12, 10, 12], dtype=torch.int32)
+    full = torch.randint(1, C, (N, 4), generator=torch.Generator().manual_seed(1))
+    tg = torch.cat([full[i, :n] for i, n in enumerate(tl.tolist())]) if concat else full
+
+    def lengths(x):
+        return x.tolist() if where == "list" else (x.to(dev) if where == "device" else x)
+
+    for reduction in ("mean", "sum", "none"):
+        local = F.ctc_loss(lp, tg, il, tl, reduction=reduction)
+        remote = F.ctc_loss(lp.to(dev), tg.to(dev), lengths(il), lengths(tl), reduction=reduction)
+        _close(remote, local, 1e-4 if DEVICE == "cuda" else 1e-5)
+
+
+def test_ctc_loss_rejects_float_lengths(dev):
+    lp = g(6, 2, 4).log_softmax(2).to(dev)
+    tg = torch.ones(2, 2, dtype=torch.long).to(dev)
+    with pytest.raises(RuntimeError, match="integral"):
+        F.ctc_loss(lp, tg, torch.tensor([6.0, 6.0]).to(dev), torch.tensor([2, 2]).to(dev))

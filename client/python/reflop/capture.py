@@ -256,6 +256,10 @@ class Captured:
         sig = _sig(args)
         if self.plan is not None and sig == self.sig:
             return self._replay(self.plan["sess"], args)
+        if sig != self.sig:
+            # New shapes or dtypes: the plan was built for the old ones (its
+            # graph expects their shapes). Capture again from scratch.
+            self.plan = self.out = None
         out, plan = self._record(args)
         if sig == self.sig and self._same(self.prev, plan):
             self.plan, self.out = plan, out

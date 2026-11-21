@@ -1052,7 +1052,27 @@ def _masked_select(sess, func, args, kwargs):
     return _index_tensor(sess, aten.index.Tensor, (s, [m]), {})
 
 
+def _lengths(x, what: str) -> list[int]:
+    if isinstance(x, (list, tuple)):
+        return [int(v) for v in x]
+    if x.is_floating_point() or x.is_complex() or x.dtype == torch.bool:
+        raise RuntimeError(f"ctc_loss: {what} must be integral")
+    if isinstance(x, RemoteTensor):
+        x = x._rf_storage.session.fetch(value_of(x), x._rf_meta)
+    return x.reshape(-1).to(torch.int64).tolist()
+
+
+def _ctc_loss_tensor(sess, func, args, kwargs):
+    """_ctc_loss with tensor lengths. Its output shape depends on the lengths'
+    values, so PyTorch has no meta kernel for it. Use the int[] overload, as
+    PyTorch's own kernels do: lengths on the reflop device cost one fetch."""
+    lp, tg, il, tl, blank, zero_infinity = normalize(func, args, kwargs)
+    return dispatch(sess, aten._ctc_loss.default,
+                    (lp, tg, _lengths(il, "input_lengths"), _lengths(tl, "target_lengths"), blank, zero_infinity), {})
+
+
 _SPECIALS = {
+    "aten._ctc_loss.Tensor": _ctc_loss_tensor,
     "aten._local_scalar_dense.default": _local_scalar,
     "aten._to_copy.default": _to_copy,
     "aten.copy_.default": _copy_,
