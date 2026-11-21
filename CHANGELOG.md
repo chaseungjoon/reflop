@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+Owner:
+
+- reflopd validates and runs the CTC loss backward (`_ctc_loss_backward`).
+  Before, it rejected every such graph, because PyTorch has no meta kernel for
+  it. The worker now supplies one, and it first checks every input shape
+  exactly: PyTorch's backward kernels read `grad`, `neg_log_likelihood` and
+  `log_alpha` unchecked, and a short `log_alpha` crashes the CPU kernel
+  (ADR-032).
+
+Guest:
+
+- Training with `F.ctc_loss` works: `.backward()` used to abort the process
+  (`terminate called without an active exception`), with int lengths too. It
+  needs this client and a reflopd from this release; an older reflopd rejects
+  the backward with "cannot be validated (no meta kernel)".
+
 ## 0.2.3 (2026-11-21)
 
 Guest fixes: default-dtype `randint`/`randperm`, `reflop.capture` after a shape

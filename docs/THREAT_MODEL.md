@@ -164,6 +164,7 @@ session per interval, never more often than every 5 minutes (ADR-029).
 |---|---|
 | Bugs in whitelisted PyTorch, CUDA or driver code | reachable by design. Validation and bounds checks narrow the inputs; the sandbox limits what a successful exploit gains. Cannot be reduced to zero |
 | Meta kernels disagreeing with real kernels | outputs that later operators consume are checked against the validated shape and dtype at run time; a mismatch is an error. Unused auxiliary outputs may differ (seen with `_embedding_bag`) |
+| Kernels that trust their inputs' shapes | `_ctc_loss_backward` reads `grad`, `neg_log_likelihood` and `log_alpha` without checking them (a short `log_alpha` crashes the CPU kernel). PyTorch has no meta kernel for it; the worker's own checks every input shape exactly before V4 passes (ADR-032). Other ops of this kind would be found only by review or fuzzing |
 | Timing side channels between Guests on one GPU | out of scope |
 | A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes. A failed allocation while running may end the oldest detached session on that GPU; a graph rejected as larger than the device never does (ADR-022) |
 | Escape at Level 0 lands in the Owner's account | Level 1 moves it to an empty account |
