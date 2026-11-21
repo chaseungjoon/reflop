@@ -135,8 +135,8 @@ the files of the signed GitHub release.
 
 <br>
 
-Download `reflopd_0.2.3_linux_<arch>.tar.gz` or
-`reflop-0.2.3-py3-none-any.whl` from
+Download `reflopd_0.2.4_linux_<arch>.tar.gz` or
+`reflop-0.2.4-py3-none-any.whl` from
 [Releases](https://github.com/reflopai/reflop/releases) with `checksums.txt`
 and `checksums.txt.sig`. Check the signature, then the file:
 

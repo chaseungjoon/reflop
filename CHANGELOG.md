@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (2026-11-21)
+
+CTC loss training works, and BatchNorm statistics are updated when the
+forward's output is not used. Owners: update reflopd for CTC training; the
+BatchNorm fixes are in the Guest client only.
+
+Updating from 0.2.0 still needs the version named (see 0.2.1). From 0.2.1 or
+later, plain `update` works.
 
 Owner:
 

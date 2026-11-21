@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Sign a draft reFLOP release and publish it (SEC_SWEEP M4).
 #
-#   scripts/sign-release.sh v0.2.3
+#   scripts/sign-release.sh v0.2.4
 #
 # release.yml builds the release as a draft. This script, run on the
 # maintainer's machine with the offline key:

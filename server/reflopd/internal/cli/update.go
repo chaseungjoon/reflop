@@ -28,7 +28,7 @@ release's SHA-256 checksums, and atomically replace this binary. Then run
 
   reflopd update                  install the latest release if it is newer
   reflopd update --check          only report whether an update is available
-  reflopd update --version v0.2.3 install a specific release (also downgrades)
+  reflopd update --version v0.2.4 install a specific release (also downgrades)
 
 Every release is checked against an offline signature on its checksums.txt
 before anything from it runs. Releases before 0.1.6 are unsigned and are
@@ -64,7 +64,7 @@ lives in a directory you cannot write to (e.g. /usr/local/bin), run
 			}
 			want, ok := selfupdate.Parse(tag)
 			if !ok {
-				return exitWith(ExitUsage, fmt.Errorf("invalid version %q (expected e.g. v0.2.3)", version))
+				return exitWith(ExitUsage, fmt.Errorf("invalid version %q (expected e.g. v0.2.4)", version))
 			}
 			current := buildinfo.Version
 			switch {
@@ -111,7 +111,7 @@ lives in a directory you cannot write to (e.g. /usr/local/bin), run
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "only check whether a newer release exists")
-	cmd.Flags().StringVar(&version, "version", "", "install this release tag instead of the latest (e.g. v0.2.3)")
+	cmd.Flags().StringVar(&version, "version", "", "install this release tag instead of the latest (e.g. v0.2.4)")
 	cmd.Flags().BoolVar(&force, "force", false, "reinstall even if already up to date (or replace a development build)")
 	return cmd
 }

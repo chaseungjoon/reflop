@@ -266,7 +266,7 @@ type Version struct{ Major, Minor, Patch int }
 
 var versionRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
 
-// Parse reads "v0.2.3", "0.2.3", "v0.2.3-3-gabc-dirty", ...
+// Parse reads "v0.2.4", "0.2.4", "v0.2.4-3-gabc-dirty", ...
 func Parse(s string) (Version, bool) {
 	m := versionRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {
