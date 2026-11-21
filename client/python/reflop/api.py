@@ -12,12 +12,27 @@ from . import session as _session
 from .device import register, torch_device
 
 
-def _open_session(conn, index: int, allow_local_fallback: bool):
+def _open_session(index: int, *, server: str | None = None, kind: str = "auto", local: str | None = None,
+                  allow_local_fallback: bool = True, make_default: bool = True):
     from ._pb import graph_pb2 as gpb
 
-    caps = conn.capabilities()
-    gdev = conn.gdevice if hasattr(conn, "gdevice") else gpb.Device(kind=gpb.DEVICE_CUDA)
-    return _session.Session(conn, index, gdev, caps, allow_local_fallback=allow_local_fallback)
+    local = local or os.environ.get("REFLOP_LOCAL") or None
+    if local:
+        from .connection import LocalConnection
+
+        conn = LocalConnection(local)
+    else:
+        from .client import connect
+
+        conn = connect(server=server, kind=kind)
+    try:
+        caps = conn.capabilities()
+        gdev = conn.gdevice if hasattr(conn, "gdevice") else gpb.Device(kind=gpb.DEVICE_CUDA)
+        return _session.Session(conn, index, gdev, caps, allow_local_fallback=allow_local_fallback,
+                                make_default=make_default)
+    except BaseException:
+        conn.close()
+        raise
 
 
 def device(index: int = 0, *, server: str | None = None, kind: str = "auto", local: str | None = None,
@@ -47,16 +62,7 @@ def device(index: int = 0, *, server: str | None = None, kind: str = "auto", loc
         return torch_device(index)
     except KeyError:
         pass
-    local = local or os.environ.get("REFLOP_LOCAL") or None
-    if local:
-        from .connection import LocalConnection
-
-        conn = LocalConnection(local)
-    else:
-        from .client import connect
-
-        conn = connect(server=server, kind=kind)
-    sess = _open_session(conn, index, allow_local_fallback)
+    sess = _open_session(index, server=server, kind=kind, local=local, allow_local_fallback=allow_local_fallback)
     if checkpoint:
         from . import checkpoints
 
@@ -82,7 +88,7 @@ def synchronize() -> None:
 
 
 def seed(n: int) -> None:
-    """Seed the session RNG on the server (reproducible dropout, randn, ...)."""
+    """Seed every open session's RNG and remember the seed for future sessions."""
     _session.seed(n)
 
 

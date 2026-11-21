@@ -1002,3 +1002,23 @@ through the in-process connection in the full e2e suite, while `.cpu()`
 never did; the cause is not known (BUGS.md), so the fetch uses `.cpu()`.
 Tests: `tests/security/corpus/test_worker_memory.py`, `cgroup_test.go`,
 `workermem_test.go`.
+
+## ADR-036: Keep the explicit default and seed every session
+
+**Context.** Opening a CPU session through `placement("remote-cpu")` made it
+the default. `reflop.load(name)` then restored into the CPU session, and
+`reflop.seed(n)` left the GPU RNG untouched.
+
+**Decision.** Only explicitly opened sessions enter the default session stack.
+`reflop.seed(n)` reseeds all open sessions and remembers the seed for new
+sessions, even when called before opening a session. The PyTorch seed hook
+continues to reseed open sessions.
+
+**Alternatives.** Adding a session argument to `reflop.seed` would let callers
+reseed one session at a time. It would leave existing calls dependent on which
+session opened last.
+
+**Consequences.** Snapshot and checkpoint calls without a device index keep
+using the explicit default when placement opens a CPU session. Opening a
+CPU session explicitly still makes it the default. The server uses the
+existing reseed request.

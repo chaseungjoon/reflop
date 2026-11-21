@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `reflop.seed(n)` seeds all open sessions and applies the same seed to future
+  sessions. A CPU session opened by `placement("remote-cpu")` leaves the
+  default session in place, so calls such as `reflop.load(name)` still use it.
+
 ## 0.2.6 (2026-11-21)
 
 A Guest can no longer get another Guest's session killed by using up host
