@@ -250,14 +250,36 @@ for x, y in data:
     loss = step(x, y)                 # one request per step after two warm-up calls
 ```
 
-ResNet-18, CIFAR-10 shapes, batch 128, RTX 5070, client on the same machine over TLS:
+Share of native CUDA speed kept, from the 21 November 2026 benchmark run:
+Owner RTX 5070, batch 128, data already on the GPU, `reflop.capture` on,
+Guest on another machine over the network.
 
-| Mode | Throughput vs plain PyTorch on the same GPU |
+| Workload | Native CUDA speed kept |
 |---|---|
-| `reflop.capture` | **74%** |
-| eager | 19% |
+| UNet | **90%** |
+| GPT | 75% |
+| Attention | 73% |
+| ResNet-18 | 64% |
+| CNN | 54% |
+| MLP | 16% |
+| LSTM / GRU | 2.5–4% |
 
-See the [multi-model benchmark report](benchmark/report/README.md) for the matched native GPU comparison from a MacBook Pro over Tailscale TLS, including correctness limitations, and [`benchmark/`](benchmark/README.md) to reproduce it.
+- **LSTM and GRU are slow by design.** They run one timestep at a time, about
+  8,000 graph nodes per step.
+- **Uploading inputs every step is bound by the network** (about 9.8 MiB/s
+  and a 15.6 ms round trip in this run). Those cases keep 0.2–10% of native
+  speed. Keep the data on the server: a [dataset](docs/GUEST_GUIDE.md#datasets)
+  needs 8 bytes per sample, and took the CNN from 158 ms to 2.8 ms per step.
+- **The GPU itself runs at native speed.** Matmul measured on the GPU reaches
+  the same TFLOP/s as native CUDA.
+- **Several Guests share the GPU.** Eight processes at once reached 3.53× the
+  throughput of one, with the GPU split evenly between them.
+- **Long runs are stable.** A 20-minute soak ran 81,847 steps at a constant
+  14.4 ms/step, with flat memory use.
+
+See [`benchmark/`](benchmark/README.md) to reproduce these measurements, and
+the [benchmark report](benchmark/report/README.md) for an earlier, saved run
+with its raw data.
 
 Steps whose Python numbers change every step (a non-capturable Adam's bias
 correction, a Python learning-rate schedule) are detected and refused; use

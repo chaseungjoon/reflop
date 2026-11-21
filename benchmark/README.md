@@ -39,7 +39,7 @@ remote samples/second / native samples/second × 100%
 
 100% means equal throughput. Also report absolute samples/second and milliseconds/step, model, batch size, data policy, network conditions, and correctness status. A ratio between reFLOP capture and reFLOP eager answers a different question.
 
-The [saved report](report/README.md) compares 156 remote cases with 78 native eager cases on the Owner's RTX 5070. Native ran locally on the Linux Owner workstation; the Guest ran on a MacBook Pro over Tailscale TLS. At batch 128, resident capture retains 35.6–70.1% of native throughput for eight workloads and 4.0–4.6% for LSTM/GRU. ResNet-18 correctness remains unresolved in the available evidence. The root README's 74% result is a separate same-machine test, not the baseline for this comparison.
+The [saved report](report/README.md) compares 156 remote cases with 78 native eager cases on the Owner's RTX 5070. Native ran locally on the Linux Owner workstation; the Guest ran on a MacBook Pro over Tailscale TLS. At batch 128, resident capture retains 35.6–70.1% of native throughput for eight workloads and 4.0–4.6% for LSTM/GRU. ResNet-18 correctness remains unresolved in the available evidence. The root README's numbers come from a later run (21 November 2026) whose raw data is not saved here.
 
 ### 1. Collect the native baseline on the Owner GPU
 
