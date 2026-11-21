@@ -254,7 +254,7 @@ class LocalConnection(Connection):
         init.numerics.tf32_cudnn = os.environ.get("REFLOP_LOCAL_TF32", "1") == "1"
         self._init = init
         self._Session = Session
-        self.worker = Session(init)
+        self.worker = self._new_worker()
         self.gdevice = init.device
         self.ready = self.worker.ready(wpb.SandboxReport())
         self._wlock = threading.Lock()
@@ -284,18 +284,20 @@ class LocalConnection(Connection):
         new_session()."""
         self._dead = True
 
-    def new_session(self) -> None:
+    def _new_worker(self):
         from . import session as _s
 
-        # The worker seeds torch's global RNG, which in-process would reseed
-        # the client's sessions through this connection: skip that (a
-        # recovery restores the RNG state anyway).
+        # Worker startup seeds PyTorch. Skip the client seed hook because this
+        # worker lives in the same process as the client.
         prev = getattr(_s._seeding, "active", False)
         _s._seeding.active = True
         try:
-            worker = self._Session(self._init)
+            return self._Session(self._init)
         finally:
             _s._seeding.active = prev
+
+    def new_session(self) -> None:
+        worker = self._new_worker()
         with self._wlock:
             self.worker = worker
             self.session_id = os.urandom(16)

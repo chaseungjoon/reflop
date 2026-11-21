@@ -29,6 +29,7 @@ _ASYNC_WHAT = {"upload": "uploading a tensor", "free": "freeing tensors", "regis
 _sessions: dict[int, Session] = {}
 _default: list[Session] = []
 _glock = threading.Lock()
+_seed: int | None = None
 
 
 def current() -> Session:
@@ -50,21 +51,23 @@ def by_index(i: int) -> Session:
 
 
 def seed(n: int) -> None:
-    current().set_seed(n)
+    global _seed
+    # Validate even if there is no session to send a reseed request to yet.
+    n = cpb.Reseed(seed=n).seed
+    with _glock:
+        _seed = n
+        sessions = list(_sessions.values())
+    for s in sessions:
+        s.set_seed(n)
 
 
 _seeding = threading.local()
 
 
 def seed_if_open(n: int) -> None:
-    if getattr(_seeding, "active", False) or not _default:
-        return
-    _seeding.active = True
-    try:
+    if not getattr(_seeding, "active", False):
         for s in list(_sessions.values()):
             s.set_seed(n)
-    finally:
-        _seeding.active = False
 
 
 def synchronize() -> None:
@@ -133,7 +136,8 @@ def tensor_bytes(t: torch.Tensor) -> bytes:
 class Session:
     unread_error: BaseException | None = None  # raised once but swallowed by repr (see keep_unread)
 
-    def __init__(self, conn, device_index: int, gdevice: gpb.Device, caps, *, allow_local_fallback: bool = True) -> None:
+    def __init__(self, conn, device_index: int, gdevice: gpb.Device, caps, *,
+                 allow_local_fallback: bool = True, make_default: bool = True) -> None:
         self.conn = conn
         self.device_index = device_index
         self.gdevice = gdevice
@@ -160,10 +164,19 @@ class Session:
         self._ctr = 0
         self.stats = {"flushes": 0, "registers": 0, "executes": 0, "bytes_up": 0, "bytes_down": 0}
         self.encoder = ArgEncoder(self._value_of, self.cpu_value, self.scalar_value)
-        with _glock:
-            _sessions[device_index] = self
-            _default.append(self)
-            _register_atexit()
+        applied_seed = None
+        while True:
+            with _glock:
+                seed = _seed
+                if seed is None or seed == applied_seed:
+                    _sessions[device_index] = self
+                    if make_default:
+                        _default.append(self)
+                    _register_atexit()
+                    break
+            # A seed call during this request may have changed the remembered seed.
+            self.set_seed(seed)
+            applied_seed = seed
 
     # -------------------------------------------------------------- op recording
 
@@ -511,9 +524,9 @@ class Session:
         return self.fetch(v).item()
 
     def set_seed(self, n: int) -> None:
-        self.flush()
         _seeding.active, prev = True, getattr(_seeding, "active", False)
         try:
+            self.flush()
             self.conn.reseed(n)
         finally:
             _seeding.active = prev

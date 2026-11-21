@@ -96,9 +96,10 @@ y = torch.zeros(64, dtype=torch.long, device=dev)
 ```
 
 `reflop.device(server="lab", kind="cuda")` picks a paired server by name and a
-device kind. Tensors on this device print as `device='reflop:0'`. `torch.manual_seed(n)`
-also seeds the server's generator, so dropout and `torch.randn(..., device=dev)`
-are reproducible.
+device kind. Tensors on this device print as `device='reflop:0'`.
+`torch.manual_seed(n)` also seeds open reFLOP sessions. Use `reflop.seed(n)`
+to seed all open sessions and set the initial seed for sessions opened later.
+You can call it before `reflop.device()`.
 
 ## When work is sent
 
@@ -420,6 +421,10 @@ b = (a @ a).to(gpu)                    # moving between sessions goes through yo
 (PyTorch's autograd internally sees a single device.) Moves between sessions are differentiable. An
 operation mixing tensors from two sessions raises an error asking you to move
 one.
+
+Opening a new session explicitly makes it the default for calls such as
+`reflop.load(name)`. A CPU session opened automatically by
+`placement("remote-cpu")` leaves that default in place.
 
 ## Saving state
 

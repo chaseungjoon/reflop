@@ -1211,15 +1211,15 @@ def _cpu_session():
     """The server-CPU session, opened on demand (placement "remote-cpu")."""
     from . import session
     from ._pb import graph_pb2 as gpb
+    from .api import _open_session
+    from .connection import LocalConnection
 
     for s in list(session._sessions.values()):
         if s.gdevice.kind == gpb.DEVICE_CPU:
             return s
-    import reflop
-
     idx = max(session._sessions, default=-1) + 1
-    reflop.device(idx, kind="cpu", local=getattr(session.current().conn, "local_kind", None) and "cpu")
-    return session.by_index(idx)
+    local = "cpu" if isinstance(session.current().conn, LocalConnection) else None
+    return _open_session(idx, kind="cpu", local=local, make_default=False)
 
 
 def _new_empty(size, dtype, stride=None, device=None):
