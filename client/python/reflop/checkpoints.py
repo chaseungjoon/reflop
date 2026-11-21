@@ -283,6 +283,8 @@ def save(name: str, obj) -> int:
             keys.append(k)
             handles.append(h)
         r = sess.conn.call(cpb.Envelope(snapshot=cpb.Snapshot(name=name, handles=handles, keys=keys)), timeout=None)
+        # An earlier step failed: the snapshot holds the values from before it.
+        sess.raise_async()
     return int(r.snapshot_saved.bytes)
 
 
@@ -298,6 +300,7 @@ def load(name: str, sess) -> dict:
     with sess.lock:
         sess.flush()
         sess.conn.call(cpb.Envelope(restore=cpb.Restore(name=name, keys=keys, handles=handles)), timeout=None)
+        sess.raise_async()
     out = {}
     for k, h, m in zip(keys, handles, desc.metas):
         meta = torch.empty(tuple(m.shape), dtype=PB_TO_DTYPE[m.dtype], device="meta")

@@ -875,3 +875,44 @@ validation is enough; target values are still bounds-checked at every run by
 checking. Tests: `test_ctc_backward_*` in `tests/security/corpus/test_corpus.py`
 (every malformed graph is rejected at V4 and is accepted without the check),
 `test_ctc_loss_with_tensor_lengths` in `tests/conformance/test_ops.py`.
+
+## ADR-033: A read never returns data while an earlier request's failure is pending
+
+**Context.** The client sends executes, uploads and frees without waiting,
+and a failure is stored when its answer arrives and raised at the
+next read. `Session.flush` checked for a stored failure only when it
+started. A read waits for its answer, and by then the answer to an earlier
+request that failed has arrived, but nobody looked again: the read returned
+data that the failed request should have changed, with no error. In the
+benchmark, a captured step whose replay failed returned the previous batch's
+loss exactly, and the error came one call later. The in-process worker
+answers synchronously, so no test saw it.
+
+**Decision.** After every wait that hands data or state back to the program
+(`flush` with returned values, `fetch_handles`, `reflop.save`,
+`reflop.load`), the client raises a stored failure before returning. This
+relies on the server answering a session's requests in order: the worker
+handles them one at a time, reflopd forwards them in order, and its own
+rejections (paused, quota) are sent at once, so they arrive earlier, never
+later. Uploads that pass a pause go ahead of held requests but return no
+data. The worker commits a graph's outputs only after every node has run,
+so a failed execute leaves the handles as they were. A read therefore never
+needs to wait for anything beyond its own answer. `repr` must not raise, so when a read inside it fails, the error is
+kept (`Session.keep_unread`) and raised by the next read, or printed at exit.
+The C API waits for every answer and was never affected.
+
+**Alternatives.** Wait for every request in flight before returning a value
+(no extra cost when answers are in order, but checkpoint answers come late
+by design and would stall reads). Sequence numbers in answers so the client
+can tell which failures precede a read (a protocol change for a guarantee
+the transport already gives). Make executes synchronous (one round trip per
+step; most of the throughput is gone).
+
+**Consequences.** Reads after a failure raise it; each failure is raised
+once, and the failed request leaves the server's tensors as they were. If
+reflopd ever answers out of order, a read could again return data while an
+earlier failure is still on the way; the ordering argument has to be checked
+whenever the forwarding path changes (held requests, data plane). Tests:
+`tests/e2e/test_async_errors.py` delivers the in-process worker's answers
+from another thread after a delay, and runs against a real reflopd with
+`REFLOP_E2E=1`.

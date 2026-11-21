@@ -131,6 +131,8 @@ def tensor_bytes(t: torch.Tensor) -> bytes:
 
 
 class Session:
+    unread_error: BaseException | None = None  # raised once but swallowed by repr (see keep_unread)
+
     def __init__(self, conn, device_index: int, gdevice: gpb.Device, caps, *, allow_local_fallback: bool = True) -> None:
         self.conn = conn
         self.device_index = device_index
@@ -254,7 +256,16 @@ class Session:
         if len(self.inflight) > 256:
             self.inflight = [f for f in self.inflight if not f.done()]
 
+    def keep_unread(self, e: BaseException) -> None:
+        """An error that was raised but swallowed (repr must not raise):
+        raise it again at the next read, so it is not lost."""
+        if self.unread_error is None:
+            self.unread_error = e
+
     def raise_async(self) -> None:
+        if self.unread_error is not None:
+            e, self.unread_error = self.unread_error, None
+            raise e
         e = self.async_error
         if e is not None:
             self.async_error = None
@@ -374,6 +385,8 @@ class Session:
                     results[i] = torch.tensor(v.payload)
                 elif v.kind == DATASET:
                     raise RuntimeError("cannot fetch a whole dataset")
+            if returns:
+                self.raise_async()  # see fetch_handles
             return results
 
     def _execute(self, outputs, specs, owners, ret_pos, results) -> None:
@@ -470,6 +483,11 @@ class Session:
 
     def fetch_handles(self, handles: list[bytes]) -> list[torch.Tensor]:
         frames = self.conn.request_stream(cpb.Envelope(fetch=cpb.Fetch(handles=handles))).result()
+        # Executes are sent without waiting. One that failed left the handles it
+        # would have rebound with their old contents, so this data may be
+        # stale. The server answers in order and the failure's callback has
+        # run before this answer arrived: raise it instead of returning.
+        self.raise_async()
         parts: dict[int, list] = {}
         metas: dict[int, gpb.TensorMeta] = {}
         for env in frames:
