@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.2.6 (2026-11-21)
+
+A Guest can no longer get another Guest's session killed by using up host
+RAM, and operations that run on the client no longer lose their writes to
+reFLOP tensors. Owners: update reflopd for the memory fix; the placement fix
+is in the Guest client.
+
+Updating from 0.2.0 still needs the version named (see 0.2.1). From 0.2.1 or
+later, plain `update` works.
 
 Owner:
 
