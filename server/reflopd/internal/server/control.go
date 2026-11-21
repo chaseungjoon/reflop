@@ -466,6 +466,9 @@ func (s *Server) suspendAll(kill bool, why string) PauseResult {
 			sess.mu.Lock()
 			sess.suspended = true
 			sess.mu.Unlock()
+			// Its GPU memory is about to move into its host RAM: lift the
+			// worker's own limit (the headroom was reserved above).
+			_ = sess.worker.SetMemoryMax(0)
 			err := s.suspendHelper(sess).Suspend(j.pid)
 			results <- outcome{sess, err}
 		}(j)

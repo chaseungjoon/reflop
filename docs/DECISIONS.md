@@ -953,3 +953,52 @@ under `"local"` uploads each result. Graphs outside placement are unchanged
 `tests/e2e/test_placement.py` (writes in every mode against PyTorch, the
 cost model still choosing the client for the large scatter, views reading
 only their part, training and gradient accumulation under `"local"`).
+
+## ADR-035: Each worker gets its own memory limit below the shared one
+
+**Context.** Workers shared one cgroup `memory.max` (the host-RAM pool above
+the floor), and each worker leaf only had `pids.max` and `memory.oom.group`.
+When the shared limit was reached, the kernel killed the largest worker, not
+necessarily the one growing: one Guest could get another Guest's larger
+session killed (issue #16). A worker was also told at spawn that its budget
+was the whole pool, although other workers already used part of it, and its
+own checks had gaps: each upload stream was checked alone while allocating
+its whole buffer up front, finishing an upload copied the data twice more,
+and a fetch held about four copies of the data.
+
+**Decision.** The RAM rail (every 500 ms) sets each worker leaf's
+`memory.max` to its own use plus the pool's free headroom, less a margin of
+1/8 of the headroom (at least 32 MiB, never more than the headroom). The
+margin is what makes it work: without it the worker's own limit and the
+shared one coincide, and anything another worker adds before the next tick
+makes the shared limit fail first; then the kernel kills the largest worker
+again. A new worker starts with a limit and a budget of the free headroom.
+A suspended worker has no limit of its own while suspend moves its GPU
+memory into its host RAM; `suspendAll` already checks that against the
+headroom. Inside the worker, uploads in progress are counted together
+against the budget, the upload buffer becomes the tensor (CPU) or is copied
+to the device once, and a fetch makes one host copy per tensor (`.cpu()`)
+and builds its frames from it before sending.
+
+**Alternatives.** A static per-worker limit equal to the whole pool (what a
+worker is told at spawn): the pool can still be filled by one worker and the
+kernel still picks the largest. A static share of the pool per worker: one
+Guest on an idle machine could not use most of it, and lowering the share
+below a worker's use when another worker starts would OOM-kill it. A larger
+margin (half the headroom): a single large allocation would fail while the
+pool has room. `memory.high` throttling: slows the worker instead of
+bounding it, and the shared limit can still be reached.
+
+**Consequences.** A worker that grows past what is free is OOM-killed
+alone; the kernel test (`TestWorkerLimitsKillTheGrowerNotTheBiggest`, needs
+a delegated scope) shows the old setup killing the innocent larger worker
+and the new one killing the grower. Two workers that grow within the same
+tick can still reach the shared limit together. One worker alone can take
+7/8 of the free pool in one allocation and all of it step by step. Without a
+delegated cgroup nothing changes (the rail still kills the largest worker
+below the floor). Streaming a fetch from a host buffer filled with
+`torch.frombuffer(...).copy_(gpu_tensor)` returned zeros now and then
+through the in-process connection in the full e2e suite, while `.cpu()`
+never did; the cause is not known (BUGS.md), so the fetch uses `.cpu()`.
+Tests: `tests/security/corpus/test_worker_memory.py`, `cgroup_test.go`,
+`workermem_test.go`.

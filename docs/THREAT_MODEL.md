@@ -68,7 +68,7 @@ a kernel, or a pickled object. Anything else reaching the server is a defect.
 | Landlock | worker: read-only runtime, system libraries and device topology; read-write only its scratch directory and its own `/proc/<pid>`; device nodes of its GPU; TCP (and UDP on newer kernels) denied; abstract Unix sockets and signals scoped (ABI ≥ 6) | same |
 | seccomp | worker allowlist: no `execve`, no process creation, no new sockets of any family, no `connect`/`bind`, no `ptrace`, mount, namespaces, eBPF, perf, keyrings, `userfaultfd`, `io_uring`; signals only to itself. Fails closed: if the filter cannot be built, sent or installed, the worker never starts | same |
 | Namespaces | user + empty network namespace when unprivileged ones are allowed | same |
-| cgroup | per-worker leaf under a delegated scope: `pids.max`, OOM kills the whole worker, shared `memory.max` that tracks the host-RAM floor | delegated from the system unit |
+| cgroup | per-worker leaf under a delegated scope: `pids.max`, OOM kills the whole worker, a shared `memory.max` that tracks the host-RAM floor, and a per-worker `memory.max` (its use plus 7/8 of the free headroom, lifted while suspended), so the worker that grows is the one killed (ADR-035) | delegated from the system unit |
 | reflopd itself | Landlock (system read-only, its own directories read-write, TCP bind only on its ports) and a seccomp denylist, applied by re-exec; its own cgroup's `memory.max` keeps the host-RAM floor | plus systemd hardening |
 | Environment | an explicit allowlist (no Owner variables) | same |
 
@@ -166,6 +166,7 @@ session per interval, never more often than every 5 minutes (ADR-029).
 | Meta kernels disagreeing with real kernels | outputs that later operators consume are checked against the validated shape and dtype at run time; a mismatch is an error. Unused auxiliary outputs may differ (seen with `_embedding_bag`) |
 | Kernels that trust their inputs' shapes | `_ctc_loss_backward` reads `grad`, `neg_log_likelihood` and `log_alpha` without checking them (a short `log_alpha` crashes the CPU kernel). PyTorch has no meta kernel for it; the worker's own checks every input shape exactly before V4 passes (ADR-032). Other ops of this kind would be found only by review or fuzzing |
 | Timing side channels between Guests on one GPU | out of scope |
+| A Guest exhausting host RAM for others | each worker's own `memory.max` sits below the shared limit, so a worker that grows hits its own limit and is OOM-killed alone. Two workers growing within the same 500 ms tick can still reach the shared limit together, and then the kernel picks the larger. The worker's own checks bound uploads in progress together and keep fetches at about two copies of the data (ADR-035) |
 | A Guest exhausting GPU memory for others | by design without quotas; others get `OUT_OF_MEMORY`, nothing crashes. PyTorch's OOM text is trimmed so it does not reveal other tenants' processes. A failed allocation while running may end the oldest detached session on that GPU; a graph rejected as larger than the device never does (ADR-022) |
 | Escape at Level 0 lands in the Owner's account | Level 1 moves it to an empty account |
 | The Owner sees Guests' data | by design (non-goal N1) |

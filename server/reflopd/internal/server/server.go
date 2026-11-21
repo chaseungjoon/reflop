@@ -459,7 +459,10 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 	if err != nil {
 		return nil, fmt.Errorf("the host RAM safety rail cannot read memory use (%v); not starting a worker", err)
 	}
-	init.HostMemoryBudgetBytes = rails.WorkerBudget(cfg.Rails, m, s.workersMemory())
+	// What this worker may use: the pool's free headroom now. (WorkerBudget
+	// is for all workers together; others already use part of it.)
+	headroom := workerHeadroom(rails.WorkerBudget(cfg.Rails, m, s.workersMemory()), s.workersMemory())
+	init.HostMemoryBudgetBytes = max(headroom, minWorkerMemory)
 	var uuids []string
 	if slot.GPU != nil {
 		uuids = []string{slot.GPU.UUID}
@@ -472,7 +475,7 @@ func (s *Server) spawnWorker(ctx context.Context, sess *Session) (*supervisor.Wo
 	spec := supervisor.Spec{
 		Name: name, Python: s.runtime.PythonBin(), RuntimeDir: s.runtime.Dir, WorkerDir: s.workerDir, Scratch: scratch,
 		GPUUUIDs: uuids, DeviceNodes: slot.Nodes, WSL: s.gpuInfo.WSL, Init: init,
-		UserNS: s.userNS, CG: s.cg, MaxPIDs: cfg.Rails.MaxPIDs,
+		UserNS: s.userNS, CG: s.cg, MaxPIDs: cfg.Rails.MaxPIDs, MemoryMax: max(headroom, minWorkerMemory),
 		RequireLandlock: !cfg.Sandbox.AcceptWeakIsolation && sandbox.LandlockABI() > 0,
 		FSize:           rails.DiskBudget(cfg.Rails, s.layout.State),
 		MaxFrame:        uint32(cfg.Limits.MaxFrameBytes) + 1<<20,

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+Owner:
+
+- One Guest can no longer get another Guest's session killed by using up
+  host RAM (#16). Workers shared one cgroup memory limit, so when it was
+  reached the kernel killed the largest worker, which was not always the one
+  growing. Each worker now also gets its own limit, what it uses plus 7/8 of
+  the pool's free headroom, which the RAM rail updates twice a second; a
+  worker that keeps growing reaches its own limit first and is the one
+  killed. Suspended workers have no limit of their own while their GPU memory
+  is in host RAM. A new worker's budget is the free headroom, not the whole
+  pool.
+- Inside the worker, all uploads in progress count together against the
+  host budget (each one allocates its whole buffer up front, so parallel
+  uploads could each take a full budget), finishing an upload no longer
+  copies the data twice more (about 3x the tensor at the peak), and a fetch
+  holds about two copies of the data instead of four. Needs the Owner to
+  update reflopd.
+
 Guest:
 
 - An operation that runs on the client and writes to a reFLOP tensor updates
