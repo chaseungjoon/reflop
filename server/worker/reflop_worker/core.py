@@ -24,7 +24,7 @@ from .graph import Builder
 from .handles import HandleTable, check_new
 from .meta import infer
 from .ops_generated import OPS
-from .safetensors import MAX_HEADER, RESERVED, SafetensorsError, parse_header, tensor_bytes
+from .safetensors import MAX_HEADER, RESERVED, SafetensorsError, parse_header
 
 # Tier 2 capability keys and how to detect them on a device.
 CAPABILITY_KEYS = ("linalg", "complex", "fp8", "rnn_fused", "ctc", "cdist_backward")
@@ -115,6 +115,18 @@ def device_info(device: torch.device, gd: gpb.Device) -> kpb.DeviceInfo:
     di.dtypes.extend(dtypes.TORCH_TO_PB[d] for d in base)
     return di
 
+
+
+def _host_copy(t: torch.Tensor) -> torch.Tensor:
+    """The tensor's bytes as a flat uint8 tensor on the host (one copy for a
+    device tensor, as .cpu() always made)."""
+    return t.detach().contiguous().cpu().reshape(-1).view(torch.uint8)
+
+
+def _chunk_bytes(flat: torch.Tensor, off: int, n: int) -> bytes:
+    buf = bytearray(n)
+    torch.frombuffer(buf, dtype=torch.uint8).copy_(flat[off:off + n])
+    return bytes(buf)
 
 class Session:
     """All state of one (identity, session)."""
@@ -255,20 +267,25 @@ class Session:
                 n = dtypes.nbytes_checked(u.meta.shape, dt, self.limits.max_tensor_numel)
             except (ValueError, OverflowError) as e:
                 raise ReflopError(cpb.ERROR_RESOURCE_LIMIT, str(e), cpb.STAGE_E1_BINDINGS) from None
+            # Each stream allocates its whole buffer now, so count every upload
+            # in progress, not just this one (issue #16).
             budget = self.init.host_memory_budget_bytes
-            if budget and n > budget:
-                raise ReflopError(cpb.ERROR_SAFETY_RAIL, "upload would exceed the host memory safety rail",
+            reserved = sum(len(o["buf"]) for o in self.uploads.values())
+            if budget and reserved + n > budget:
+                raise ReflopError(cpb.ERROR_SAFETY_RAIL, "upload would exceed the host memory safety rail "
+                                  f"({n} bytes, {reserved} more in uploads in progress, budget {budget})",
                                   cpb.STAGE_V5_SAFETY)
             st = {"handle": u.handle, "dt": dt, "shape": tuple(u.meta.shape), "buf": bytearray(n), "fill": 0,
                   "sha": hashlib.sha256()}
             self.uploads[rid] = st
         elif u.handle != st["handle"]:
             raise ReflopError(cpb.ERROR_PROTOCOL, "upload handle changed mid-stream")
-        if u.offset != st["fill"] or st["fill"] + len(u.data) > len(st["buf"]):
+        data = u.data  # each read of a protobuf bytes field is a new copy
+        if u.offset != st["fill"] or st["fill"] + len(data) > len(st["buf"]):
             raise ReflopError(cpb.ERROR_PROTOCOL, "upload chunk out of order or past the end")
-        st["buf"][st["fill"]:st["fill"] + len(u.data)] = u.data
-        st["sha"].update(u.data)
-        st["fill"] += len(u.data)
+        st["buf"][st["fill"]:st["fill"] + len(data)] = data
+        st["sha"].update(data)
+        st["fill"] += len(data)
         if not u.final:
             return None
         del self.uploads[rid]
@@ -276,7 +293,9 @@ class Session:
             raise ReflopError(cpb.ERROR_PROTOCOL, "upload ended before all bytes arrived")
         if u.sha256 and u.sha256 != st["sha"].digest():
             raise ReflopError(cpb.ERROR_PROTOCOL, "upload checksum mismatch")
-        t = tensor_from_bytes(bytes(st["buf"]), st["dt"], st["shape"], self.device)
+        # The buffer becomes the tensor's memory (CPU) or is copied to the device
+        # once: no further host copies (issue #16).
+        t = tensor_from_bytes(st.pop("buf"), st["dt"], st["shape"], self.device, owned=True)
         self.handles.put_new(st["handle"], t)
         return cpb.Uploaded(handle=st["handle"])
 
@@ -286,19 +305,24 @@ class Session:
         if total > self.limits.max_fetch_bytes:
             raise ReflopError(cpb.ERROR_RESOURCE_LIMIT, f"fetch of {total} bytes exceeds the limit")
         chunk = int(self.limits.upload_chunk_bytes) or (4 << 20)
+        # One host copy of each tensor (.cpu()), cut straight into the frames:
+        # about 2x the fetched size at the peak, where a copy, a bytearray and
+        # a bytes of each tensor plus the frames held about 4x (issue #16).
+        # Not torch.frombuffer(...).copy_(device_tensor): that returned zeros
+        # now and then in the full e2e suite (ADR-035). Every frame is built
+        # before the first is sent, as before.
         frames = []
         for i, t in enumerate(tensors):
-            data = tensor_bytes(t)
+            b = _host_copy(t)
+            n = b.numel()
             meta = gpb.TensorMeta(dtype=dtypes.TORCH_TO_PB[t.dtype], shape=list(t.shape))
-            if not data:
-                frames.append(cpb.FetchChunk(index=i, meta=meta, offset=0, data=b"", last_of_tensor=True))
-                continue
-            for off in range(0, len(data), chunk):
-                c = cpb.FetchChunk(index=i, offset=off, data=data[off:off + chunk],
-                                   last_of_tensor=off + chunk >= len(data))
+            for off in range(0, max(n, 1), chunk):
+                c = cpb.FetchChunk(index=i, offset=off, data=_chunk_bytes(b, off, min(chunk, n - off)) if n else b"",
+                                   last_of_tensor=off + chunk >= n)
                 if off == 0:
                     c.meta.CopyFrom(meta)
                 frames.append(c)
+            del b  # the frames hold the data now
         if not frames:
             send(cpb.Envelope(request_id=rid, end=True, fetch_chunk=cpb.FetchChunk()))
             return

@@ -43,6 +43,7 @@ type Spec struct {
 	UserNS          bool
 	CG              *cgroup.Manager
 	MaxPIDs         uint32
+	MemoryMax       uint64 // the worker cgroup's own memory.max (0: none)
 	RequireLandlock bool
 	FSize           uint64
 	ExtraRules      []sandbox.PathRule
@@ -224,7 +225,7 @@ func SpawnWithFilter(ctx context.Context, spec Spec, filter func(pid int) ([]byt
 	attr := &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	var cgw *cgroup.Worker
 	if spec.CG != nil {
-		cgw, err = spec.CG.NewWorker(spec.Name, spec.MaxPIDs)
+		cgw, err = spec.CG.NewWorker(spec.Name, spec.MaxPIDs, spec.MemoryMax)
 		if err != nil {
 			return nil, fmt.Errorf("worker cgroup: %w", err)
 		}
@@ -466,6 +467,15 @@ func (w *Worker) ExitCode() int {
 
 // PID returns the worker pid.
 func (w *Worker) PID() int { return w.cmd.Process.Pid }
+
+// SetMemoryMax sets the worker's own host memory limit (0: none). Without a
+// cgroup it does nothing.
+func (w *Worker) SetMemoryMax(bytes uint64) error {
+	if w.cg == nil {
+		return nil
+	}
+	return w.cg.SetMemoryMax(bytes)
+}
 
 // Memory returns host memory used by the worker.
 func (w *Worker) Memory() uint64 {

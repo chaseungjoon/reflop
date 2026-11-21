@@ -193,7 +193,7 @@ never hit them:
 | Rail | Default | Effect |
 |---|---|---|
 | Disk free floor | max(10%, 20 GiB) of the filesystem holding reFLOP's state | dataset uploads and snapshots that would cross it are refused, partial uploads removed |
-| Host RAM floor | 4 GiB stays available to you | workers share a cgroup memory limit that tracks it; without a delegated cgroup, the largest worker is killed when available memory drops below the floor |
+| Host RAM floor | 4 GiB stays available to you | workers share a cgroup memory limit that tracks it, and each worker also gets its own limit: what it uses plus 7/8 of what is still free, updated twice a second. A worker that keeps growing reaches its own limit first, so the kernel kills that worker, not another Guest's larger one. Without a delegated cgroup, the largest worker is killed when available memory drops below the floor |
 | Worker processes/threads | 4096 | `pids.max` per worker (or `RLIMIT_NPROC`) |
 | Protocol limits | 64 MiB frames, 1M nodes per graph, 16 dims, 2^40 elements per tensor | malformed or absurd requests are rejected before any work |
 | Physical feasibility | estimated peak memory ≤ the GPU's total memory | graphs that cannot fit are rejected without allocating |

@@ -49,6 +49,53 @@ func (s *Server) monitor(ctx context.Context) {
 	}
 }
 
+// minWorkerMemory is the smallest memory limit reflopd sets (shared or per
+// worker), so a nearly full machine never gets a limit of zero.
+const minWorkerMemory = 64 << 20
+
+// workerHeadroom is the memory all workers together may still add.
+func workerHeadroom(budget, using uint64) uint64 {
+	if budget > using {
+		return budget - using
+	}
+	return 0
+}
+
+// workerLimit is a worker's own memory.max: what it uses plus the pool's
+// free headroom, less a margin. A worker that grows into the margin hits its
+// own limit, so the kernel kills that worker, not whichever worker is
+// biggest when the shared limit is reached (issue #16). Without the margin
+// the two limits coincide, and anything another worker adds before the next
+// tick (500 ms) makes the shared limit fail first. One worker alone can still
+// take most of the pool in one allocation, and all of it step by step, since
+// the limit follows its use every tick. A suspended worker has no limit of
+// its own (0): suspending moves its GPU memory into its host RAM, which
+// suspendAll has already checked against the headroom.
+func workerLimit(own, headroom uint64, suspended bool) uint64 {
+	if suspended {
+		return 0
+	}
+	margin := min(max(headroom/8, workerLimitMargin), headroom)
+	return max(own+headroom-margin, minWorkerMemory)
+}
+
+// workerLimitMargin is the least of the pool's free headroom kept out of
+// every worker's own limit (see workerLimit).
+const workerLimitMargin = 32 << 20
+
+// setWorkerLimits gives every worker its own limit (see workerLimit).
+func (s *Server) setWorkerLimits(headroom uint64) {
+	for _, sess := range s.allSessions() {
+		sess.mu.Lock()
+		w, suspended := sess.worker, sess.suspended
+		sess.mu.Unlock()
+		if w == nil {
+			continue
+		}
+		_ = w.SetMemoryMax(workerLimit(w.Memory(), headroom, suspended))
+	}
+}
+
 // ramRail keeps the host RAM floor available for the Owner (§9.6).
 func (s *Server) ramRail() {
 	m, err := rails.Memory()
@@ -59,7 +106,8 @@ func (s *Server) ramRail() {
 			s.logf("host RAM rail: %v; freezing worker memory and refusing new sessions", err)
 		}
 		if s.cg != nil {
-			s.cg.SetMemoryMax(max(s.workersMemory(), 64<<20))
+			s.cg.SetMemoryMax(max(s.workersMemory(), minWorkerMemory))
+			s.setWorkerLimits(0)
 		}
 		return
 	}
@@ -73,10 +121,8 @@ func (s *Server) ramRail() {
 		}
 		// The kernel enforces it: an over-budget worker is OOM-killed inside
 		// its own cgroup, never the Owner's processes.
-		if budget < 64<<20 {
-			budget = 64 << 20
-		}
-		s.cg.SetMemoryMax(budget)
+		s.cg.SetMemoryMax(max(budget, minWorkerMemory))
+		s.setWorkerLimits(workerHeadroom(budget, using))
 		return
 	}
 	if m.Available >= rails.RAMFloor(r, m.Total) {

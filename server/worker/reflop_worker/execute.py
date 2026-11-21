@@ -30,14 +30,16 @@ def binding_error(msg: str) -> ReflopError:
     return ReflopError(cpb.ERROR_BINDING, msg, E1)
 
 
-def tensor_from_bytes(data: bytes, dt: torch.dtype, shape, device) -> torch.Tensor:
+def tensor_from_bytes(data, dt: torch.dtype, shape, device, owned: bool = False) -> torch.Tensor:
+    """owned: data is a bytearray nobody else uses; it becomes the tensor's
+    memory instead of being copied."""
     n = dtypes.numel_checked(shape, 1 << 62)
     need = n * dtypes.itemsize(dt)
     if len(data) != need:
         raise binding_error(f"tensor data has {len(data)} bytes, expected {need}")
     if need == 0:
         return torch.empty(shape, dtype=dt, device=device)
-    buf = bytearray(data)
+    buf = data if owned and isinstance(data, bytearray) else bytearray(data)
     t = torch.frombuffer(buf, dtype=torch.uint8).view(dt).reshape(shape)
     r = validators.measure(t) if dt in validators.INT_DTYPES else None  # on the host: no device sync later
     out = t.to(device)

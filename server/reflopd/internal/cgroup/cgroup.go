@@ -106,7 +106,9 @@ func Setup() (*Manager, error) {
 }
 
 func write(dir, file, val string) error {
-	if err := os.WriteFile(filepath.Join(dir, file), []byte(val), 0); err != nil {
+	// The files exist on cgroupfs; the mode only matters for tests on a plain
+	// directory.
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(val), 0o644); err != nil {
 		return fmt.Errorf("write %s/%s: %w", dir, file, err)
 	}
 	return nil
@@ -120,13 +122,18 @@ type Worker struct {
 	FD  int // open directory fd, for CLONE_INTO_CGROUP
 }
 
-// NewWorker creates a leaf cgroup for one worker.
-func (m *Manager) NewWorker(name string, maxPIDs uint32) (*Worker, error) {
+// NewWorker creates a leaf cgroup for one worker. memoryMax (0: none) is
+// the worker's own memory limit; see Worker.SetMemoryMax.
+func (m *Manager) NewWorker(name string, maxPIDs uint32, memoryMax uint64) (*Worker, error) {
 	dir := filepath.Join(m.workers(), name)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		return nil, err
 	}
 	if err := write(dir, "pids.max", strconv.FormatUint(uint64(maxPIDs), 10)); err != nil {
+		os.Remove(dir)
+		return nil, err
+	}
+	if err := write(dir, "memory.max", memoryValue(memoryMax)); err != nil {
 		os.Remove(dir)
 		return nil, err
 	}
@@ -143,11 +150,22 @@ func (m *Manager) NewWorker(name string, maxPIDs uint32) (*Worker, error) {
 
 // SetMemoryMax caps all workers together.
 func (m *Manager) SetMemoryMax(bytes uint64) error {
-	v := "max"
-	if bytes > 0 {
-		v = strconv.FormatUint(bytes, 10)
+	return write(m.workers(), "memory.max", memoryValue(bytes))
+}
+
+// SetMemoryMax caps this worker alone (0: no limit of its own; the shared
+// limit still applies). A worker that reaches its own limit is OOM-killed
+// inside its own cgroup, so it cannot get another worker killed in its place
+// by pushing all workers over the shared limit (issue #16).
+func (w *Worker) SetMemoryMax(bytes uint64) error {
+	return write(w.Dir, "memory.max", memoryValue(bytes))
+}
+
+func memoryValue(bytes uint64) string {
+	if bytes == 0 {
+		return "max"
 	}
-	return write(m.workers(), "memory.max", v)
+	return strconv.FormatUint(bytes, 10)
 }
 
 // SetDaemonMemoryMax caps reflopd's own cgroup (<root>/daemon), so the

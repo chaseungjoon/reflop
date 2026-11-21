@@ -14,11 +14,11 @@ from reflop_worker.ops_generated import OPS
 NAME = {o.name: i for i, o in OPS.items()}
 
 
-def make_session(device: str = "cpu", **limit_overrides) -> Session:
+def make_session(device: str = "cpu", host_budget: int = 0, **limit_overrides) -> Session:
     from reflop.connection import default_limits
     from reflop_worker._pb import capabilities_pb2 as kpb
 
-    init = wpb.WorkerInit(seed=0)
+    init = wpb.WorkerInit(seed=0, host_memory_budget_bytes=host_budget)
     init.device.kind = gpb.DEVICE_CPU if device == "cpu" else gpb.DEVICE_CUDA
     lim = default_limits(kpb)
     for k, v in limit_overrides.items():
