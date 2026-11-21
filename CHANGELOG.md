@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+Guest:
+
+- `torch.randint` and `torch.randperm` on the reFLOP device work with their
+  default dtype (int64). Before, they failed with `KeyError: 4`; an explicit
+  `dtype=torch.int32` worked.
+- `reflop.capture` captures again when the arguments' shapes change. Before,
+  the second call with a new batch shape (a smaller last batch, say) replayed
+  the old graph and failed with a BINDING error ("bound tensor is
+  [16,784], the graph expects [32,784]").
+- `F.ctc_loss` with lengths given as tensors works. Before, it raised
+  `NotImplementedError` (no meta kernel). The lengths are read on the client,
+  so lengths on the reFLOP device cost one fetch. The CTC backward pass still
+  does not work on reFLOP.
+- Under `reflop run`, `torch.autocast("cuda", ...)` (also
+  `torch.amp.autocast` and `torch.cuda.amp.autocast`) runs on the reFLOP
+  device. Before, float16 did nothing and bfloat16 raised "Torch not compiled
+  with CUDA enabled". `torch.cuda.is_bf16_supported()` asks the server, and
+  `torch.is_autocast_enabled("cuda")` and `torch.get_autocast_dtype("cuda")`
+  report the reFLOP device.
+- `reflop run` with a local worker (`REFLOP_LOCAL=cpu`, for tests and
+  diagnostics) no longer deadlocks on the first `.cuda()` after
+  `torch.manual_seed`.
+
 ## 0.2.2 (2026-11-19)
 
 reflopd bounds the requests it holds while execution is paused (#15), and the

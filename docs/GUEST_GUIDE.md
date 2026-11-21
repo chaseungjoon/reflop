@@ -248,7 +248,9 @@ constants, later calls send a single request that binds the new arguments, and
 your Python function is not run. Rules (checked, not assumed):
 
 - Tensor arguments, also inside lists, tuples and dicts (such as a dataset
-  batch), must keep their shapes and dtypes; a change re-captures.
+  batch), must keep their shapes and dtypes; a change re-captures. The next two
+  calls with the new shapes (a smaller last batch, say) run eagerly, and later
+  ones replay again.
 - Anything that changes every step must be a tensor. With a plain Adam or AdamW,
   the bias correction is a Python number that changes each step: pass
   `capturable=True` (or `fused=True`). A Python learning-rate schedule has the
@@ -308,8 +310,9 @@ reflop run python train.py --epochs 10
 ```
 
 `reflop run` starts the command on this machine with a shim: `torch.cuda.is_available()`
-returns True, and `.cuda()`, `.to("cuda")`, `device="cuda"` and
-`torch.cuda.manual_seed` go to the reFLOP device. This is best effort: code
+returns True, and `.cuda()`, `.to("cuda")`, `device="cuda"`,
+`torch.cuda.manual_seed` and `torch.autocast("cuda")` go to the reFLOP device;
+`torch.cuda.is_bf16_supported()` asks the server. This is best effort: code
 that calls into `torch.cuda` in other ways (streams, memory statistics, CUDA
 graphs) needs the explicit API.
 

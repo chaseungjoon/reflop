@@ -25,6 +25,13 @@ DTYPE_TO_PB = {
     torch.float8_e5m2: gpb.DTYPE_FLOAT8_E5M2,
 }
 PB_TO_DTYPE = {v: k for k, v in DTYPE_TO_PB.items()}
+# Schema defaults give a dtype as its c10::ScalarType number, not a
+# torch.dtype: `ScalarType? dtype=long` defaults to 4 (randint, randperm).
+SCALAR_TYPE_CODES = {
+    0: torch.uint8, 1: torch.int8, 2: torch.int16, 3: torch.int32, 4: torch.int64, 5: torch.float16,
+    6: torch.float32, 7: torch.float64, 9: torch.complex64, 10: torch.complex128, 11: torch.bool,
+    15: torch.bfloat16, 23: torch.float8_e5m2, 24: torch.float8_e4m3fn,
+}
 MEMFMT_TO_PB = {
     torch.contiguous_format: gpb.MEMORY_FORMAT_CONTIGUOUS, torch.preserve_format: gpb.MEMORY_FORMAT_PRESERVE,
     torch.channels_last: gpb.MEMORY_FORMAT_CHANNELS_LAST, torch.channels_last_3d: gpb.MEMORY_FORMAT_CHANNELS_LAST_3D,
@@ -364,6 +371,12 @@ class ArgEncoder:
                     items.append(self.scalar_value(x if isinstance(x, (bool, int, complex)) else float(x)))
                 out.append(("tl", items))
             elif core == "ScalarType":
+                if isinstance(v, int) and not isinstance(v, bool):
+                    if v not in SCALAR_TYPE_CODES:
+                        raise UnsupportedOperatorError(f"{name}: unsupported dtype code {v} for {aname}")
+                    v = SCALAR_TYPE_CODES[v]
+                if v not in DTYPE_TO_PB:
+                    raise UnsupportedOperatorError(f"{name}: dtype {v} is not supported by reflop")
                 out.append(("dtype", v))
             elif core == "MemoryFormat":
                 out.append(("mf", v))
