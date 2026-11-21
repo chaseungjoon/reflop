@@ -24,6 +24,7 @@ import torch
 from torch.utils._pytree import tree_flatten, tree_map, tree_unflatten
 
 from . import _opset_generated as opset
+from .errors import ReflopError
 from .trace import HANDLE, UnsupportedOperatorError, Value, _base, normalize
 
 aten = torch.ops.aten
@@ -132,6 +133,8 @@ class RemoteTensor(torch.Tensor):
             body = repr(self.cpu())
         except Exception as e:  # noqa: BLE001 - repr must not raise
             body = f"<unavailable: {e}>"
+            if isinstance(e, ReflopError):
+                self._rf_storage.session.keep_unread(e)  # the next read raises it
         if body.startswith("tensor("):
             body = body[len("tensor("):-1]
         return f"tensor({body}, device='{self.device}')"

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Guest:
+
+- A value read after a request that failed on the server is never returned
+  stale. Executes are sent without waiting; when one failed (an index out of
+  range found at run time, an out-of-memory error, a binding error), the
+  tensors it would have written kept their old contents, and the next
+  `.item()`, `.cpu()` or similar returned that old data with no error. The
+  error surfaced one read later. A `reflop.capture` step whose replay failed
+  returned the previous call's loss exactly (benchmark B2). Now every read
+  that waits for the server, and `reflop.save` and `reflop.load`, raises an
+  earlier failure first. `print(t)` still never raises; it shows the error,
+  and the next read raises it (ADR-033).
+
 ## 0.2.4 (2026-11-21)
 
 CTC loss training works, and BatchNorm statistics are updated when the

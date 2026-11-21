@@ -115,7 +115,9 @@ as one graph when a value has to leave the server:
 
 Execution is asynchronous: your loop keeps recording step N+1 while the server
 runs step N. A server-side error from an earlier step is raised at the next point
-where you wait for a value, the same way CUDA errors surface.
+where you wait for a value, the same way CUDA errors surface. A value you read
+is never stale: if any earlier request failed, the read raises that error
+instead of returning data (see [Errors](#errors)).
 
 Identical steps produce identical graphs, so after the first step or two only
 the graph's hash and the step's inputs are sent. Learning rates, step counts and
@@ -168,8 +170,29 @@ under one name add up). This needs reflopd 0.1.4 or newer.
 
 Requests are sent without waiting for the answer, so an error can surface a few
 lines after the operation that caused it, at the next value you read
-(`.item()`, `print`, `.cpu()`) or at `reflop.synchronize()`. The message then
-says which request failed ("running a graph failed: ...").
+(`.item()`, `.cpu()`, `.tolist()`, `.numpy()`, `if t:`, `reflop.fetch`) or at
+`reflop.synchronize()`, `reflop.save` or `reflop.load`. The message then says
+which request failed ("running a graph failed: ...").
+
+- The read that raises returns nothing, even when the value it asked for does
+  not depend on the failed request. The server answers in order, so by the
+  time a value arrives every earlier failure is known; a value is never
+  handed back while one is pending.
+- The failed request changed nothing on the server: tensors it would have
+  written keep their values from before it. After you catch the error (for
+  example an out-of-memory error you recover from by shrinking the batch),
+  the session works as usual.
+- Each error is raised once. `print(t)` and `repr(t)` never raise (debuggers
+  and tracebacks call them); they show `<unavailable: ...>` with the error,
+  and the next read still raises it.
+- `reflop.save` raises an earlier failure after writing the snapshot, which
+  holds the values from before the failed request.
+- `reflop.capture` replays follow the same rules: a replay that fails makes
+  the next read of its outputs raise, never return the previous call's values.
+
+In reFLOP 0.2.4 and earlier, a read right after a failed request could
+return the tensor's old contents without an error, and the error surfaced one
+read later.
 
 If the program ends before an error like that surfaces, reFLOP prints it to
 stderr at exit ("an error was not reported before the program ended: ...").

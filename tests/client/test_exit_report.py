@@ -50,6 +50,24 @@ def test_an_error_stored_earlier_is_printed(capsys):
     assert "uploading a tensor failed" in capsys.readouterr().err
 
 
+def test_an_error_only_printed_by_repr_is_reported_at_exit(capsys):
+    """print(t) shows "<unavailable: ...>" without raising (#12); if nothing
+    reads a value afterwards, the error must still not be lost."""
+    f = Future()
+    s = _session((f, "execute"))
+    f.set_exception(_remote_error())
+    try:
+        s.raise_async()
+    except ReflopRemoteError as e:
+        s.keep_unread(e)  # what RemoteTensor.__repr__ does
+
+    s.report_at_exit(5)
+
+    err = capsys.readouterr().err
+    assert "an error was not reported before the program ended" in err
+    assert "running a graph failed: index out of range" in err
+
+
 def test_an_error_already_raised_is_not_repeated(capsys):
     """The program caught it (say an OOM it recovered from): not news at exit."""
     f = Future()
