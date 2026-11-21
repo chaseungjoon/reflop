@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-11-21)
+
+Guest fixes: default-dtype `randint`/`randperm`, `reflop.capture` after a shape
+change, `F.ctc_loss` with tensor lengths, and CUDA autocast under `reflop run`.
+Only the Guest client changes; reflopd is the same apart from its version.
+
+Updating from 0.2.0 still needs the version named (see 0.2.1). From 0.2.1 or
+later, plain `update` works.
 
 Guest:
 
