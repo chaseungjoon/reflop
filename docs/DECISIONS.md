@@ -1022,3 +1022,26 @@ session opened last.
 using the explicit default when placement opens a CPU session. Opening a
 CPU session explicitly still makes it the default. The server uses the
 existing reseed request.
+
+## ADR-037: Fetch large execute results in chunks
+
+**Context.** Reading an unflushed tensor could put its entire contents in
+an execute response. A tensor of 64 MiB already exceeds the default frame
+limit once the response includes its metadata.
+
+**Decision.** Give the combined inline results a budget of one quarter of
+the server's advertised frame limit, capped by the client's frame ceiling.
+When a result would exceed that budget, store it on the worker and use the
+existing chunked fetch. Reuse the output's handle when the execute already
+stores it. Otherwise allocate a temporary handle and free it when the read
+finishes or fails. Wait for the execute response before sending the fetch
+so validation and execution errors reach the caller.
+
+**Alternatives.** Raising the maximum frame size would increase the maximum
+memory consumed by a single response and leave a cutoff for larger tensors.
+Fetching every result in chunks would add a round trip to scalar reads and
+other small results.
+
+**Consequences.** Small results still travel in the execute response.
+Larger reads use the existing fetch size limits and chunk validation.
+The change works with the existing worker and wire protocol.
