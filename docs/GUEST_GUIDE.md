@@ -382,6 +382,26 @@ operation. An operation that mixes large local tensors with small reFLOP tensors
 may run locally when a cost model (your CPU speed, the server's speed, bandwidth,
 round-trip time; measured by `reflop init`) says that is faster.
 
+Wherever an operation runs, writes behave as in PyTorch:
+
+- An in-place operation or an `out=` argument on a reFLOP tensor
+  (`x.add_(1)`, `torch.add(a, b, out=x)`) updates that tensor and returns it.
+  Run locally, the operation computes on your CPU and the result is sent back
+  into `x`.
+- A view of a reFLOP tensor (`x[2:4]`, `x.view(...)`, `x.t()`) stays a view of
+  it, also under `"local"`, so writing through the view updates `x`, and
+  reading the view fetches only the viewed part. Operations on the view return
+  CPU tensors under `"local"` as usual.
+- Training under `"local"` (forward, backward, optimizer step) gives the same
+  parameters as plain PyTorch.
+
+In reFLOP 0.2.5 and earlier, an operation that ran locally and wrote to a reFLOP
+tensor changed a fetched copy, and the tensor silently kept its old value.
+That happened under `"local"` for every in-place operation (including the
+optimizer step, so training there never updated its parameters), and under `"auto"` when the cost
+model ran it locally, for example `x.scatter_add_(0, index, src)` with a small
+`x` and a large client `index`.
+
 ## The server CPU
 
 The server's CPU is a device too, useful for tensor work that does not suit a

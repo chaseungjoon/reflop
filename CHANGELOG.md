@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Guest:
+
+- An operation that runs on the client and writes to a reFLOP tensor updates
+  it. Running locally works on fetched copies of the inputs, and an in-place
+  operation, an `out=` argument or a write through a view changed only the
+  copy: the tensor silently kept its old value. In the default `"auto"`
+  placement this happened when the cost model ran such an operation locally
+  (`x.scatter_add_(0, index, src)` with a small `x` and large client
+  tensors); under `placement("local")` it happened for every in-place
+  operation, so training there never updated its parameters. Writing
+  operations now run their functional form (locally when placement says so)
+  and write the result back, and views of a reFLOP tensor stay views of it,
+  also under `"local"` (ADR-034).
+
 ## 0.2.5 (2026-11-21)
 
 A value read after a request that failed on the server is never returned

@@ -916,3 +916,40 @@ whenever the forwarding path changes (held requests, data plane). Tests:
 `tests/e2e/test_async_errors.py` delivers the in-process worker's answers
 from another thread after a delay, and runs against a real reflopd with
 `REFLOP_E2E=1`.
+
+## ADR-034: Placement never runs a writing or aliasing operation on copies
+
+**Context.** `"local"` placement, and `"auto"` when its cost model prefers
+the client, ran an operation with `_run_locally`: it fetched copies of the
+reFLOP inputs and ran the operation on them. An operation that writes to an
+argument (in place, `out=`) changed the copy, and a view of a reFLOP tensor
+became an independent CPU copy, so writes through it went nowhere. Every one
+of these silently lost the update. Under `"local"` that included the
+optimizer step, so parameters never changed; under `"auto"`, the default, a
+small reFLOP tensor updated from large client tensors (`scatter_add_`).
+
+**Decision.** `_dispatch` takes the local shortcut only for operations that
+neither write to an argument nor return a view of one (schema alias
+annotations, `is_view`, the `inplace_view` tag; cached per operator). The
+others keep their usual path: `_mutating` dispatches the functional form,
+which may itself run locally under the same rules, and `_assign` writes the
+result into the target (a reFLOP tensor receives the CPU result as a graph
+input; a CPU target is copied into). Views stay lazy views of the reFLOP
+tensor in every mode, so they alias it and a read fetches only the view.
+
+**Alternatives.** Keep views as CPU copies under `"local"` (what that mode
+promised for every operation) and only write back for in-place and `out=`
+operations: writes through views would still be lost, and reading a slice
+would keep fetching the whole base tensor. Upload every local result of a
+writing operation from `_run_locally` itself: duplicates `_mutating`'s
+functional-form and write-back logic, including its special cases.
+
+**Consequences.** Under `"local"`, views of a reFLOP tensor are reFLOP tensors
+(operations on them still return CPU tensors); this is the one visible change
+for code that relied on the old behavior. In-place operations under
+`"local"` run on the client and send their result back, so a writing loop
+under `"local"` uploads each result. Graphs outside placement are unchanged
+(ResNet-18 training registers the same graph before and after). Tests:
+`tests/e2e/test_placement.py` (writes in every mode against PyTorch, the
+cost model still choosing the client for the large scatter, views reading
+only their part, training and gradient accumulation under `"local"`).

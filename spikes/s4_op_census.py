@@ -34,9 +34,11 @@ def spy_dispatch(sess, func, args, kwargs):
     return orig_dispatch(sess, func, args, kwargs)
 
 
-def spy_fb(sess, func, args, kwargs):
+def spy_fb(sess, func, args, kwargs, **kw):
+    # Pass everything through: tests import this module, and the spy stays
+    # installed for the rest of the process.
     fallback[str(func)] += 1
-    return orig_fb(sess, func, args, kwargs)
+    return orig_fb(sess, func, args, kwargs, **kw)
 
 
 T._dispatch = spy_dispatch
