@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 (2026-11-21)
+
+A value read after a request that failed on the server is never returned
+stale. Only the Guest client changes; reflopd is the same apart from its
+version. The README and the Guest guide have the 21 November benchmark
+numbers.
+
+Updating from 0.2.0 still needs the version named (see 0.2.1). From 0.2.1 or
+later, plain `update` works.
 
 Guest:
 
