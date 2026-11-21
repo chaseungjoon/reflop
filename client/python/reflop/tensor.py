@@ -1188,38 +1188,48 @@ _active = threading.local()
 def _session_for(device):
     from . import _placement, session
 
-    if _placement.mode() == "remote-cpu":
-        return _cpu_session()
     # Inside an op's decomposition every new tensor belongs to the session
     # being dispatched (tensors all report reflop:0, see RemoteTensor.__new__).
-    act = getattr(_active, "sess", None)
-    if act is not None:
-        return act
+    target = getattr(_active, "sess", None)
+    if target is None:
+        if isinstance(device, (str, int)):
+            device = torch.device(device) if isinstance(device, str) else torch.device("reflop", device)
+        idx = device.index if isinstance(device, torch.device) and device.index is not None else 0
+        try:
+            target = session.by_index(idx)
+        except KeyError:
+            if idx != 0 or not session.has_default():
+                raise RuntimeError(f"no reflop session for device reflop:{idx}; call reflop.device({idx}) first") from None
+            target = session.current()
+    return _cpu_session(target) if _placement.mode() == "remote-cpu" else target
 
-    if isinstance(device, (str, int)):
-        device = torch.device(device) if isinstance(device, str) else torch.device("reflop", device)
-    idx = device.index if isinstance(device, torch.device) and device.index is not None else 0
-    try:
-        return session.by_index(idx)
-    except KeyError:
-        if idx == 0 and session.has_default():
-            return session.current()
-        raise RuntimeError(f"no reflop session for device reflop:{idx}; call reflop.device({idx}) first") from None
 
-
-def _cpu_session():
-    """The server-CPU session, opened on demand (placement "remote-cpu")."""
+def _cpu_session(target):
+    """The CPU session for the selected device's Owner and Guest identity."""
     from . import session
     from ._pb import graph_pb2 as gpb
     from .api import _open_session
+    from .client import RemoteConnection
     from .connection import LocalConnection
 
+    if target.gdevice.kind == gpb.DEVICE_CPU:
+        return target
+    conn = target.conn
+    local = isinstance(conn, LocalConnection)
     for s in list(session._sessions.values()):
-        if s.gdevice.kind == gpb.DEVICE_CPU:
+        if s.gdevice.kind != gpb.DEVICE_CPU or s.conn.closed:
+            continue
+        if local and isinstance(s.conn, LocalConnection):
             return s
-    idx = max(session._sessions, default=-1) + 1
-    local = "cpu" if isinstance(session.current().conn, LocalConnection) else None
-    return _open_session(idx, kind="cpu", local=local, make_default=False)
+        if isinstance(conn, RemoteConnection) and conn.same_identity(s.conn):
+            return s
+    if local:
+        peer = LocalConnection("cpu")
+    elif isinstance(conn, RemoteConnection):
+        peer = conn.cpu_peer()
+    else:
+        raise ReflopError("cannot open a CPU session for the selected connection")
+    return _open_session(peer, None, make_default=False)
 
 
 def _new_empty(size, dtype, stride=None, device=None):

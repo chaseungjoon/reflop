@@ -404,19 +404,35 @@ def _default_name(inv, cfg) -> str:
 
 
 class RemoteConnection(Connection):
-    def __init__(self, entry: ServerEntry, kind: str = "auto") -> None:
+    def __init__(self, entry: ServerEntry, kind: str = "auto", *, key=None) -> None:
         super().__init__()
         self.entry = entry
-        self.key = keys.load_or_create()
+        self.key = keys.load_or_create() if key is None else key
         self.fp = bytes.fromhex(entry.fingerprint)
+        self.session_id = b""
         self._open()
         self.caps = self.auth.capabilities
         if self.caps.limits.upload_chunk_bytes:
             self.chunk_bytes = int(self.caps.limits.upload_chunk_bytes)
-        self.gdevice = self._choose_device(kind)
-        self.session_id = b""
-        self.open_session()
+        try:
+            self.gdevice = self._choose_device(kind)
+            self.open_session()
+        except BaseException:
+            self.close()
+            raise
         threading.Thread(target=self._keepalive, daemon=True).start()
+
+    def same_identity(self, other: Connection) -> bool:
+        return (isinstance(other, RemoteConnection) and self.fp == other.fp
+                and bool(self.auth.identity_id) and self.auth.identity_id == other.auth.identity_id)
+
+    def cpu_peer(self) -> RemoteConnection:
+        """Open the CPU using the pinned Owner and Guest key of this session."""
+        peer = RemoteConnection(self.entry, kind="cpu", key=self.key)
+        if not self.same_identity(peer):
+            peer.close()
+            raise ReflopError("the authenticated Guest identity changed while opening the Owner's CPU session")
+        return peer
 
     def _open(self) -> None:
         _debug.log(f"connecting to {self.entry.name} ({self.entry.transport}, {', '.join(self.entry.addresses)})")
@@ -471,6 +487,8 @@ class RemoteConnection(Connection):
         for d in devs:
             if d.kind == gpb.DEVICE_CPU:
                 return d
+        if kind == "cpu":
+            raise ReflopError("the selected Owner exposes no CPU device")
         raise ReflopError("the server exposes no usable device")
 
     def capabilities(self):
@@ -539,7 +557,7 @@ class RemoteConnection(Connection):
 
     def close(self) -> None:
         try:
-            if not self.closed:
+            if not self.closed and self.session_id:
                 self.request(cpb.Envelope(close_session=cpb.CloseSession())).result(10)
         except Exception:  # noqa: BLE001
             pass

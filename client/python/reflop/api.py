@@ -12,19 +12,9 @@ from . import session as _session
 from .device import register, torch_device
 
 
-def _open_session(index: int, *, server: str | None = None, kind: str = "auto", local: str | None = None,
-                  allow_local_fallback: bool = True, make_default: bool = True):
+def _open_session(conn, index: int | None, *, allow_local_fallback: bool = True, make_default: bool = True):
     from ._pb import graph_pb2 as gpb
 
-    local = local or os.environ.get("REFLOP_LOCAL") or None
-    if local:
-        from .connection import LocalConnection
-
-        conn = LocalConnection(local)
-    else:
-        from .client import connect
-
-        conn = connect(server=server, kind=kind)
     try:
         caps = conn.capabilities()
         gdev = conn.gdevice if hasattr(conn, "gdevice") else gpb.Device(kind=gpb.DEVICE_CUDA)
@@ -62,7 +52,16 @@ def device(index: int = 0, *, server: str | None = None, kind: str = "auto", loc
         return torch_device(index)
     except KeyError:
         pass
-    sess = _open_session(index, server=server, kind=kind, local=local, allow_local_fallback=allow_local_fallback)
+    local = local or os.environ.get("REFLOP_LOCAL")
+    if local:
+        from .connection import LocalConnection
+
+        conn = LocalConnection(local)
+    else:
+        from .client import connect
+
+        conn = connect(server=server, kind=kind)
+    sess = _open_session(conn, index, allow_local_fallback=allow_local_fallback)
     if checkpoint:
         from . import checkpoints
 
@@ -107,8 +106,8 @@ def placement(mode: str):
     "remote"      never run locally: unsupported ops raise
     "local"       ops on reflop tensors run on the client and return client
                   tensors (fetches inputs)
-    "remote-cpu"  new tensors and .to(reflop.device()) go to the server CPU
-                  (opens a second session on demand)
+    "remote-cpu"  new tensors and .to(reflop.device()) go to the selected
+                  Owner's CPU (opens a second session on demand)
 
     In every mode, an op that writes to a reflop tensor (x.add_(1), out=x,
     a write through a view) updates that tensor, wherever it runs, and

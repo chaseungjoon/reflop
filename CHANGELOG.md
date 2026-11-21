@@ -8,6 +8,8 @@
 - Reading a large unflushed tensor with `.cpu()` downloads it in chunks.
   The read no longer fails when the result is too large for one execute
   response frame.
+- `placement("remote-cpu")` uses the selected device's Owner and Guest
+  identity when it opens or reuses a CPU session.
 
 ## 0.2.6 (2026-11-21)
 

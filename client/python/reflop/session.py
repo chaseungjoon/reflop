@@ -136,10 +136,9 @@ def tensor_bytes(t: torch.Tensor) -> bytes:
 class Session:
     unread_error: BaseException | None = None  # raised once but swallowed by repr (see keep_unread)
 
-    def __init__(self, conn, device_index: int, gdevice: gpb.Device, caps, *,
+    def __init__(self, conn, device_index: int | None, gdevice: gpb.Device, caps, *,
                  allow_local_fallback: bool = True, make_default: bool = True) -> None:
         self.conn = conn
-        self.device_index = device_index
         self.gdevice = gdevice
         self.caps = caps
         self.limits = caps.limits
@@ -169,6 +168,15 @@ class Session:
             with _glock:
                 seed = _seed
                 if seed is None or seed == applied_seed:
+                    if device_index is None:
+                        # Reserve reflop:0 for explicit use and stay in the
+                        # positive range of PyTorch's signed device index.
+                        device_index = next((i for i in range(1, 128) if i not in _sessions), None)
+                        if device_index is None:
+                            raise ReflopError("no free reFLOP device index for the Owner's CPU session")
+                    if device_index in _sessions:
+                        raise ReflopError(f"reFLOP device index {device_index} is already open")
+                    self.device_index = device_index
                     _sessions[device_index] = self
                     if make_default:
                         _default.append(self)
