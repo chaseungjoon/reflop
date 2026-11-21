@@ -341,7 +341,6 @@ class Session:
         values in `returns` come back as CPU tensors. With `plan`, the built
         graph, output specs and freed handles are recorded (reflop.capture)."""
         returns = returns or []
-        self._plan = plan
         with self.lock:
             self.raise_async()
             outputs: list[Value] = []
@@ -369,43 +368,79 @@ class Session:
                     specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_REBIND, handle=h))
                 outputs.append(v)
                 owners.append((st, h))
-            ret_pos = []
-            for i, v in enumerate(returns):
-                if v.kind == NODE:
-                    ret_pos.append(i)
-                    outputs.append(v)
-                    specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_RETURN))
+            ret_pos, chunked, temporary = self._plan_returns(returns, outputs, specs) if returns else ([], {}, [])
             self.dirty = weakref.WeakSet()
             results: list = [None] * len(returns)
-            if outputs:
-                self._execute(outputs, specs, owners, ret_pos, results)
-            self.trace = Trace()
-            self.epoch += 1
-            if plan is not None:
-                plan["freed"] = set(self.pending_free)
-                plan.setdefault("specs", specs)
-                plan.setdefault("owners", owners)
-            self._send_frees()
-            self._plan = None
-            for i, v in enumerate(returns):
-                if results[i] is not None:
-                    continue
-                if v.kind == HANDLE:
-                    results[i] = self.fetch_handles([v.handle])[0]
-                elif v.kind == CPU:
-                    results[i] = v.payload
-                elif v.kind == SCALAR:
-                    results[i] = torch.tensor(v.payload)
-                elif v.kind == DATASET:
-                    raise RuntimeError("cannot fetch a whole dataset")
-            if returns:
-                self.raise_async()  # see fetch_handles
-            return results
+            try:
+                if outputs:
+                    self._execute(outputs, specs, owners, ret_pos, results, wait=bool(chunked), plan=plan)
+                self.trace = Trace()
+                self.epoch += 1
+                if plan is not None:
+                    plan["freed"] = set(self.pending_free)
+                    plan.setdefault("specs", specs)
+                    plan.setdefault("owners", owners)
+                self._send_frees()
+                for i, v in enumerate(returns):
+                    if results[i] is not None:
+                        continue
+                    if i in chunked:
+                        results[i] = self.fetch_handles([chunked[i]])[0]
+                    elif v.kind == HANDLE:
+                        results[i] = self.fetch_handles([v.handle])[0]
+                    elif v.kind == CPU:
+                        results[i] = v.payload
+                    elif v.kind == SCALAR:
+                        results[i] = torch.tensor(v.payload)
+                    elif v.kind == DATASET:
+                        raise RuntimeError("cannot fetch a whole dataset")
+                if returns:
+                    self.raise_async()  # see fetch_handles
+                return results
+            finally:
+                if temporary:
+                    self.pending_free.extend(temporary)
+                    try:
+                        self._send_frees()
+                    except SessionLostError:
+                        pass  # Preserve the read error if its connection was lost.
 
-    def _execute(self, outputs, specs, owners, ret_pos, results) -> None:
+    def _plan_returns(self, returns, outputs, specs):
+        from .client import MAX_FRAME, MAX_FRAME_CEILING
+
+        # All inline tensors share one ExecuteResult frame. Leave room for
+        # the envelope and bound the payload even on servers with large frames.
+        budget = min(self.limits.max_frame_bytes or MAX_FRAME, MAX_FRAME_CEILING) // 4
+        stored = {v: spec.handle for v, spec in zip(outputs, specs, strict=True)}
+        inline, chunked, temporary = [], {}, []
+        for i, v in enumerate(returns):
+            if v.kind != NODE:
+                continue
+            nbytes = v.meta.numel() * v.meta.element_size()
+            # Allow 24 bytes for protobuf tags and length prefixes around
+            # the metadata, tensor bytes, and repeated TensorData entry.
+            entry_size = nbytes + tensor_meta(v.meta).ByteSize() + 24
+            if entry_size <= budget or nbytes > self.limits.max_fetch_bytes:
+                # Let execute validation reject a tensor above the fetch limit
+                # before running its graph, as it does for any inline return.
+                budget -= entry_size
+                inline.append(i)
+                outputs.append(v)
+                specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_RETURN))
+            else:
+                handle = stored.get(v)
+                if handle is None:
+                    handle = stored[v] = self.new_handle()
+                    temporary.append(handle)
+                    outputs.append(v)
+                    specs.append(cpb.OutputSpec(kind=cpb.OutputSpec.KIND_STORE, handle=handle))
+                chunked[i] = handle
+        return inline, chunked, temporary
+
+    def _execute(self, outputs, specs, owners, ret_pos, results, *, wait: bool, plan: dict | None) -> None:
         built = GraphBuilder(self.trace, self.gdevice, outputs).build()
-        if getattr(self, "_plan", None) is not None:
-            self._plan["built"] = built
+        if plan is not None:
+            plan["built"] = built
         self.stats["flushes"] += 1
         reg = None
         if built.graph_hash not in self.registered:
@@ -419,7 +454,7 @@ class Session:
             st.set(Value(HANDLE, st.meta, handle=h))
             st.handle = h
         self.pending_free.extend(temp)
-        if ret_pos:
+        if ret_pos or wait:
             try:
                 r = fut.result()  # raises ReflopRemoteError
             except ReflopRemoteError:

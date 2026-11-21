@@ -5,6 +5,9 @@
 - `reflop.seed(n)` seeds all open sessions and applies the same seed to future
   sessions. A CPU session opened by `placement("remote-cpu")` leaves the
   default session in place, so calls such as `reflop.load(name)` still use it.
+- Reading a large unflushed tensor with `.cpu()` downloads it in chunks.
+  The read no longer fails when the result is too large for one execute
+  response frame.
 
 ## 0.2.6 (2026-11-21)
 

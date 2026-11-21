@@ -122,13 +122,17 @@ def test_unrelated_value_after_a_failed_step_raises(dev):
         b.sum().item()
 
 
-def test_returned_output_after_a_failed_step_raises(dev):
-    # The value is computed in the same flush and returned with the execute
-    # (no separate fetch).
+@pytest.mark.parametrize("size", [3, 1 << 17], ids=["inline", "chunked"])
+def test_returned_output_after_a_failed_step_raises(dev, size, monkeypatch):
+    sess = rsession.by_index(dev.index)
+    limits = type(sess.limits)()
+    limits.CopyFrom(sess.limits)
+    limits.max_frame_bytes = 1 << 20
+    monkeypatch.setattr(sess, "limits", limits)
     a = _flushed_zeros(dev)
     _fail_async(dev, a)
-    with pytest.raises(reflop.ReflopRemoteError):
-        (torch.ones(3).to(dev) * 2).cpu()
+    with pytest.raises(reflop.ReflopRemoteError, match="index"):
+        (torch.ones(size, device=dev) * 2).cpu()
 
 
 @pytest.mark.parametrize("read", ["item", "bool", "tolist", "numpy", "nonzero", "fetch"])
