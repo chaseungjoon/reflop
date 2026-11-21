@@ -1045,3 +1045,26 @@ other small results.
 **Consequences.** Small results still travel in the execute response.
 Larger reads use the existing fetch size limits and chunk validation.
 The change works with the existing worker and wire protocol.
+
+## ADR-038: Keep implicit CPU placement with the selected Owner
+
+**Context.** `placement("remote-cpu")` could reuse a CPU session from
+another paired Owner. With no open CPU session, it could open one on the
+configured default server even when the operation selected another Owner.
+
+**Decision.** Resolve the operation's reFLOP session before assigning CPU
+placement. Reuse a CPU session only when its pinned server fingerprint and
+authenticated Guest ID match. To open a new CPU session, use the selected
+connection's pinned server entry and Guest key. An unavailable CPU raises an
+error. In-process workers reuse or open an in-process CPU session.
+Assign each new CPU peer an available device index when it registers, so
+concurrent opens cannot overwrite an Owner's session.
+
+**Alternatives.** Looking up the selected server again by alias would allow
+a pairing change to redirect an existing session's CPU work. Using the
+configured default would ignore an operation that names a device on a
+different Owner.
+
+**Consequences.** Explicit device selection still permits moves between
+Owners. An implicit CPU session stays out of the default stack. Existing
+servers can use the fix through the Python client update.

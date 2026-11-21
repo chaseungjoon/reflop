@@ -425,6 +425,8 @@ one.
 Opening a new session explicitly makes it the default for calls such as
 `reflop.load(name)`. A CPU session opened automatically by
 `placement("remote-cpu")` leaves that default in place.
+With multiple paired Owners, placement uses the CPU of the reFLOP device you
+target. If that Owner offers no CPU device, the operation raises an error.
 
 ## Saving state
 

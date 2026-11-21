@@ -149,6 +149,7 @@ session per interval, never more often than every 5 minutes (ADR-029).
 | Threat | Mitigation |
 |---|---|
 | server impersonation, MITM | pinned key; a mismatch is a hard failure |
+| unintended transfer to another paired Owner | implicit CPU placement uses the selected session's pinned server key and authenticated Guest identity (ADR-038) |
 | deserialization attacks | protobuf and raw tensor bytes only; safetensors for checkpoints |
 | size bombs | a frame cap the server cannot raise past 1 GiB; every fetch chunk is checked against the size its metadata declares, and a response is capped at 16 GiB |
 | path injection | the client never builds a path from server data |
