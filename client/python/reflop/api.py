@@ -103,6 +103,10 @@ def placement(mode: str):
                   tensors (fetches inputs)
     "remote-cpu"  new tensors and .to(reflop.device()) go to the server CPU
                   (opens a second session on demand)
+
+    In every mode, an op that writes to a reflop tensor (x.add_(1), out=x,
+    a write through a view) updates that tensor, wherever it runs, and
+    returns it; views of a reflop tensor stay reflop views.
     """
     from . import _placement as pl
 

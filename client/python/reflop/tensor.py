@@ -624,9 +624,20 @@ def _placement_local(sess, func, args, kwargs):
     return placement.prefer_local(flops, rb, lb)
 
 
+@functools.lru_cache(maxsize=4096)
+def _writes_or_aliases(func) -> bool:
+    """The op writes to an argument (in place, out=) or returns a view of one."""
+    return (func.is_view or torch.Tag.inplace_view in func.tags
+            or any(a.alias_info is not None and a.alias_info.is_write for a in func._schema.arguments))
+
+
 def _dispatch(sess, func, args, kwargs):
     name = _op_name(func)
-    if name not in _SPECIALS and _placement_local(sess, func, args, kwargs):
+    # Running an op locally works on fetched copies of its reflop inputs. An op
+    # that writes to one (x.add_(1), out=x) or returns a view of one keeps its
+    # normal path: _mutating runs the functional form (which may itself run
+    # locally) and writes the result back, and a view stays a view.
+    if name not in _SPECIALS and not _writes_or_aliases(func) and _placement_local(sess, func, args, kwargs):
         return _run_locally(sess, func, args, kwargs, keep_local=True)
     special = _SPECIALS.get(name)
     if special is not None:
