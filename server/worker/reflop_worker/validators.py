@@ -438,6 +438,43 @@ def ctc_static(node, a):
         raise _bad(node, "log_probs must be (T, N, C)")
     if not 0 <= a["blank"] < lp.shape[2]:
         raise _bad(node, "blank index out of range")
+    if "log_alpha" in a:
+        ctc_backward_static(node, a)
+
+
+def ctc_backward_static(node, a):
+    """_ctc_loss_backward's kernels do not check their inputs: a short
+    log_alpha, grad or neg_log_likelihood is read out of bounds (a short
+    log_alpha crashes the CPU kernel). Every shape must be exactly what the
+    forward produces for these lengths."""
+    lp, tg, il, tl = a["log_probs"], a["targets"], a["input_lengths"], a["target_lengths"]
+    if lp.dim() != 3:
+        raise _bad(node, "log_probs must be (T, N, C)")
+    t, n, _ = lp.shape
+    if lp.dtype not in (torch.float32, torch.float64):
+        raise _bad(node, f"log_probs must be float32 or float64, got {lp.dtype}")
+    if _is_t(il) or _is_t(tl):
+        raise _bad(node, "the backward takes lengths as int lists")
+    if len(il) != n or len(tl) != n:
+        raise _bad(node, f"input_lengths and target_lengths must have {n} entries (the batch size)")
+    if any(not 0 <= x <= t for x in il):
+        raise _bad(node, "input_lengths out of range")
+    if any(x < 0 for x in tl):
+        raise _bad(node, "target_lengths out of range")
+    if tg.dim() == 2:
+        if tg.shape[0] != n or any(x > tg.shape[1] for x in tl):
+            raise _bad(node, "targets must be (N, S) with every target_length <= S")
+    elif tg.dim() == 1:
+        if sum(tl) > tg.numel():
+            raise _bad(node, "target_lengths add up to more than the targets")
+    else:
+        raise _bad(node, "targets must be 1-D or 2-D")
+    s = 2 * max(tl, default=0) + 1
+    for name, want in (("grad", (n,)), ("neg_log_likelihood", (n,)), ("log_alpha", (n, t, s))):
+        x = a[name]
+        if not _is_t(x) or x.dtype != lp.dtype or tuple(x.shape) != want:
+            got = f"{x.dtype}{list(x.shape)}" if _is_t(x) else type(x).__name__
+            raise _bad(node, f"{name} must be {lp.dtype}{list(want)}, got {got}")
 
 
 def ctc_runtime(node, a):

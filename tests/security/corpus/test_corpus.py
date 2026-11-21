@@ -529,3 +529,97 @@ def test_server_hash_is_recomputed(sess):
     from reflop_worker.execute import graph_hash
 
     assert r.graph_registered.graph_hash == graph_hash(g)
+
+
+# ---------------------------------------------------------------- ctc backward
+# _ctc_loss_backward's kernels read grad, neg_log_likelihood and log_alpha
+# without checking their shapes (a short log_alpha crashes the CPU kernel).
+# PyTorch has no meta kernel for it; the worker's own checks every shape.
+
+CTC_T, CTC_N, CTC_C = 6, 2, 4
+
+
+def _ctc_inputs(tl=(2, 2), concat=False):
+    g = torch.Generator().manual_seed(0)
+    lp = torch.randn(CTC_T, CTC_N, CTC_C, generator=g, dtype=torch.float64).log_softmax(2)
+    tg = torch.tensor([[1, 2], [3, 1]])
+    if concat:
+        tg = torch.cat([tg[i, :n] for i, n in enumerate(tl)])
+    il = [CTC_T, CTC_T - 1]
+    nll, la = torch.ops.aten._ctc_loss(lp, tg, il, list(tl), 0, False)
+    return [torch.ones(CTC_N, dtype=lp.dtype), lp, tg, nll, la], il, list(tl)
+
+
+def _ctc_backward_graph(sess, ts, il, tl, op="aten._ctc_loss_backward.default"):
+    lengths = [INTS(*il), INTS(*tl)]
+    return graph(sess, [(t.dtype, tuple(t.shape)) for t in ts],
+                 [(op, [tin(0), tin(1), tin(2), *lengths, tin(3), tin(4), I(0), B(False)])],
+                 [(torch.float64, (CTC_T, CTC_N, CTC_C))])
+
+
+@pytest.mark.parametrize("concat", [False, True])
+def test_ctc_backward_well_formed_runs(sess, concat):
+    ts, il, tl = _ctc_inputs(concat=concat)
+    r = run(sess, _ctc_backward_graph(sess, ts, il, tl), ts)
+    assert isinstance(r, cpb.ExecuteResult), r
+    want = torch.ops.aten._ctc_loss_backward(ts[0], ts[1], ts[2], il, tl, ts[3], ts[4], 0, False)
+    torch.testing.assert_close(decode(r.returned[0]).cpu(), want)
+
+
+def _bad_ctc(name):
+    ts, il, tl = _ctc_inputs()
+    grad, lp, tg, nll, la = ts
+    if name == "short_log_alpha":
+        la = la[:, :, :2].contiguous()
+    elif name == "short_log_alpha_time":
+        la = la[:, :2].contiguous()
+    elif name == "log_alpha_dtype":
+        la = la.float()
+    elif name == "short_grad":
+        grad = grad[:1]
+    elif name == "short_nll":
+        nll = nll[:1]
+    elif name == "few_input_lengths":
+        il = il[:1]
+    elif name == "input_length_past_T":
+        il = [CTC_T + 1, CTC_T]
+    elif name == "target_length_past_S":
+        tl = [3, 2]
+        la = torch.zeros(CTC_N, CTC_T, 7, dtype=lp.dtype)
+    elif name == "concat_lengths_past_targets":
+        tg = torch.tensor([1, 2, 3])
+        tl = [2, 2]
+    elif name == "targets_3d":
+        tg = tg.reshape(2, 2, 1)
+    elif name == "log_probs_float16":
+        grad, lp, nll, la = (x.half() for x in (grad, lp, nll, la))
+    return [grad, lp, tg, nll, la], il, tl
+
+
+BAD_CTC = ["short_log_alpha", "short_log_alpha_time", "log_alpha_dtype", "short_grad", "short_nll",
+           "few_input_lengths", "input_length_past_T", "target_length_past_S", "concat_lengths_past_targets",
+           "targets_3d", "log_probs_float16"]
+
+
+@pytest.mark.parametrize("name", BAD_CTC)
+def test_ctc_backward_bad_shapes_rejected_before_running(sess, name):
+    ts, il, tl = _bad_ctc(name)
+    g = _ctc_backward_graph(sess, ts, il, tl)
+    g.output_meta[0].CopyFrom(meta(ts[1].dtype, ts[1].shape))
+    r = register(sess, g)
+    assert r.WhichOneof("body") == "error", f"{name}: accepted"
+    expect(r.error, E.ERROR_INVALID_GRAPH, E.STAGE_V4_META)
+    ok_after(sess)
+
+
+def test_ctc_backward_with_tensor_lengths_rejected(sess):
+    ts, il, tl = _ctc_inputs()
+    ins = [*ts[:3], torch.tensor(il), torch.tensor(tl), *ts[3:]]
+    g = graph(sess, [(t.dtype, tuple(t.shape)) for t in ins],
+              [("aten._ctc_loss_backward.Tensor", [tin(0), tin(1), tin(2), tin(3), tin(4), tin(5), tin(6), I(0),
+                                                   B(False)])],
+              [(torch.float64, (CTC_T, CTC_N, CTC_C))])
+    r = register(sess, g)
+    assert r.WhichOneof("body") == "error"
+    expect(r.error, E.ERROR_INVALID_GRAPH, E.STAGE_V4_META)
+    ok_after(sess)

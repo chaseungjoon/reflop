@@ -296,9 +296,18 @@ def _to_meta(x):
     return x
 
 
+def _ctc_loss_backward_meta(grad, log_probs, *args, **kwargs):
+    return torch.empty(tuple(log_probs.shape), dtype=log_probs.dtype, device="meta")
+
+
+# aten ops that PyTorch ships without a meta kernel. Only the output's shape
+# here; the server checks the inputs before it runs them.
+_META_OVERRIDES = {aten._ctc_loss_backward.default: _ctc_loss_backward_meta}
+
+
 def run_meta(func, args, kwargs):
     with torch._C._DisableTorchDispatch():
-        return func(*tree_map(_to_meta, args), **tree_map(_to_meta, kwargs))
+        return _META_OVERRIDES.get(func, func)(*tree_map(_to_meta, args), **tree_map(_to_meta, kwargs))
 
 
 # Meta inference cache for non-view ops. Output shapes/dtypes depend on input
@@ -1071,8 +1080,16 @@ def _ctc_loss_tensor(sess, func, args, kwargs):
                     (lp, tg, _lengths(il, "input_lengths"), _lengths(tl, "target_lengths"), blank, zero_infinity), {})
 
 
+def _ctc_loss_backward_tensor(sess, func, args, kwargs):
+    grad, lp, tg, il, tl, nll, log_alpha, blank, zero_infinity = normalize(func, args, kwargs)
+    return dispatch(sess, aten._ctc_loss_backward.default,
+                    (grad, lp, tg, _lengths(il, "input_lengths"), _lengths(tl, "target_lengths"), nll, log_alpha,
+                     blank, zero_infinity), {})
+
+
 _SPECIALS = {
     "aten._ctc_loss.Tensor": _ctc_loss_tensor,
+    "aten._ctc_loss_backward.Tensor": _ctc_loss_backward_tensor,
     "aten._local_scalar_dense.default": _local_scalar,
     "aten._to_copy.default": _to_copy,
     "aten.copy_.default": _copy_,

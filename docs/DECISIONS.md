@@ -830,3 +830,48 @@ nightly run. The job takes a few minutes per mode; the runtime download is
 cached by `lock.json` hash and verified on every install. If GitHub's runners
 ever lose Landlock or seccomp, the job turns red rather than passing. Tests:
 `TestIsolationProbes`, `TestIsolationStrictChecks`.
+
+## ADR-032: The worker's own meta kernel for `_ctc_loss_backward`, with exact input shapes
+
+**Context.** Stage V4 runs every node on meta tensors and rejects an op that
+has no meta kernel (I11). PyTorch 2.15 has none for `_ctc_loss_backward`, so
+every graph with a CTC backward was rejected, and the client could not
+compute its output shape either: training with `F.ctc_loss` never worked on
+reFLOP, and the Guest's process aborted in `.backward()`. A meta kernel that
+only returns the output shape would not be enough. PyTorch's backward
+kernels read `grad`, `neg_log_likelihood` and `log_alpha` without checking
+their shapes: on the CPU, a `log_alpha` shorter than the forward's crashes
+the worker, and a short `grad` or `neg_log_likelihood` is read out of bounds
+without an error. A graph can pass any tensors there, not only the forward's
+outputs.
+
+**Decision.** `meta.OVERRIDES` maps `aten._ctc_loss_backward.default` to a
+meta function in the worker. The function returns an empty tensor with
+`log_probs`' shape and dtype, and before that runs `ctc_backward_static`,
+which the `ctc` validator also runs:
+
+- `log_probs` is `(T, N, C)`, float32 or float64;
+- the lengths are int lists of `N` entries, `0 <= input_length <= T`;
+- 2-D targets are `(N, S)` with every `target_length <= S`; 1-D targets hold
+  at least `sum(target_lengths)` elements;
+- `grad` and `neg_log_likelihood` are exactly `[N]`, and `log_alpha` exactly
+  `[N, T, 2 * max(target_lengths) + 1]`, all with `log_probs`' dtype.
+
+The `.Tensor` overload (tensor lengths) stays rejected: the client turns tensor
+lengths into int lists and sends `.default`. The client has its own meta
+function, which only computes the output shape.
+
+**Alternatives.** Register a Meta kernel through `torch.library` (it would
+also change PyTorch for everything else in the process, and the check would be
+less visible in an audit). Run the backward on the Guest's CPU (no server
+change, but every step moves `log_alpha`, `N × T × (2S + 1)` values, both
+ways). Leave CTC training unsupported.
+
+**Consequences.** CTC training works. Since the shapes are part of the
+registered graph and bindings must match them (E1), checking them once at
+validation is enough; target values are still bounds-checked at every run by
+`ctc_runtime`. Each later meta kernel the worker supplies goes into
+`meta.OVERRIDES` with a check of the inputs its kernel reads without
+checking. Tests: `test_ctc_backward_*` in `tests/security/corpus/test_corpus.py`
+(every malformed graph is rejected at V4 and is accepted without the check),
+`test_ctc_loss_with_tensor_lengths` in `tests/conformance/test_ops.py`.

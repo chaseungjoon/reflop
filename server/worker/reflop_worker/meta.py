@@ -39,6 +39,21 @@ def call_args(node, resolve):
     return pos, kw
 
 
+def _ctc_loss_backward(node, pos, kw):
+    # The gradient for log_probs: its shape and dtype, contiguous. The
+    # inputs' shapes are checked first, here as well as in the ctc validator:
+    # the kernels read them unchecked.
+    a = validators._named(node, pos, kw)
+    validators.ctc_backward_static(node, a)
+    lp = a["log_probs"]
+    return torch.empty(tuple(lp.shape), dtype=lp.dtype, device="meta")
+
+
+# aten ops that PyTorch ships without a meta kernel; each one checks its
+# inputs itself.
+OVERRIDES = {"aten._ctc_loss_backward.default": _ctc_loss_backward}
+
+
 def infer(prog: Program, limits: cpb.Limits) -> None:
     S = cpb.STAGE_V4_META
     metas: dict = {}
@@ -70,6 +85,8 @@ def infer(prog: Program, limits: cpb.Limits) -> None:
             with torch.inference_mode():
                 if natives.is_native(node.op):
                     out = natives.meta(node.op.name, pos, kw)
+                elif node.op.name in OVERRIDES:
+                    out = OVERRIDES[node.op.name](node, pos, kw)
                 else:
                     out = node.op.fn(*pos, **kw)
         except ReflopError:

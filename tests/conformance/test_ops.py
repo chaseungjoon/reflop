@@ -243,9 +243,8 @@ def test_scalar_type_codes_match_torch():
 @pytest.mark.parametrize("concat", [False, True])
 def test_ctc_loss_with_tensor_lengths(dev, where, concat):
     # Regression: F.ctc_loss with tensor lengths reached _ctc_loss.Tensor,
-    # which has no meta kernel (NotImplementedError). Forward only: PyTorch
-    # has no meta kernel for _ctc_loss_backward either, so the server cannot
-    # validate the backward yet.
+    # which has no meta kernel (NotImplementedError). The backward had none
+    # either (with int lengths too) and aborted the process.
     T, N, C = 12, 3, 5
     lp = g(T, N, C).log_softmax(2)
     tl = torch.tensor([4, 3, 2], dtype=torch.int32)
@@ -256,10 +255,18 @@ def test_ctc_loss_with_tensor_lengths(dev, where, concat):
     def lengths(x):
         return x.tolist() if where == "list" else (x.to(dev) if where == "device" else x)
 
+    tol = 1e-4 if DEVICE == "cuda" else 1e-5
     for reduction in ("mean", "sum", "none"):
-        local = F.ctc_loss(lp, tg, il, tl, reduction=reduction)
-        remote = F.ctc_loss(lp.to(dev), tg.to(dev), lengths(il), lengths(tl), reduction=reduction)
-        _close(remote, local, 1e-4 if DEVICE == "cuda" else 1e-5)
+        for zero_infinity in (False, True):
+            a = lp.clone().requires_grad_()
+            local = F.ctc_loss(a, tg, il, tl, reduction=reduction, zero_infinity=zero_infinity)
+            local.sum().backward()
+            b = lp.to(dev).requires_grad_()
+            remote = F.ctc_loss(b, tg.to(dev), lengths(il), lengths(tl), reduction=reduction,
+                                zero_infinity=zero_infinity)
+            remote.sum().backward()
+            _close(remote, local.detach(), tol)
+            _close(b.grad, a.grad, tol)
 
 
 def test_ctc_loss_rejects_float_lengths(dev):
